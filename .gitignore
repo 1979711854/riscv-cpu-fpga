@@ -1,0 +1,33 @@
+# ---- Claude Code 项目本地配置（含机器特定路径）----
+.claude/
+
+# ---- Windows ----
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- 通用编辑器 / 日志 ----
+*.swp
+*.swo
+*.jou
+*.log
+
+# ---- Pango PDS（紫光同创）----
+# PDS 工程统一放 pds/ 下；以下按相对路径忽略其生成物，
+# 避免误伤仓库根 sim/（我们的 testbench 需要入库）。
+# 具体目录名以创建 PDS 工程后的实际结构为准，届时再细化。
+/pds/*/syn/
+/pds/*/sim/
+/pds/*/impl/
+/pds/*/.pango/
+/pds/*/run*/
+/pds/**/*.wdb
+
+# ---- Vivado / AMD（若日后使用）----
+.Xil/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.bit
+*.ltx
