@@ -1,9 +1,10 @@
 # D:\riscv-cpu-fpga — 嵌入式大赛 FPGA 赛道 · 基于紫光同创(Pango) 的 RISC-V CPU
 
 ## 项目目标
-- 参赛方向：嵌入式芯片与系统设计大赛 FPGA 赛道
+- 参赛方向：嵌入式芯片与系统设计大赛 FPGA 赛道（选题：RISC-V 处理器设计）
 - 器件平台：紫光同创 Pango FPGA，配套工具 Pango Design Suite (PDS)
-- 设计内容：基于 RISC-V 指令集的 CPU 核（指令集规格以赛题为准，常见 rv32i / rv32imc）
+- 设计内容：RV32I CPU，≥3 级流水线（处理数据冒险与分支），集成 UART/GPIO；用 riscv32-unknown-elf-gcc 编译并跑 CoreMark v1.0（时长≥10s）；可选加分项：2路组相联 Cache、BTB+异常/中断、边缘 AI
+- 任务分解见 doc/plan.md；架构文档将放 doc/spec.md
 
 ## 工作约定
 - 交流与输出默认使用简体中文。
@@ -22,4 +23,4 @@
 
 ## 当前状态
 - 2026-09-08 初始化：移除误建于 D:\ 根的全盘空 git 仓库，在本目录新建独立仓库（main 分支），已建立目录骨架。
-- 尚无 RTL 代码，尚未创建 PDS 工程。
+- 2026-09-08 选题确定：RISC-V 处理器设计；完成赛题解析与任务计划 doc/plan.md。尚无 RTL 代码，尚未创建 PDS 工程。
