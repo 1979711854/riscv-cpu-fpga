@@ -18,17 +18,20 @@
 ## 📁 目录结构（重要）
 
 克隆仓库后，你的本地目录应该是这样的：
+
+```
 riscv-cpu-fpga/
-├── README.md #项目说明
-├── .gitignore #Git忽略规则(已配置好，不要乱改)
+├── README.md              # 项目说明
+├── .gitignore             # Git忽略规则（已配置好）
 │
-├── doc/ #文档：数据手册、原理图、控制信号表等
-├── rtl/ #硬件源码：所有 .v 文件
-│ └── top.v #顶层模块（目前为LED点灯测试）
-├── sim/ #仿真文件：Testbench、波形文件
-├── scripts/ #自动化脚本
-├── pds/ #PDS工程目录
-│ └── riscv_cpu/ # PDS工程文件夹
+├── doc/                   # 📄 文档：数据手册、原理图、控制信号表等
+├── rtl/                   # ⚙️ 硬件源码：所有 .v 文件
+│   └── top.v              # 顶层模块
+├── sim/                   # 🧪 仿真文件：Testbench、波形文件
+├── scripts/               # 🔧 自动化脚本
+└── pds/                   # 🗂️ PDS工程目录
+    └── riscv_cpu/         # PDS工程文件夹（里面是 .pdsproj 等文件）
+```
 
 
 
@@ -49,37 +52,66 @@ riscv-cpu-fpga/
   scoop install iverilog gtkwave   # 仿真工具
 
 
-🔄 Git代码管理规范（必读）
-仓库地址：https://github.com/1979711854/riscv-cpu-fpga.git
+## 🔄 Git代码管理规范（必读）
 
-首次克隆（每人只做一次）
+**仓库地址**：`https://github.com/1979711854/riscv-cpu-fpga.git`
 
-打开命令行，进入你想存放工程的目录（如 D:\），执行：
+---
+
+### 📥 首次克隆（每人只做一次）
+
+打开命令行，进入你想存放工程的目录（如 `D:\`），执行：
+
+```powershell
 git clone https://github.com/1979711854/riscv-cpu-fpga.git
 cd riscv-cpu-fpga
+```
 
+---
 
-日常开发流程（每天必做）
+### 🔁 日常开发流程（每天必做）
 
-第一步：开始工作前，先拉取最新代码
+#### 第一步：开始工作前，先拉取最新代码
+
+```powershell
 git pull origin main
+```
 
+#### 第二步：修改代码后，提交并推送
 
-第二步：修改代码后，提交并推送
-git status                    # 查看改了哪些文件
-git add .                     # 添加所有修改
-git commit -m "描述你做了什么"  # 提交到本地
-git push origin main          # 推送到GitHub
+```powershell
+git status                 # 查看改了哪些文件
+git add .                  # 添加所有修改
+git commit -m "描述你做了什么"   # 提交到本地
+git push origin main       # 推送到GitHub
+```
 
+---
 
-如果推送被拒绝（别人先推了）
-git pull origin main          # 先拉取合并
+### ⚠️ 如果推送被拒绝（别人先推了）
 
+```powershell
+git pull origin main       # 先拉取合并
+```
 
-# 如果有冲突，手动解决冲突后：
+> 如果有冲突，手动解决冲突后，执行：
+
+```powershell
 git add .
 git commit -m "解决合并冲突"
 git push origin main
+```
+
+---
+
+### 📝 提交信息格式参考
+
+| 前缀 | 用途 | 示例 |
+| :--- | :--- | :--- |
+| `feat:` | 新增功能 | `feat: 添加ALU模块` |
+| `fix:` | 修复Bug | `fix: 修复PC跳转逻辑错误` |
+| `docs:` | 文档修改 | `docs: 更新README` |
+| `refactor:` | 代码重构 | `refactor: 优化控制单元代码` |
 
 
 ## 📂 PDS工程如何打开（队友必看）
@@ -100,20 +132,31 @@ git push origin main
   
 > PDS工程文件里记录的是 **相对路径**，只要整个仓库目录结构不变，就能正常打开。
 
-### 🔧 芯片型号（已配置，请勿修改）
+## 🔧 芯片型号（已配置，请勿修改）
 
+| 项目 | 值 |
+| :--- | :--- |
 | **系列** | `Logos-2` |
 | **型号** | `PG2L200H-6IFBB676` |
 
-> ⚠️ 这个型号已经配置好了，**不要擅自修改**，否则可能导致管脚约束失效。
+> ⚠️ **这个型号已经配置好了，不要擅自修改**，否则可能导致管脚约束失效，编译通不过。
 
+---
 
-⚠️ 常见问题
-Q：PDS打开工程后，找不到 top.v？
-A：检查 rtl/ 目录下是否有 top.v 文件，如果没有，从队友那里同步一下（git pull）。如果文件存在但PDS没加载，在Project窗口中右键 → Add Source 手动添加。
+## ⚠️ 常见问题
 
-Q：我改了代码，但编译结果和队友不一样？
-A：PDS的编译中间文件（synth/、impl/）不会被Git同步。每个人本地重新编译即可，这是正常的。
+### Q：PDS打开工程后，找不到 `top.v`？
 
-Q：如何确认自己的模块功能正确？
-A：每个子模块都要写独立的Testbench进行仿真验证，不要等所有模块写完再一起调试。仿真通过后再提交代码。
+**A**：检查 `rtl/` 目录下是否有 `top.v` 文件。如果没有，从队友那里同步一下（`git pull`）。如果文件存在但 PDS 没加载，在 Project 窗口中右键 → `Add Source` 手动添加。
+
+---
+
+### Q：我改了代码，但编译结果和队友不一样？
+
+**A**：这是正常的。PDS 的编译中间文件（`synth/`、`impl/` 等）不会被 Git 同步。每个人在本地重新编译即可。
+
+---
+
+### Q：如何确认自己的模块功能正确？
+
+**A**：每个子模块都要写独立的 Testbench 进行仿真验证，**不要等所有模块写完再一起调试**。仿真通过后再提交代码。
