@@ -104,9 +104,9 @@
 - **成员C（SoC+上板）**：UART/GPIO/BRAM/总线 + PDS 综合实现下载 + C 程序/CoreMark 桥接
 - 协作约定：每两周交叉 review；代码规范统一（中文注释、模块头、clk/rst 端口约定）；里程碑用 git tag
 
-## 6. 环境与工具链（下一步装）
-- [ ] RTL 仿真：**iverilog + GTKWave**（免费、秒级迭代；RV32I 用 Verilog-2001 编写即可兼容）
-- [ ] 编译工具链：**xPack riscv-none-elf-gcc**（预编译，含 riscv32 多lib；赛题名 riscv32-unknown-elf-gcc 为同类，装后可建别名）
+## 6. 环境与工具链
+- [x] RTL 仿真：**iverilog 14 + GTKWave 3.3**（2026-09-08 scoop 装好；需重启已打开的终端让 PATH 生效）
+- [x] 编译工具链：**xPack riscv-none-elf-gcc 15.2.0**（2026-09-08 装到 D:\riscv-toolchain，已加用户 PATH；rv32i/ilp32 验证通过。新终端才生效，命令前缀 riscv-none-elf- 等价赛题的 riscv32-unknown-elf-）
 - [ ] 上板下载：PDS 自带 Pango 下载器驱动（确认与盘古50 的 JTAG 方式一致）
 - [ ] 确认盘古50 对应 **PDS 工程 Device 型号**
 
