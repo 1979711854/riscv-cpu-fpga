@@ -17,6 +17,46 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "Run Current Testbench (file in editor)",
+      "detail": "对当前在编辑器中打开的 tb_*.v 做单文件仿真；请先把光标放在目标测试台上",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\run_sim.ps1",
+        "-Testbench",
+        "${relativeFile}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Run One Testbench (type name)...",
+      "detail": "手动输入 tb 文件名（不含 .v），如 tb_alu；留空则用默认 tb_alu",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\run_sim.ps1",
+        "-Testbench",
+        "sim/${input:testbenchName}.v"
+      ],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testbenchName",
+      "type": "promptString",
+      "description": "输入要仿真的 testbench 文件名（不含扩展名），例如 tb_alu / tb_pc",
+      "default": "tb_alu"
     }
   ]
 }

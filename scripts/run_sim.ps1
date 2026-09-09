@@ -1,5 +1,6 @@
-param(
-    [string]$File = ""
+﻿param(
+    [string]$Testbench = "",   # 单个测试台：如 "sim/tb_alu.v"（相对仓库根）
+    [switch]$NoWave            # 加此开关则不弹 GTKWave（CLI/CI 用）
 )
 
 Set-StrictMode -Version Latest
@@ -9,7 +10,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $simRoot = Join-Path $repoRoot "sim"
 $rtlCoreRoot = Join-Path $repoRoot "rtl\core"
 
-function Invoke-Testbench([string]$RelativeTestbench) {
+function Invoke-Testbench([string]$RelativeTestbench, [switch]$NoWave) {
     $filePath = Resolve-Path (Join-Path $repoRoot $RelativeTestbench)
     $simDir = Split-Path $filePath -Parent
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
@@ -33,7 +34,7 @@ function Invoke-Testbench([string]$RelativeTestbench) {
         & vvp $vvpPath
         if ($LASTEXITCODE -ne 0) { throw "vvp failed for $RelativeTestbench" }
 
-        if (Test-Path $vcdPath) {
+        if ((Test-Path $vcdPath) -and -not $NoWave) {
             Write-Host "Opening GTKWave for $vcdPath"
             Start-Process -FilePath "gtkwave" -ArgumentList "$vcdPath" -WindowStyle Hidden | Out-Null
         }
@@ -43,10 +44,13 @@ function Invoke-Testbench([string]$RelativeTestbench) {
     }
 }
 
-if (-not [string]::IsNullOrWhiteSpace($File)) {
-    Invoke-Testbench $File
+if (-not [string]::IsNullOrWhiteSpace($Testbench)) {
+    # 用法：run_sim.ps1 -Testbench "sim/tb_alu.v"
+    if ($Testbench -notlike "*.v") { $Testbench += ".v" }
+    Invoke-Testbench $Testbench -NoWave:$NoWave
 }
 else {
+    # 未指定参数：跑 sim/ 下所有 tb_*.v（模板除外）
     $testbenches = @(Get-ChildItem -Path $simRoot -Filter "tb_*.v" |
         Where-Object { $_.Name -ne "tb_template.v" } |
         Sort-Object Name |
@@ -57,6 +61,6 @@ else {
     }
 
     foreach ($testbench in $testbenches) {
-        Invoke-Testbench $testbench
+        Invoke-Testbench $testbench -NoWave:$NoWave
     }
 }
