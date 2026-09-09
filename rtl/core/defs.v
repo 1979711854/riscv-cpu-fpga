@@ -16,7 +16,7 @@
 `define OP_OP_IMM  7'b0010011
 `define OP_OP      7'b0110011
 
-//------ ALU 运算码（建议编码，自己实现 alu 与 alu_ctrl 时保持一致）------
+//------ ALU 运算码（自己实现 alu 与 alu_ctrl 时保持一致）------
 `define ALU_ADD  4'b0000    //加法
 `define ALU_SUB  4'b0001    //减法
 `define ALU_AND  4'b0010    //与
@@ -35,9 +35,12 @@
 `define ASRC_PC   2'b10   // AUIPC：pc + imm
 
 //------ ALUOp（main_ctrl -> alu_ctrl 的粗粒度控制，2 bit）------
-// 你来自定义。建议：
 //   00 -> 恒 ADD（lw/sw/lui/auipc/jal/jalr/addi）
 //   01 -> 恒 SUB（若分支想用减法判定，本设计有 branch_unit 可不用）
 //   10 -> 需要按 funct3/funct7 细译码（R-type / I-type 算术）
+
+`define ALU_OP_ADD  2'b00   // lw/sw/lui/auipc/jal/jalr/addi 只需要加法
+`define ALU_OP_SUB  2'b01   // beq, bne, blt, bge, bltu, bgeu 分支比较，减法
+`define ALU_OP_ALU  2'b10   // R型 I型运算，需要 funct3 译码
 
 `endif

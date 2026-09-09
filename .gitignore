@@ -34,6 +34,10 @@ $RECYCLE.BIN/
 # PDS 工程锁文件（每次打开 PDS 都会变，本机私有，不入库）
 *.pds.lock
 
+# ---- 仿真生成物 ----
+*.vvp
+*.vcd
+
 # ---- Vivado / AMD（若日后使用）----
 .Xil/
 *.cache/

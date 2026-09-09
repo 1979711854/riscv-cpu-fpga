@@ -1,7 +1,7 @@
 //============================================================================
 // alu_ctrl.v — ALU 精细译码（组合）
 // 功能：结合 main_ctrl 的粗粒度 ALUOp 与指令的 funct3/funct7/opcode，
-//       输出 4 bit 的 alu_ctrl 给 alu.v。
+//       输出 4 bit 的 alu_ctrl 来控制 alu.v。
 // 端口：
 //   alu_op    = 2 bit（来自 main_ctrl，建议语义见 defs.v 注释）
 //   funct3    = inst[14:12]
@@ -21,20 +21,59 @@
 //     funct3=111: AND
 //   注意：OP_IMM 的 addi(000)/sltiu/slti/xori/ori/andi/slli/srli/srai
 //   与 R 型共用上面的译码，靠 opcode5 区分 add/sub、srl/sra 等。
-//   先实现“算数逻辑 + 移位 + 比较”，其余看进度。
+
 //============================================================================
 `include "defs.v"
 
 module alu_ctrl (
-    input  wire [1:0] alu_op,
+    input  wire [1:0] alu_op,   
     input  wire [2:0] funct3,
-    input  wire       opcode5,
-    input  wire       funct7b5,
+    input  wire       opcode5,  //inst[5]
+    input  wire       inst30,  //指令第30位，inst[30]
     output reg  [3:0] alu_ctrl
 );
 
-    // TODO：照上面的真值表写 always @(*) case(...)
+
     always@(*) begin
-        
+        case(alu_op)
+            `ALU_OP_ADD: begin
+            // ALU_OP_ADD：恒加法 
+            // 适用于：lw, sw, lui, auipc, jal, jalr, addi
+                alu_ctrl = `ALU_ADD;
+            end
+
+            `ALU_OP_SUB: begin
+            // LU_OP_BRANCH：恒减法
+            // 适用于：beq, bne, blt, bge, bltu, bgeu
+                alu_ctrl = `ALU_SUB;
+            end
+
+            `ALU_OP_ALU: begin
+                case(funct3)
+                    3'b000: begin
+                    // opcode5=1（R型）且 inst30=1 → SUB，否则 → ADD
+                        alu_ctrl = (opcode5 & inst30) ? `ALU_SUB : `ALU_ADD;
+                    end
+
+                    3'b001: alu_ctrl = `ALU_SLL;
+                    3'b010: alu_ctrl = `ALU_SLT;
+                    3'b011: alu_ctrl = `ALU_SLTU;
+                    3'b100: alu_ctrl = `ALU_XOR;
+
+                    3'b101: begin
+                    // inst30=1 → SRA，否则 → SRL
+                        alu_ctrl = inst30 ? `ALU_SRA : `ALU_SRL;
+                    end
+                
+                    3'b110: alu_ctrl = `ALU_OR;
+                    3'b111: alu_ctrl = `ALU_AND;
+
+                    default: alu_ctrl = `ALU_ADD;
+                endcase
+            end
+
+            default: alu_ctrl = `ALU_ADD;
+        endcase
     end
+    
 endmodule
