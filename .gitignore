@@ -23,6 +23,9 @@ $RECYCLE.BIN/
 /pds/*/run*/
 /pds/**/*.wdb
 
+# PDS 工程锁文件（每次打开 PDS 都会变，本机私有，不入库）
+*.pds.lock
+
 # ---- Vivado / AMD（若日后使用）----
 .Xil/
 *.cache/
