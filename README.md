@@ -114,6 +114,44 @@ git push origin main
 | `refactor:` | 代码重构 | `refactor: 优化控制单元代码` |
 
 
+### 仿真工具（iverilog + GTKWave）
+
+本项目使用 **Icarus Verilog (`iverilog`)** 进行仿真编译，使用 **GTKWave** 查看波形图，适合快速验证模块。
+
+#### 安装方法（Windows + Scoop）
+
+如果你已经安装了 Scoop（包管理器），可以直接在 PowerShell 中执行：
+
+```powershell
+# 添加 extras 软件库（gtkwave 在这个库里）
+scoop bucket add extras
+
+# 安装 iverilog 和 gtkwave
+scoop install iverilog gtkwave
+```
+
+安装完成后，验证是否成功：
+
+```powershell
+iverilog -V
+gtkwave -V
+```
+
+如果看到版本号输出，说明安装成功。
+
+
+使用方法：
+
+```powershell
+# 进入仓库根目录
+cd d:\riscv-cpu-fpga
+
+# 在 VSCode 终端中执行：
+# Terminal -> Run Task -> Run All Verilog Simulations and Waveforms
+# 或直接在任务面板选择该任务
+```
+
+
 ## 📂 PDS工程如何打开（队友必看）
 
 > **🚀 工程位置**

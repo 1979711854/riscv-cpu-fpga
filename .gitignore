@@ -12,6 +12,14 @@ $RECYCLE.BIN/
 *.jou
 *.log
 
+# ---- Icarus Verilog / GTKWave 仿真生成物（本地产物，不入仓）----
+*.vcd
+*.vvp
+
+# ---- 目录下的本地调试、日志与临时产物 ----
+*.tmp
+*.bak
+
 # ---- Pango PDS（紫光同创）----
 # PDS 工程统一放 pds/ 下；以下按相对路径忽略其生成物，
 # 避免误伤仓库根 sim/（我们的 testbench 需要入库）。

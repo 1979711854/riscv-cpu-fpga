@@ -34,5 +34,7 @@ module alu_ctrl (
 );
 
     // TODO：照上面的真值表写 always @(*) case(...)
-
+    always@(*) begin
+        
+    end
 endmodule

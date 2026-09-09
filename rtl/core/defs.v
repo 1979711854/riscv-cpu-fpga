@@ -17,16 +17,16 @@
 `define OP_OP      7'b0110011
 
 //------ ALU 运算码（建议编码，自己实现 alu 与 alu_ctrl 时保持一致）------
-`define ALU_ADD  4'b0000
-`define ALU_SUB  4'b0001
-`define ALU_AND  4'b0010
-`define ALU_OR   4'b0011
-`define ALU_XOR  4'b0100
-`define ALU_SLL  4'b0101
-`define ALU_SRL  4'b0110
-`define ALU_SRA  4'b0111
-`define ALU_SLT  4'b1000
-`define ALU_SLTU 4'b1001
+`define ALU_ADD  4'b0000    //加法
+`define ALU_SUB  4'b0001    //减法
+`define ALU_AND  4'b0010    //与
+`define ALU_OR   4'b0011    //或
+`define ALU_XOR  4'b0100    //异或
+`define ALU_SLL  4'b0101    //逻辑左移
+`define ALU_SRL  4'b0110    //逻辑右移
+`define ALU_SRA  4'b0111    //算术右移
+`define ALU_SLT  4'b1000    //有符号小于则置位
+`define ALU_SLTU 4'b1001    //无符号小于则置位
 // 若你还想加 ALU_PASS_B 之类（LUI 直接用），自行扩展并在 defs 说明
 
 //------ 操作数 A 选择（main_ctrl 输出 alu_src_a）------
