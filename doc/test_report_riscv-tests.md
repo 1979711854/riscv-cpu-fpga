@@ -5,15 +5,21 @@
      `imem.hex` / `dmem.hex`（另出合并的 `mem.hex`），`sim/tb_riscv.v` 监控
      core 对 tohost 的 store，判定 PASS / FAIL / TIMEOUT。
 
-运行方式（两种任选）：
+运行方式：
 
 ```powershell
-# 有 riscv-tests 源码（需联网 clone 到 third_party/riscv-tests）
+# 直接跑即可 —— 会自动用仓库里随附的基线 ELF（third_party/riscv-tests-elf/）
 scripts\run_riscv_tests.ps1
 
-# 只有现成 ELF（无需联网，用于快速回归）
-scripts\run_riscv_tests.ps1 -ElfDir riscv32-FPGA-pds\riscv-tests-run\build
+# 有 riscv-tests 源码（第三方 clone 到 third_party/riscv-tests）时会改为从源码编译
+# 也可以用 -ElfDir 显式指定一批 ELF
+scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 ```
+
+> 那 42 个基线 ELF 是**有意入库**的：上游 riscv-tests 会变（例如 `fence_i` 的
+> 自修改目标在不同版本里放在 `.text` 还是 `.data` 不一样），重新 clone 未必复现
+> 同一批二进制，基线漂移会让人误判成自己改坏了 CPU。来源与再生成方式见
+> `third_party/riscv-tests-elf/README.md`。
 
 ## 当前结果：41 PASS / 1 FAIL / 0 TIMEOUT（共 42）
 

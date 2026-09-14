@@ -79,7 +79,10 @@
 - **上本地板卡**：`pds/RV32I_1/RV32I_1.fdc` 目前仍指向**远程 FPGA 平台**；新增的
   `led`/`key`/`uart_rx` 引脚以注释形式预留（盘古 MES2L200HP 实测引脚已填好）。
   未指定 LOC 会让 place & route 失败（compile/synthesize 不受影响）。
-- **补 riscv-tests 源码**：放到 `third_party/riscv-tests`（需联网 clone）。
-  没有源码时用 `scripts\run_riscv_tests.ps1 -ElfDir <含 *.elf 的目录>` 也能全量回归。
+- **补 riscv-tests 源码**（可选）：放到 `third_party/riscv-tests`（需联网 clone）。
+  **不补也能全量回归** —— `scripts\run_riscv_tests.ps1` 不带参数时会自动回退到随附的
+  基线 ELF（`third_party/riscv-tests-elf/`，42 个，已入库，约 450KB）。
+  之所以把二进制入库：上游 riscv-tests 会变，重新 clone 未必复现同一批二进制，
+  基线漂移会让人误以为是自己改坏了 CPU。详见该目录的 README。
 - **高阶任务**（详见 `doc/spec.md` §6）：2 路组相联 I/D Cache、BTB + 完整异常/中断、边缘 AI。
   注意：加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"，否则 `fence_i` 会失败。

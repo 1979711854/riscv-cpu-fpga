@@ -48,6 +48,12 @@ $RECYCLE.BIN/
 *.map
 *.dump
 
+# 例外：riscv-tests 的预编译 ELF 要入库。
+# 它们是回归基线的"金标准样本"——上游 riscv-tests 会变，重新 clone 未必复现出
+# 同一批二进制，基线一旦悄悄漂移会让人误以为是自己改坏了 CPU。共 42 个、约 450KB。
+# 来源与再生成方式见 third_party/riscv-tests-elf/README.md
+!third_party/riscv-tests-elf/*.elf
+
 # ---- PDS 工程生成物（只保留 .pds / .fdc / firmware 快照）----
 /pds/**/compile/
 /pds/**/device_map/

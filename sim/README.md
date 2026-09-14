@@ -34,7 +34,7 @@
 ```powershell
 scripts\run_sim.ps1                       # 全部单测
 scripts\run_sim.ps1 -Testbench sim/tb_gpio.v -NoWave
-scripts\run_riscv_tests.ps1 -ElfDir <含 *.elf 的目录>
+scripts\run_riscv_tests.ps1               # 全量回归（自动用随附的基线 ELF）
 scripts\run_coremark.ps1 -Iter 1
 scripts\run_demo.ps1
 ```
