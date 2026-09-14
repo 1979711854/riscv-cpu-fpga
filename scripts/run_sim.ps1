@@ -13,7 +13,8 @@ $simRoot = Join-Path $repoRoot "sim"
 # 需要外部程序镜像(hex)的测试台，由专用脚本运行，不参与 "Run All"
 #   sim/tb_riscv.v    -> scripts/run_riscv_tests.ps1
 #   sim/tb_coremark.v -> scripts/run_coremark.ps1
-$externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_template.v")
+#   sim/tb_demo.v     -> scripts/run_demo.ps1（跑整个 SoC，还要编 rtl/top）
+$externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_demo.v", "tb_template.v")
 
 # 编译哪些 RTL：core + periph。
 # 注意 1：存储器模型 imem/bram 在 testbench 里自带（行为级），所以【不要】编译 rtl/mem，

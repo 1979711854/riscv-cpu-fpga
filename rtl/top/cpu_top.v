@@ -2,28 +2,43 @@
 // ============================================================================
 // cpu_top —— SoC 顶层
 // ----------------------------------------------------------------------------
-//    core ──访存口──> mem_bus ──> RAM / 兼容区 MMIO / 外设区
-//                      │
-//                      └──写选通──> uart_tx（外设在 rtl/periph/）
+//   core ──取指口──┐
+//                  ├─> mem_bus ──> 统一存储器（指令+数据）
+//   core ──访存口──┘      │
+//                         ├──写选通──> uart_tx / uart_rx / gpio
+//                         └──读数据<── 外设读回 mux
 //
-// 地址比较全部收敛到 mem_bus（见 rtl/bus/addr_map.vh），顶层不再自己比地址。
+// 地址译码全部收敛在 mem_bus（映射见 rtl/bus/addr_map.vh），顶层只做连线。
 // ============================================================================
 module cpu_top (
     input  wire        clk,
     input  wire        resetn,
-    output wire [31:0] pc,
+    output wire [31:0] pc,          // 板级调试/示波用
+
+    // ---- UART ----
     output wire        uart_tx,
+    input  wire        uart_rx,
+
+    // ---- GPIO ----
+    output wire [7:0]  led,         // 输出高电平点亮
+    input  wire [7:0]  key,         // 按键低有效：按下 = 0
+
+    // ---- 程序结束标志 ----
     output wire        done
 );
-    // ---- core ↔ mem_bus 的访存口 ----
+    // ---- core ↔ mem_bus：取指口 ----
+    wire [12:0] imem_addr;
+    wire [31:0] imem_rd;
+
+    // ---- core ↔ mem_bus：访存口 ----
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
 
     // ---- mem_bus ↔ 外设 ----
-    wire        uart_tx_we;
+    wire        gpio_we, uart_tx_we, uart_rx_ack;
     wire [31:0] periph_wdata;
-    wire [31:0] cycle_cnt;          // 暂未使用（Step 3 接 TIMER 读回）
+    wire [31:0] gpio_rdata, uart_rx_rdata;
 
     // ---- 程序结束标志 ----
     // 两个来源：CoreMark 的 0x7FF8 协议（start.S 里 main 返回后写），
@@ -40,28 +55,31 @@ module cpu_top (
     assign done = done_mmio | halt;
 
     mem_bus u_bus (
-        .clk         (clk),
-        .resetn      (resetn),
-        .mem_addr    (mem_addr),
-        .mem_wdata   (mem_wdata),
-        .mem_byte_en (mem_byte_en),
-        .mem_we      (mem_we),
-        .mem_re      (mem_re),
-        .mem_rdata   (mem_rdata),
-        .gpio_we     (),                       // Step 3 接 gpio
-        .uart_tx_we  (uart_tx_we),
-        .uart_rx_ack (),                       // Step 3 接 uart_rx
-        .periph_wdata(periph_wdata),
-        .gpio_rdata  (32'd0),                  // Step 3 接 gpio
-        .uart_rx_rdata(32'd0),                 // Step 3 接 uart_rx
-        .done        (done_mmio),
-        .cycle_cnt   (cycle_cnt)
+        .clk          (clk),
+        .resetn       (resetn),
+        .imem_addr    (imem_addr),
+        .imem_rd      (imem_rd),
+        .mem_addr     (mem_addr),
+        .mem_wdata    (mem_wdata),
+        .mem_byte_en  (mem_byte_en),
+        .mem_we       (mem_we),
+        .mem_re       (mem_re),
+        .mem_rdata    (mem_rdata),
+        .gpio_we      (gpio_we),
+        .uart_tx_we   (uart_tx_we),
+        .uart_rx_ack  (uart_rx_ack),
+        .periph_wdata (periph_wdata),
+        .gpio_rdata   (gpio_rdata),
+        .uart_rx_rdata(uart_rx_rdata),
+        .done         (done_mmio)
     );
 
     core u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),
+        .imem_addr   (imem_addr),
+        .imem_rd     (imem_rd),
         .mem_addr    (mem_addr),
         .mem_wdata   (mem_wdata),
         .mem_byte_en (mem_byte_en),
@@ -71,14 +89,37 @@ module cpu_top (
         .ebreak      (ebreak)
     );
 
+    // ------------------------------------------------------------------
+    // 外设
+    // ------------------------------------------------------------------
     // UART 发送：兼容区 0x7FFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
-    // 注意：UART busy 期间来的字符会被 FIFO 排队，不会丢（uart_tx 内含 1024 深 FIFO）。
-    uart_tx u_uart (
+    // uart_tx 内含 1024 深 FIFO，短时间连续写不会丢字符。
+    uart_tx u_uart_tx (
         .clk     (clk),
         .resetn  (resetn),
         .tx_data (periph_wdata[7:0]),
         .tx_start(uart_tx_we),
         .tx      (uart_tx),
         .busy    ()
+    );
+
+    // UART 接收：0x8000_000C，读操作会弹出 FIFO 头部（见 uart_rx.v 头注释）
+    uart_rx u_uart_rx (
+        .clk    (clk),
+        .resetn (resetn),
+        .ack    (uart_rx_ack),
+        .rdata  (uart_rx_rdata),
+        .rx     (uart_rx)
+    );
+
+    // GPIO：0x8000_0000 写 LED / 读回 {key, led}
+    gpio u_gpio (
+        .clk    (clk),
+        .resetn (resetn),
+        .we     (gpio_we),
+        .wdata  (periph_wdata),
+        .rdata  (gpio_rdata),
+        .led    (led),
+        .key    (key)
     );
 endmodule

@@ -1,0 +1,24 @@
+/* ============================================================================
+ * addr_map.h —— 外设地址映射（软件侧）
+ * ----------------------------------------------------------------------------
+ * 必须与 RTL 侧 rtl/bus/addr_map.vh 保持一致。改一处要同步改另一处。
+ * ==========================================================================*/
+#ifndef ADDR_MAP_H
+#define ADDR_MAP_H
+
+/* 外设区 0x8000_0000 起 */
+#define GPIO_BASE   0x80000000u   /* W: LED[7:0]      R: {key[7:0], led[7:0]}  */
+#define UART_TX     0x80000008u   /* W: 发送一个字符（取低字节）                  */
+#define UART_RX     0x8000000Cu   /* R: {valid[31], 23'b0, data[7:0]}，读会弹出一个 */
+#define TIMER       0x80000010u   /* R: 32 位自由跑周期计数器                     */
+
+/* 兼容区（CoreMark 移植层硬编码，本程序不用，列出仅供对照）
+ *   0x7FF4 R 周期计数   0x7FF8 W done   0x7FFC W UART 发送 */
+#define LEGACY_TIMER   0x00007FF4u
+#define LEGACY_DONE    0x00007FF8u
+#define LEGACY_UART_TX 0x00007FFCu
+
+/* 板上时钟：远程 FPGA 平台固定 27MHz（见 pds/RV32I_1/RV32I_1.fdc） */
+#define CPU_HZ      27000000u
+
+#endif /* ADDR_MAP_H */

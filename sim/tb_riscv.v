@@ -40,7 +40,7 @@ module cpu_tb_riscv;
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
-        .done(), .cycle_cnt()
+        .done()            // 周期计数器已从 mem_bus 去掉（无使用者）
     );
 
     initial clk = 1'b0;
