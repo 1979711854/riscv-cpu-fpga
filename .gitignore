@@ -38,6 +38,47 @@ $RECYCLE.BIN/
 *.vvp
 *.vcd
 
+# ---- 迁移期间：队友交接的原始目录（回归验证通过后可删）----
+/riscv32-FPGA-pds/
+
+# ---- 程序镜像与编译中间产物（由 scripts/ 再生成，不入库）----
+/sim/programs/
+*.elf
+*.o
+*.map
+*.dump
+
+# ---- PDS 工程生成物（只保留 .pds / .fdc / firmware 快照）----
+/pds/**/compile/
+/pds/**/device_map/
+/pds/**/place_route/
+/pds/**/report_timing/
+/pds/**/synthesize/
+/pds/**/generate_bitstream/
+/pds/**/constraint_check/
+/pds/**/log/
+/pds/**/logbackup/
+/pds/**/Design Editor/
+/pds/**/*.adf
+/pds/**/*.db
+/pds/**/*.prt
+/pds/**/*.pvf
+/pds/**/*.cmr
+/pds/**/*.vm
+/pds/**/*.snr
+/pds/**/*.netlist
+/pds/**/*.sbit
+/pds/**/*.smsk
+/pds/**/*.bgr
+/pds/**/*.pcf
+/pds/**/*.dmr
+/pds/**/*.rtp
+/pds/**/*.rtr
+/pds/**/*.prr
+/pds/**/*.plc
+/pds/**/*.csv
+/pds/**/impl.tcl
+
 # ---- Vivado / AMD（若日后使用）----
 .Xil/
 *.cache/

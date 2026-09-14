@@ -1,0 +1,20 @@
+{
+  // ===== Verilog 插件（mshr-h.veriloghdl）=====
+  // 默认 lint 工具是 xvlog(Vivado)，本机没装会报 "Failed to start tool: xvlog"，改成 iverilog
+  "verilog.linting.linter": "iverilog",
+  "verilog.linting.iverilog.arguments": "-g2012 -I${workspaceFolder}/rtl/core -I${workspaceFolder}/rtl/periph -I${workspaceFolder}/rtl/mem",
+  "verilog.linting.iverilog.runAtFileLocation": false,
+  "verilog.linting.iverilog.useWSL": false,
+
+  // ===== 编码 =====
+  // 遇到外部给的 GBK 文件时自动按内容识别，减少中文注释乱码
+  "files.autoGuessEncoding": true,
+
+  // ===== 性能：仿真产物不参与文件监视 =====
+  "files.watcherExclude": {
+    "**/*.vvp": true,
+    "**/*.vcd": true,
+    "**/sim/programs/**": true,
+    "**/pds/**/logbackup/**": true
+  }
+}

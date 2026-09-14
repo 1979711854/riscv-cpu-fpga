@@ -1,0 +1,52 @@
+# 补丁说明：coremark_tb.v 的 cycle_count 声明前移 + hex 路径参数化
+# 原始文件：coremark-run/coremark_tb.v
+# 声明前移是为了兼容 iverilog 14；路径改为 +IMEM/+DMEM plusarg 是可选项
+
+--- a/coremark_tb.v
++++ b/sim/tb_coremark.v
+@@ -19,10 +19,12 @@
+     input  wire        b_rst
+ );
+     reg [31:0] mem [0:8191];
++    reg [1023:0] hexpath;   // 由 +IMEM= / +DMEM= 覆盖；默认相对运行目录(sim/)
+     integer i;
+     initial begin
+         for (i = 0; i < 8192; i = i + 1) mem[i] = 32'd0;
+-        $readmemh("D:/riscv32-FPGA-pds/coremark-run/build/imem.hex", mem);
++        if (!$value$plusargs("IMEM=%s", hexpath)) hexpath = "programs/imem.hex";
++        $readmemh(hexpath, mem);
+     end
+     always @(posedge a_clk or posedge a_rst) begin
+         if (a_rst) a_rd_data <= 32'd0;
+@@ -53,10 +55,12 @@
+     input  wire        rd_rst
+ );
+     reg [31:0] mem [0:8191];
++    reg [1023:0] hexpath;   // 由 +IMEM= / +DMEM= 覆盖；默认相对运行目录(sim/)
+     integer i, k;
+     initial begin
+         for (i = 0; i < 8192; i = i + 1) mem[i] = 32'd0;
+-        $readmemh("D:/riscv32-FPGA-pds/coremark-run/build/dmem.hex", mem);
++        if (!$value$plusargs("DMEM=%s", hexpath)) hexpath = "programs/dmem.hex";
++        $readmemh(hexpath, mem);
+     end
+     always @(posedge wr_clk) begin
+         if (wr_en) begin
+@@ -75,6 +79,9 @@
+     reg         resetn;
+     wire [31:0] pc;
+ 
++    // 周期计数（提前声明：下面 core 例化就要用到 cycle_count）
++    reg [63:0] cycle_count;
++
+     core u_core (.clk(clk), .resetn(resetn), .pc(pc),
+                  .mmio_rd_data(cycle_count[31:0]));
+ 
+@@ -88,7 +95,6 @@
+     end
+ 
+     // 周期计数
+-    reg [63:0] cycle_count;
+     initial cycle_count = 0;
+     always @(posedge clk) begin
+         if (resetn) cycle_count <= cycle_count + 1;
