@@ -28,7 +28,8 @@ module cpu_tb_riscv;
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
-        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata)
+        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .ebreak()
     );
 
     // 统一存储器（指令+数据）的行为模型由本 tb 提供（sim/mem_model.vh）

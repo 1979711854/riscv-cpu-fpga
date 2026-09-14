@@ -10,7 +10,8 @@ module control (
     output reg         branch,
     output reg         jump,
     output reg         jump_reg,
-    output reg  [1:0]  wb_sel       // 0 = alu, 1 = mem, 2 = pc+4, 3 = imm(lui)
+    output reg  [1:0]  wb_sel,      // 0 = alu, 1 = mem, 2 = pc+4, 3 = imm(lui)
+    output reg         sys_ebreak   // EBREAK：置 1（阶段一作为"停机"钩子）
 );
     wire [6:0] opcode = instr[6:0];
     wire [2:0] funct3 = instr[14:12];
@@ -25,8 +26,9 @@ module control (
         mem_write = 1'b0;
         branch    = 1'b0;
         jump      = 1'b0;
-        jump_reg  = 1'b0;
-        wb_sel    = 2'b00;
+        jump_reg   = 1'b0;
+        wb_sel     = 2'b00;
+        sys_ebreak = 1'b0;
 
         case (opcode)
             7'b0110011: begin  // OP_REG
@@ -115,8 +117,27 @@ module control (
                 alu_op    = 5'd0;
             end
 
+            7'b0001111: begin  // MISC-MEM: FENCE (funct3=000) / FENCE.I (funct3=001)
+                // 两者都实现为 NOP，此处等价处理：
+                //   * 本设计没有 I/D Cache，也就没有需要"刷"的写缓冲或 Cache 行；
+                //   * 存储器已统一（rtl/mem/unified_mem.v），store 对后续取指天然可见，
+                //     FENCE.I 的语义已经由硬件结构本身保证。
+                // RISC-V 规范允许无 Cache 的实现把 FENCE/FENCE.I 当作 NOP。
+                // 所有控制信号保持初值 0 -> 该指令流过流水线但不提交任何状态。
+            end
+
+            7'b1110011: begin  // SYSTEM: ECALL / EBREAK
+                // funct3=000 时由 imm[11:0] 区分：0x000=ECALL，0x001=EBREAK。
+                //   ECALL  阶段一实现为 NOP。严格语义要跳 mtvec、写 mepc/mcause，
+                //          属高阶任务的完整异常机制。
+                //   EBREAK 作为【停机】钩子：置 sys_ebreak，由顶层停住/点亮 LED。
+                //          既方便演示程序收尾，也为将来接异常机制留出接口。
+                if (funct3 == 3'b000 && instr[31:20] == 12'h001)
+                    sys_ebreak = 1'b1;
+            end
+
             default: begin
-                // OP_FENCE / OP_SYSTEM / illegal -> no-op
+                // 非法指令 -> no-op
             end
         endcase
     end

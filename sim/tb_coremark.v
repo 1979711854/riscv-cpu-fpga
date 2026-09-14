@@ -27,7 +27,8 @@ module coremark_tb;
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
-        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata)
+        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .ebreak()
     );
 
     // mem_bus 自带周期计数器（0x7FF4 的读回源），与 tb 的 cycle_count 同时复位、

@@ -21,7 +21,12 @@ module core (
     output reg  [3:0]  mem_byte_en,
     output wire        mem_we,
     output wire        mem_re,
-    input  wire [31:0] mem_rdata
+    input  wire [31:0] mem_rdata,
+
+    // ---- 系统指令钩子 ----
+    // EBREAK 提交时给出一拍脉冲。阶段一顶层用它"停机"（点亮 done LED），
+    // 将来接完整异常机制时，这里就是 trap 的入口。
+    output wire        ebreak
 );
 
     // ================= IF =================
@@ -48,12 +53,14 @@ module core (
     reg [31:0] id_ex_pc, id_ex_rdata1, id_ex_rdata2, id_ex_imm;
     reg [4:0]  id_ex_rd, id_ex_rs1, id_ex_rs2;
     reg [2:0]  id_ex_funct3;
+    reg        id_ex_sys_ebreak;
     // EX/MEM
     reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
     reg [1:0]  ex_mem_wb_sel;
     reg [31:0] ex_mem_alu_result, ex_mem_wdata, ex_mem_pc, ex_mem_imm;
     reg [4:0]  ex_mem_rd;
     reg [2:0]  ex_mem_funct3;
+    reg        ex_mem_sys_ebreak;
     // MEM/WB
     reg        mem_wb_reg_write;
     reg [1:0]  mem_wb_wb_sel;
@@ -69,6 +76,7 @@ module core (
     assign mem_we   = ex_mem_mem_write;
     assign mem_re   = ex_mem_mem_read;
     assign mem_addr = ex_mem_alu_result;
+    assign ebreak   = ex_mem_sys_ebreak;
 
     // 指令存储器已移出到 mem_bus（与数据共用一块双端口 BRAM 的 A 口）。
     // 注意：这里送出的 imem_addr 必须是下面 mux 【之后】的值，不是 pc_r ——
@@ -100,18 +108,20 @@ module core (
     wire        reg_write, alu_a_sel, alu_b_sel, mem_read, mem_write, branch, jump, jump_reg;
     wire [4:0]  alu_op;
     wire [1:0]  wb_sel;
+    wire        sys_ebreak;
     control u_ctrl (
-        .instr     (if_id_instr),
-        .reg_write (reg_write),
-        .alu_a_sel (alu_a_sel),
-        .alu_b_sel (alu_b_sel),
-        .alu_op    (alu_op),
-        .mem_read  (mem_read),
-        .mem_write (mem_write),
-        .branch    (branch),
-        .jump      (jump),
-        .jump_reg  (jump_reg),
-        .wb_sel    (wb_sel)
+        .instr      (if_id_instr),
+        .reg_write  (reg_write),
+        .alu_a_sel  (alu_a_sel),
+        .alu_b_sel  (alu_b_sel),
+        .alu_op     (alu_op),
+        .mem_read   (mem_read),
+        .mem_write  (mem_write),
+        .branch     (branch),
+        .jump       (jump),
+        .jump_reg   (jump_reg),
+        .wb_sel     (wb_sel),
+        .sys_ebreak (sys_ebreak)
     );
 
     wire [31:0] rdata1, rdata2;
@@ -303,6 +313,7 @@ module core (
             id_ex_rs1       <= 5'd0;
             id_ex_rs2       <= 5'd0;
             id_ex_funct3    <= 3'd0;
+            id_ex_sys_ebreak <= 1'b0;
         end else if (!div_stall) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
@@ -322,6 +333,7 @@ module core (
             id_ex_rs1       <= rs1;
             id_ex_rs2       <= rs2;
             id_ex_funct3    <= if_id_instr[14:12];
+            id_ex_sys_ebreak <= sys_ebreak;
         end
     end
 
@@ -338,6 +350,7 @@ module core (
             ex_mem_imm        <= 32'd0;
             ex_mem_rd         <= 5'd0;
             ex_mem_funct3     <= 3'd0;
+            ex_mem_sys_ebreak <= 1'b0;
         end else begin
             ex_mem_reg_write  <= id_ex_reg_write;
             ex_mem_mem_read   <= id_ex_mem_read;
@@ -349,6 +362,7 @@ module core (
             ex_mem_imm        <= id_ex_imm;
             ex_mem_rd         <= id_ex_rd;
             ex_mem_funct3     <= id_ex_funct3;
+            ex_mem_sys_ebreak <= id_ex_sys_ebreak;
         end
     end
 

@@ -25,6 +25,20 @@ module cpu_top (
     wire [31:0] periph_wdata;
     wire [31:0] cycle_cnt;          // 暂未使用（Step 3 接 TIMER 读回）
 
+    // ---- 程序结束标志 ----
+    // 两个来源：CoreMark 的 0x7FF8 协议（start.S 里 main 返回后写），
+    // 以及程序执行 EBREAK。
+    // 注意 EBREAK 是【软停机】：只置标志、不停 PC —— 程序应在 EBREAK 后跟一个
+    // 自旋循环（riscv-tests 的 pass/fail 例程、CoreMark 的 start.S 都是这么做的）。
+    wire        ebreak;
+    wire        done_mmio;
+    reg         halt;
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn)     halt <= 1'b0;
+        else if (ebreak) halt <= 1'b1;
+    end
+    assign done = done_mmio | halt;
+
     mem_bus u_bus (
         .clk         (clk),
         .resetn      (resetn),
@@ -40,7 +54,7 @@ module cpu_top (
         .periph_wdata(periph_wdata),
         .gpio_rdata  (32'd0),                  // Step 3 接 gpio
         .uart_rx_rdata(32'd0),                 // Step 3 接 uart_rx
-        .done        (done),
+        .done        (done_mmio),
         .cycle_cnt   (cycle_cnt)
     );
 
@@ -53,7 +67,8 @@ module cpu_top (
         .mem_byte_en (mem_byte_en),
         .mem_we      (mem_we),
         .mem_re      (mem_re),
-        .mem_rdata   (mem_rdata)
+        .mem_rdata   (mem_rdata),
+        .ebreak      (ebreak)
     );
 
     // UART 发送：兼容区 0x7FFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
