@@ -1,6 +1,14 @@
 # riscv-tests 预编译 ELF（回归基线样本）
 
-这是 riscv-tests `rv32ui` 全部 **42 个测试的预编译 ELF**，约 450KB。
+这是 riscv-tests 的 **50 个预编译 ELF**，约 650KB：
+
+| 套件 | 数量 | 测试 |
+|---|---|---|
+| `rv32ui` | 42 | 基础整数指令集（add/beq/lw/sw/jal/… 含 `fence_i`） |
+| `rv32um` | 8 | M 扩展：`mul mulh mulhsu mulhu div divu rem remu` |
+
+`rv32um` 这 8 项是 2026-09-15 补进来的：本 CPU 实现了 M 扩展、CoreMark 也用
+`-march=rv32im` 编译，但此前回归只覆盖 rv32ui。补入后 8 项一次全过。
 
 ## 为什么把二进制入库
 
@@ -30,6 +38,9 @@
           -I<env> -I<isa/macros/scalar> -T<scripts/riscv_tests_link.ld> <test>.S -o <test>.elf
 ```
 
+`rv32um` 那 8 个由队友用同样方式编译（原件在
+`riscv32-FPGA-pds/riscv-tests-run/build_um/`，编译参数未单独记录）。
+
 > ⚠️ **上游的确切 commit 未知**（源码目录 `D:\riscv-tests` 已不在本机）。
 > 这也正是这批二进制要入库的原因 —— 它们就是被钉住的那一版。
 
@@ -46,7 +57,7 @@ scripts\run_riscv_tests.ps1
 ## 用这批 ELF 测得的基线
 
 ```
-41 PASS / 1 FAIL / 0 TIMEOUT
+49 PASS / 1 FAIL / 0 TIMEOUT   （共 50 项）
 唯一 FAIL: ma_data（未对齐访问，RISC-V 规范允许，属架构取舍）
 ```
 
@@ -54,7 +65,7 @@ scripts\run_riscv_tests.ps1
 
 ## 校验
 
-`SHA256SUMS` 是这 42 个文件的校验和。如果你重新克隆源码编译了一批，可以对比：
+`SHA256SUMS` 是这 50 个文件的校验和。如果你重新克隆源码编译了一批，可以对比：
 
 ```bash
 cd third_party/riscv-tests-elf && sha256sum -c SHA256SUMS

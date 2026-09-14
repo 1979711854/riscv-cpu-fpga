@@ -152,11 +152,11 @@ id_ex_pc  = pc_r - 12          // 正在 EX 执行
 | 单元 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` | ALU / 除法器 / UART 发送 FIFO |
 | 单元 | `tb_control` | 译码器，重点覆盖 P1 补的 4 条指令 |
 | 单元 | `tb_gpio` `tb_uart_rx` | 外设 |
-| 集成 | `tb_riscv` | riscv-tests 全量回归（42 项） |
+| 集成 | `tb_riscv` | riscv-tests 全量回归（50 项：rv32ui + rv32um） |
 | 集成 | `tb_coremark` | CoreMark 跑分 |
 | 集成 | `tb_demo` | 整个 SoC + 演示程序端到端 |
 
-**回归纪律**：改动 RTL 后，riscv-tests 的 41/1/0 与 CoreMark 的 **1,529,499** 周期
+**回归纪律**：改动 RTL 后，riscv-tests 的 49/1/0 与 CoreMark 的 **1,529,499** 周期
 必须同时保持不变（除非本次改动的目的就是改变某一项）。
 
 ## 6. 已知限制与后续方向

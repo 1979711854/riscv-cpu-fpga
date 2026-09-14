@@ -1,4 +1,4 @@
-# riscv-tests 回归报告（RV32I 五级流水线 CPU）
+# riscv-tests 回归报告（RV32IM 五级流水线 CPU）
 
 最近更新：2026-09-15
 方法：不改 CPU、不改 riscv-tests 仓库；`scripts/elf2mem.py` 把 ELF 拆成
@@ -11,23 +11,28 @@
 # 直接跑即可 —— 会自动用仓库里随附的基线 ELF（third_party/riscv-tests-elf/）
 scripts\run_riscv_tests.ps1
 
-# 有 riscv-tests 源码（第三方 clone 到 third_party/riscv-tests）时会改为从源码编译
+# 有 riscv-tests 源码（clone 到 third_party/riscv-tests）时会改为从源码编译
 # 也可以用 -ElfDir 显式指定一批 ELF
 scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 ```
 
-> 那 42 个基线 ELF 是**有意入库**的：上游 riscv-tests 会变（例如 `fence_i` 的
+> 那 50 个基线 ELF 是**有意入库**的：上游 riscv-tests 会变（例如 `fence_i` 的
 > 自修改目标在不同版本里放在 `.text` 还是 `.data` 不一样），重新 clone 未必复现
 > 同一批二进制，基线漂移会让人误判成自己改坏了 CPU。来源与再生成方式见
 > `third_party/riscv-tests-elf/README.md`。
 
-## 当前结果：41 PASS / 1 FAIL / 0 TIMEOUT（共 42）
+## 当前结果：49 PASS / 1 FAIL / 0 TIMEOUT（共 50）
 
 | 分类 | 数量 | 测试 |
 |------|------|------|
-| PASS | 41 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
+| PASS（rv32ui） | 41 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
+| PASS（rv32um） | 8 | **div divu mul mulh mulhsu mulhu rem remu** |
 | FAIL | 1 | ma_data（未对齐访问，架构取舍，见下） |
 | TIMEOUT | 0 | —— |
+
+> **rv32um 这 8 项是 2026-09-15 补上的。** 本 CPU 实现了 M 扩展、CoreMark 也是用
+> `-march=rv32im` 编译的，但此前回归只覆盖 rv32ui，M 扩展只有手写的 `tb_alu_div`
+> 在撑。补进官方测试后 8 项全部一次通过，M 扩展自此有了 riscv-tests 背书。
 
 ---
 
@@ -112,7 +117,7 @@ CoreMark 周期数也一字不差。** 说明这次改动没有引入任何时�
 
 每次改动 RTL 后，以下两条必须同时满足：
 
-1. **本报告的 41/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
+1. **本报告的 49/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
 2. **CoreMark ITER=1 的周期数一字不差**（当前基线：**1,529,499** 周期，
    CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`）
 

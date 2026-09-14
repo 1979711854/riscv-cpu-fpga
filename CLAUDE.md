@@ -16,13 +16,15 @@
 | ① RV32I 基础整数指令集 | ✅ **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
 | ③ 集成基础外设（UART/GPIO） | ✅ 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
 
-- 验证：riscv-tests rv32ui → **41 PASS / 1 FAIL / 0 TIMEOUT**
+- 验证：riscv-tests rv32ui + rv32um（50 项）→ **49 PASS / 1 FAIL / 0 TIMEOUT**
+  （M 扩展的 mul/mulh/mulhsu/mulhu/div/divu/rem/remu 8 项也纳入回归 —— CPU 实现了
+   M 扩展且 CoreMark 用 `-march=rv32im` 编译，此前只有手写单测覆盖）
   （唯一 FAIL 是 `ma_data` 未对齐访问，RISC-V 规范允许，属架构取舍）
 - CoreMark：ITER=1 → **1,529,499 周期**，CoreMark/MHz = 0.6538（27MHz 下 ITER≈200 约 10s）
 - 演示程序：`scripts\run_demo.ps1`（读按键 → 写 LED → 串口打印 + 串口回显）
 - PDS：远程板卡上已验证可正常跑分；bitstream 流程已跑通
 
-**回归纪律（重要）**：改动 RTL 后，riscv-tests 的 41/1/0 与 CoreMark 的 1,529,499 周期
+**回归纪律（重要）**：改动 RTL 后，riscv-tests 的 49/1/0 与 CoreMark 的 1,529,499 周期
 必须同时保持不变（除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
 
 ## 仓库结构（以此为准，勿再新建顶层目录）
@@ -81,7 +83,7 @@
   未指定 LOC 会让 place & route 失败（compile/synthesize 不受影响）。
 - **补 riscv-tests 源码**（可选）：放到 `third_party/riscv-tests`（需联网 clone）。
   **不补也能全量回归** —— `scripts\run_riscv_tests.ps1` 不带参数时会自动回退到随附的
-  基线 ELF（`third_party/riscv-tests-elf/`，42 个，已入库，约 450KB）。
+  基线 ELF（`third_party/riscv-tests-elf/`，50 个 = rv32ui 42 + rv32um 8，已入库，约 650KB）。
   之所以把二进制入库：上游 riscv-tests 会变，重新 clone 未必复现同一批二进制，
   基线漂移会让人误以为是自己改坏了 CPU。详见该目录的 README。
 - **高阶任务**（详见 `doc/spec.md` §6）：2 路组相联 I/D Cache、BTB + 完整异常/中断、边缘 AI。

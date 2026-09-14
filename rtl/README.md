@@ -30,5 +30,5 @@ top.v     早期 LED 点灯练习工程顶层（保留，不在 PDS 源文件列
 2. **总线时序契约**（`bus/mem_bus.v` 头注释）：写通路零寄存器、读路径固定 1 拍。
    破坏任一条都会让 load 读到错值，且没有 stall 机制能救。
 
-改完 RTL 请跑回归：riscv-tests 的 41/1/0 与 CoreMark 的 1,529,499 周期必须同时不变。
+改完 RTL 请跑回归：riscv-tests 的 49/1/0 与 CoreMark 的 1,529,499 周期必须同时不变。
 详见 `doc/test_report_riscv-tests.md`。

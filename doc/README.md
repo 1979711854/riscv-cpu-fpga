@@ -16,4 +16,4 @@
 
 1. `spec.md` §3.1 **取指时序不变量**与 §4.1 **总线时序契约** —— 改 `core.v` / `mem_bus.v` 前必读
 2. `test_report_riscv-tests.md` 末尾的**回归纪律** —— 改完 RTL 后
-   riscv-tests 的 41/1/0 与 CoreMark 的 1,529,499 周期必须同时不变
+   riscv-tests 的 49/1/0 与 CoreMark 的 1,529,499 周期必须同时不变

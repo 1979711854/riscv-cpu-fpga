@@ -53,7 +53,8 @@
 
 | 项目 | 结果 |
 |---|---|
-| riscv-tests rv32ui（42 项） | **41 PASS / 1 FAIL / 0 TIMEOUT**，唯一 FAIL 是 `ma_data`（未对齐访问，架构取舍） |
+| riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**，唯一 FAIL 是 `ma_data`（未对齐访问，架构取舍） |
+| └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
 | CoreMark v1.0（ITER=1） | **1,529,499 周期 / 0.653809 CoreMark/MHz** |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
 | 单元测试 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` `tb_control` `tb_gpio` `tb_uart_rx` 全部 PASS |

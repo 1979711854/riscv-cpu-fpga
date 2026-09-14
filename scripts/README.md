@@ -23,7 +23,7 @@ scripts\run_sim.ps1 -NoWave
 > `run_riscv_tests.ps1` 的三条路，按优先级：
 > 1. `-ElfDir <目录>` —— 直接用指定目录里的现成 ELF
 > 2. `third_party/riscv-tests` 源码存在 —— 从源码编译（需联网 clone）
-> 3. **都不满足 —— 自动回退到随附的基线 ELF `third_party/riscv-tests-elf/`**（42 个，已入库）
+> 3. **都不满足 —— 自动回退到随附的基线 ELF `third_party/riscv-tests-elf/`**（50 个，已入库）
 >
 > 所以**不带参数直接跑就能全量回归**，不依赖网络，也不依赖 `riscv32-FPGA-pds/`。
 > 那批 ELF 为什么要入库、怎么重新生成，见 `third_party/riscv-tests-elf/README.md`。
