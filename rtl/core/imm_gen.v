@@ -1,28 +1,22 @@
-//============================================================================
-// imm_gen.v — 立即数扩展（I/S/B/U/J 五类）
-// 功能：根据指令的低 7 位 opcode 判断类型，把指令里的立即数字段
-//       符号扩展/构造为 32 位，并【预对齐】输出。
-// 端口：
-//   inst = 当前指令；imm  = 扩展后的立即数
-// 设计要点（重要约定，顶层依赖它）：
-//   - I 型(lw/addi/jalr 等): imm = sext(inst[31:20])
-//   - S 型(sw/sb/sh)      : imm = sext({inst[31:25], inst[11:7]})
-//   - B 型(beq 等)        : 拆出 {31,7,30:25,11:8} 后【左移1位】再符号扩展
-//                          （因为 B 型目标 = pc + imm，imm 隐含 *2）
-//   - U 型(lui/auipc)     : imm = {inst[31:12], 12'b0}（高 20 位放到高，低 12 补 0）
-//   - J 型(jal)           : 拆出后【左移1位】再符号扩展
-//   这样顶层写目标时直接 pc+imm 即可，不必再乘 2。
-// 提示：R 型没有立即数，但本模块只在有 imm 的指令里被用到，不影响。
-//============================================================================
-`include "defs.v"
-
+`timescale 1ns/1ps
 module imm_gen (
-    input  wire [31:0] inst,
-    output wire [31:0] imm
+    input  wire [31:0] instr,
+    output reg  [31:0] imm
 );
-
-    // TODO 实现：一个 case(inst[6:0]) 按五类指令构造 imm。
-    // 注意 S/B 型把 inst[31:25] 和 inst[11:7] 拼在一起；B/J 别忘了 <<1。
-    // （建议拆成可读的拼接：wire [31:0] imm_i = {{20{inst[31]}}, inst[31:20]}; …）
-
+    always @(*) begin
+        case (instr[6:0])
+            7'b0010011, 7'b0000011, 7'b1100111:  // I-type: OP_IMM, OP_LOAD, OP_JALR
+                imm = {{20{instr[31]}}, instr[31:20]};
+            7'b0100011:                          // S-type: OP_STORE
+                imm = {{20{instr[31]}}, instr[31:25], instr[11:7]};
+            7'b1100011:                          // B-type: OP_BRANCH
+                imm = {{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
+            7'b0110111, 7'b0010111:              // U-type: OP_LUI, OP_AUIPC
+                imm = {instr[31:12], 12'b0};
+            7'b1101111:                          // J-type: OP_JAL
+                imm = {{11{instr[31]}}, instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
+            default:
+                imm = 32'd0;
+        endcase
+    end
 endmodule
