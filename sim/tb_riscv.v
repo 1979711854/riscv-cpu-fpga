@@ -86,7 +86,26 @@ module cpu_tb_riscv;
     reg         resetn;
     wire [31:0] pc;
 
-    core u_core (.clk(clk), .resetn(resetn), .pc(pc));
+    // core ↔ mem_bus 的访存口
+    wire [31:0] mem_addr, mem_wdata, mem_rdata;
+    wire [3:0]  mem_byte_en;
+    wire        mem_we, mem_re;
+
+    core u_core (
+        .clk(clk), .resetn(resetn), .pc(pc),
+        .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
+        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata)
+    );
+
+    // 存储器本体（imem 仍由 core 例化，bram 由 mem_bus 例化）由本 tb 提供行为级模型
+    mem_bus u_bus (
+        .clk(clk), .resetn(resetn),
+        .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
+        .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
+        .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
+        .done(), .cycle_cnt()
+    );
 
     initial clk = 1'b0;
     always #5 clk = ~clk;   // 100MHz
@@ -116,12 +135,14 @@ module cpu_tb_riscv;
         tohost_val = 32'd0;
         tohost_written = 1'b0;
     end
+    // 用 core 的【真访存端口】而不是层次化引用内部信号；mem_wdata 已按 sb/sh/sw
+    // 做过字节复制，riscv-tests 写 tohost 一律用 sw，故与原始 store 数据一致。
     always @(posedge clk) begin
         if (!resetn) begin
             tohost_written <= 1'b0;
-        end else if (u_core.ex_mem_mem_write && u_core.ex_mem_alu_result == TOHOST_ADDR) begin
+        end else if (u_core.mem_we && u_core.mem_addr == TOHOST_ADDR) begin
             tohost_written <= 1'b1;
-            tohost_val     <= u_core.ex_mem_wdata;
+            tohost_val     <= u_core.mem_wdata;
         end
     end
 

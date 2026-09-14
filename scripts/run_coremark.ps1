@@ -44,10 +44,11 @@ Write-Host "[3/3] 编译 testbench 并仿真 ..."
 $sim = Join-Path $repo "sim"
 $vvp = Join-Path $sim "tb_coremark.vvp"
 $rtl = @()
-foreach ($d in @("rtl\core", "rtl\periph")) {
+foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
     $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
 }
 & iverilog -g2012 -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
+    -I (Join-Path $repo "rtl\bus") `
     -o $vvp (Join-Path $sim "tb_coremark.v") @rtl
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 

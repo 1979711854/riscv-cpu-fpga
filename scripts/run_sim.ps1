@@ -20,7 +20,7 @@ $externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_template.v")
 #         否则会与 tb 内的同名模块冲突；rtl/mem 只在 PDS 综合时使用。
 # 注意 2：core.v 例化了 imem/bram，单测（tb_alu_*）不需要它，默认不编；
 #         跑整核测试台时用 -WithCore（并把存储器模型交给 tb 提供）。
-$rtlDirs = @("rtl\core", "rtl\periph")
+$rtlDirs = @("rtl\core", "rtl\periph", "rtl\bus")
 
 function Get-RtlFiles {
     $files = @()
@@ -30,8 +30,12 @@ function Get-RtlFiles {
             $files += Get-ChildItem -Path $p -Filter "*.v" | Sort-Object Name | ForEach-Object { $_.FullName }
         }
     }
+    # SoC 级模块（core / mem_bus）例化了存储器，而单测（tb_alu_*）既不需要、
+    # 也提供不了存储器模型，默认不编；跑整核/SoC 测试台时用 -WithCore，
+    # 此时由 testbench 自己提供 imem/bram 的行为级模型。
+    $socModules = @("core.v", "mem_bus.v")
     if (-not $WithCore) {
-        $files = $files | Where-Object { [System.IO.Path]::GetFileName($_) -ne "core.v" }
+        $files = $files | Where-Object { $socModules -notcontains [System.IO.Path]::GetFileName($_) }
     }
     return $files
 }

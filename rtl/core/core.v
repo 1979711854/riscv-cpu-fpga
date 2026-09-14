@@ -2,11 +2,19 @@
 module core (
     input  wire        clk,
     input  wire        resetn,
-    output wire [31:0] pc,
-    output wire        store_we,
-    output wire [31:0] store_addr,
-    output wire [31:0] store_wdata,
-    input  wire [31:0] mmio_rd_data   // MMIO 读回数据（周期计数器）
+    output wire [31:0] pc,            // = pc_r，板级调试/示波用
+
+    // ---- 访存口（MEM 级）----
+    // 时序契约见 rtl/bus/mem_bus.v 头注释：
+    //   第 T   拍 (MEM)：本模块给出 mem_addr / mem_wdata / mem_byte_en / mem_we
+    //   第 T+1 拍 (WB) ：mem_rdata 必须是 mem_addr(T) 对应地址的读数据
+    // 本模块【不知道存储器映射】——译码、RAM、外设全在 mem_bus 里。
+    output wire [31:0] mem_addr,      // = ex_mem_alu_result（完整 32 位）
+    output reg  [31:0] mem_wdata,     // 已按 sb/sh/sw 做过字节复制
+    output reg  [3:0]  mem_byte_en,
+    output wire        mem_we,
+    output wire        mem_re,
+    input  wire [31:0] mem_rdata
 );
 
     // ================= IF =================
@@ -46,15 +54,14 @@ module core (
     reg [4:0]  mem_wb_rd;
     reg [2:0]  mem_wb_funct3;
     reg [1:0]  mem_wb_addr_low;
-    reg        mem_wb_mmio;
     // 写回数据
     wire [31:0] wb_data;
     // ------------------------------------------------------------------
 
-    // MMIO 观察口：MEM 阶段 store（供顶层 UART/外设用），不改数据通路
-    assign store_we    = ex_mem_mem_write;
-    assign store_addr  = ex_mem_alu_result;
-    assign store_wdata = ex_mem_wdata;
+    // 访存口：MEM 级组合输出，一拍的稳定窗口，直接进总线（写通路零寄存器）
+    assign mem_we   = ex_mem_mem_write;
+    assign mem_re   = ex_mem_mem_read;
+    assign mem_addr = ex_mem_alu_result;
 
     // 指令存储器 imem：Dual Port RAM 的 a 口只读，同步读（1 拍延迟）
     wire [12:0] imem_addr;
@@ -199,49 +206,34 @@ module core (
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
 
     // ================= MEM =================
-    wire [12:0] dmem_addr = ex_mem_alu_result[14:2];
-
-    // store 写数据按字节/半字复制到整字，配合 byte_en 选通
-    reg [31:0] dmem_wdata;
+    // RAM 本体已移出到 rtl/bus/mem_bus.v。这里只保留"把 store 数据按
+    // 字节/半字复制到整字"的格式化 —— 它是 RISC-V 编码（funct3）的函数，
+    // 属于指令语义，总线不该懂 SB/SH/SW，所以留在核内。
+    // 副作用：外设可直接取 mem_wdata[7:0]，sb/sh/sw 三种宽度都能用。
     always @(*) begin
         case (ex_mem_funct3)
-            3'b000: dmem_wdata = {4{ex_mem_wdata[7:0]}};    // SB
-            3'b001: dmem_wdata = {2{ex_mem_wdata[15:0]}};   // SH
-            default: dmem_wdata = ex_mem_wdata;             // SW
+            3'b000: mem_wdata = {4{ex_mem_wdata[7:0]}};    // SB
+            3'b001: mem_wdata = {2{ex_mem_wdata[15:0]}};   // SH
+            default: mem_wdata = ex_mem_wdata;             // SW
         endcase
     end
 
-    reg [3:0] dmem_byte_en;
     always @(*) begin
         case (ex_mem_funct3)
-            3'b000: dmem_byte_en = 4'b0001 << ex_mem_alu_result[1:0]; // SB
-            3'b001: dmem_byte_en = 4'b0011 << ex_mem_alu_result[1:0]; // SH
-            3'b010: dmem_byte_en = 4'b1111;                           // SW
-            default: dmem_byte_en = 4'b0000;
+            3'b000: mem_byte_en = 4'b0001 << ex_mem_alu_result[1:0]; // SB
+            3'b001: mem_byte_en = 4'b0011 << ex_mem_alu_result[1:0]; // SH
+            3'b010: mem_byte_en = 4'b1111;                           // SW
+            default: mem_byte_en = 4'b0000;
         endcase
     end
-
-    wire [31:0] dmem_rd;
-    bram u_bram(
-        .wr_data   (dmem_wdata),
-        .wr_addr   (dmem_addr),
-        .wr_en     (ex_mem_mem_write),
-        .wr_byte_en(dmem_byte_en),
-        .wr_clk    (clk),
-        .wr_rst    (~resetn),
-        .rd_addr   (dmem_addr),
-        .rd_data   (dmem_rd),
-        .rd_clk    (clk),
-        .rd_rst    (~resetn)
-    );
 
     // ================= MEM/WB =================
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
 
     // ================= WB =================
-    // dmem_rd 是 bram 读口输出，load 指令进入 WB 阶段时正好有效；
-    // MMIO 地址 0x7FF4（周期计数器）不走 bram，直接取 mmio_rd_data
-    wire [31:0] load_src = mem_wb_mmio ? mmio_rd_data : dmem_rd;
+    // mem_rdata 由 mem_bus 在 MEM→WB 沿给出（RAM / 兼容区 / 外设区一律 1 拍
+    // 延迟，无特例），load 指令进入 WB 阶段时正好有效。
+    wire [31:0] load_src = mem_rdata;
     wire [7:0]  load_byte = (mem_wb_addr_low == 2'd0) ? load_src[7:0]   :
                             (mem_wb_addr_low == 2'd1) ? load_src[15:8]  :
                             (mem_wb_addr_low == 2'd2) ? load_src[23:16] :
@@ -261,8 +253,19 @@ module core (
                      mem_wb_alu_result;
 
     // ================= PC =================
-    // 同步读 BRAM 使取指有 2 拍延迟（if_id = mem[pc_r-8]）。stall 时 pc_r 必须停在
-    // "在途指令"(mem[pc_r-4]) 的地址 = if_id_pc+4，否则在途指令会被 imem 覆盖丢失。
+    // 同步读 BRAM 使取指有 2 拍延迟，稳态不变量：
+    //     imem_rd   = mem[pc_r-4]   （在途，下一拍进 IF/ID）
+    //     if_id_pc  = pc_r-8        （正在 ID 译码）
+    //     id_ex_pc  = pc_r-12       （正在 EX 执行）
+    //
+    // stall / div_stall 时：pc_r 与 if_addr_d 都【保持不动】，同时上面
+    // imem_addr 的 mux 把取指地址【退回 if_addr_d[14:2]】—— 也就是重读上一拍
+    // 已经读过一遍的同一个 word，让它落在 imem_rd 上、在 stall 结束那一拍被
+    // if_id 采走，从而拿到 (pc, 指令) 同址的一对。
+    //
+    // 注意：是 imem_addr 后退，【不是 pc_r 后退】。若把 pc_r 真的往后推 4 字节，
+    // 连续两拍 stall 会让同一条指令被取两次（非幂等指令被重复执行），历史上
+    // 就踩过这个坑（见 doc/test_report_riscv-tests.md）。
     always @(posedge clk or negedge resetn) begin
         if (!resetn)
             pc_r <= 32'd0;
@@ -367,7 +370,6 @@ module core (
             mem_wb_rd         <= 5'd0;
             mem_wb_funct3     <= 3'd0;
             mem_wb_addr_low   <= 2'd0;
-            mem_wb_mmio       <= 1'b0;
         end else begin
             mem_wb_reg_write  <= ex_mem_reg_write;
             mem_wb_wb_sel     <= ex_mem_wb_sel;
@@ -377,7 +379,6 @@ module core (
             mem_wb_rd         <= ex_mem_rd;
             mem_wb_funct3     <= ex_mem_funct3;
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
-            mem_wb_mmio       <= ex_mem_mem_read && (ex_mem_alu_result == 32'h7FF4);
         end
     end
 
