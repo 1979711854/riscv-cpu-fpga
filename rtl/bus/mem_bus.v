@@ -27,6 +27,10 @@ module mem_bus (
     input  wire        clk,
     input  wire        resetn,
 
+    // ---- 取指口（直通统一存储器的 A 口，不做任何仲裁/缓冲）----
+    input  wire [12:0] imem_addr,
+    output wire [31:0] imem_rd,
+
     // ---- 访存口（来自 core 的 MEM 级）----
     input  wire [31:0] mem_addr,
     input  wire [31:0] mem_wdata,     // 已按 sb/sh/sw 做过字节复制
@@ -74,22 +78,27 @@ module mem_bus (
     wire legacy_utx   = legacy_hit && (legacy_off == 2'b11);      // 0x7FFC
 
     // ------------------------------------------------------------------
-    // RAM（B 口：读写）
+    // 统一存储器：A 口取指 / B 口访存
+    //   指令与数据共用一块，所以 store 写进去的东西，后续取指能读到 ——
+    //   这正是 fence_i（自修改代码）能通过的原因。
     // ------------------------------------------------------------------
     wire [12:0] ram_word = mem_addr[14:2];
     wire [31:0] ram_rdata;
 
-    bram u_bram (
-        .wr_data   (mem_wdata),
-        .wr_addr   (ram_word),
-        .wr_en     (ram_hit && mem_we),
-        .wr_byte_en(mem_byte_en),
-        .wr_clk    (clk),
-        .wr_rst    (~resetn),
-        .rd_addr   (ram_word),
-        .rd_data   (ram_rdata),
-        .rd_clk    (clk),
-        .rd_rst    (~resetn)
+    unified_mem u_mem (
+        // A 口：取指（只读）
+        .a_addr   (imem_addr),
+        .a_rd_data(imem_rd),
+        .a_clk    (clk),
+        .a_rst    (~resetn),
+        // B 口：访存（读写）
+        .b_addr   (ram_word),
+        .b_wr_data(mem_wdata),
+        .b_wr_en  (ram_hit && mem_we),
+        .b_byte_en(mem_byte_en),
+        .b_rd_data(ram_rdata),
+        .b_clk    (clk),
+        .b_rst    (~resetn)
     );
 
     // ------------------------------------------------------------------

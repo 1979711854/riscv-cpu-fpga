@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""把 riscv-tests 的 ELF 拆成 imem.hex(指令) 和 dmem.hex(数据+tohost)。
+"""把 ELF 拆成 imem.hex(指令) / dmem.hex(数据+tohost) / mem.hex(合并)。
 
-用法: python elf2mem.py <test.elf>
-输出: 同目录下 imem.hex / dmem.hex
-  - imem 收 .text.init/.text 段，按 word 索引 (VMA>>2) 放置
-  - dmem 收 .tohost/.data/.bss 段
+用法: python elf2mem.py <test.elf> [outdir]
+输出: outdir 下 imem.hex / dmem.hex / mem.hex / tohost_addr.hex
+  - imem 收 .text* 段，按 word 索引 (VMA>>2) 放置
+  - dmem 收 .tohost/.data/.bss/.rodata 等段
+  - mem.hex 是两者的并集：统一存储器只初始化【一个】数组，PDS 综合用这份
   - 用 $readmemh 的 @addr 形式，addr 是 word 索引
+
+两个约束（都会显式报错/警告，不再静默）:
+  - imem 与 dmem 的 word 索引不得相交（共用一块 RAM，重叠会静默覆盖）
+  - 既非指令段也非数据段的非空段会被丢弃，此时打警告
 """
 import subprocess, sys, os, struct
 
@@ -17,26 +22,54 @@ OBJDUMP = os.path.join(TOOLS, "riscv-none-elf-objdump.exe")
 IMEM_SECTIONS = {".text.init", ".text", ".text.startup"}
 DMEM_SECTIONS = {".tohost", ".data", ".bss", ".sdata", ".sbss", ".rodata", ".srodata"}
 
+# 这两个集合之外的段若 size>0，会【被静默丢弃】——是"指令凭空消失"类 bug 的温床，
+# 所以 main() 里会对未归类且非空的段打警告。
+# 已知可忽略：调试段（.debug*）、符号表等非 SHF_ALLOC 段。
+
+
+def classify(name):
+    """段名 -> 'imem' / 'dmem' / None。"""
+    # .text 前缀统一当指令。不要逐个列举 ".text.init/.text/.text.startup"：
+    # 一旦开了 -ffunction-sections，.text.foo 会两边都不匹配而被静默丢掉。
+    if name in IMEM_SECTIONS or name.startswith(".text"):
+        return "imem"
+    if name in DMEM_SECTIONS:
+        return "dmem"
+    return None
+
 
 def parse_sections(elf):
-    """从 objdump -h 提取 (name, size, vma) 列表。"""
+    """从 objdump -h 提取 (name, size, vma, alloc) 列表。
+
+    objdump -h 的每个段占两行：
+        0 .text.init    000002d0  00000000  00000000  00001000  2**6
+                        CONTENTS, ALLOC, LOAD, READONLY, CODE
+    flags 在第二行。alloc 表示 SHF_ALLOC，即"运行时要加载到内存"；
+    .debug_* / .riscv.attributes 之类没有 ALLOC，本来就不该进镜像。
+    """
     out = subprocess.check_output([OBJDUMP, "-h", elf], text=True)
     secs = []
     in_table = False
+    cur = None                      # 上一行解析出的段，等它的 flags 行
     for line in out.splitlines():
         if line.startswith("Sections:"):
             in_table = True
             continue
         if not in_table or not line.strip():
             continue
-        # 只取形如 "  0 .text.init  000004bc  00000000 ..." 的数据行
         parts = line.split()
-        if len(parts) < 4 or not parts[0].isdigit():
+        # 数据行：以序号开头
+        if parts[0].isdigit() and len(parts) >= 4:
+            if cur is not None:
+                secs.append(cur + (False,))     # 没等到 flags 行，按非分配处理
+            cur = (parts[1], int(parts[2], 16), int(parts[3], 16))
             continue
-        name = parts[1]
-        size = int(parts[2], 16)
-        vma = int(parts[3], 16)
-        secs.append((name, size, vma))
+        # flags 行：紧跟在数据行后面
+        if cur is not None:
+            secs.append(cur + ("ALLOC" in parts,))
+            cur = None
+    if cur is not None:
+        secs.append(cur + (False,))
     return secs
 
 
@@ -75,24 +108,44 @@ def main():
     tmp = os.path.join(outdir, "_sec.tmp.bin")
     imem = {}
     dmem = {}
-    for name, size, vma in parse_sections(elf):
+    unassigned = []
+    for name, size, vma, alloc in parse_sections(elf):
         if size == 0:
             continue
-        if name in IMEM_SECTIONS:
-            target = imem
-        elif name in DMEM_SECTIONS:
-            target = dmem
-        else:
+        kind = classify(name)
+        if kind is None:
+            # 只对【已分配】段报警告：.debug_* / .riscv.attributes 等本来就不进镜像
+            if alloc:
+                unassigned.append((name, size, vma))
             continue
+        target = imem if kind == "imem" else dmem
         data = extract(elf, name, tmp)
         target.update(group_words(data, vma))
     if os.path.exists(tmp):
         os.remove(tmp)
+
+    for name, size, vma in unassigned:
+        print("警告: 已分配段 %s (size=0x%x, vma=0x%x) 既非指令段也非数据段，已被丢弃"
+              % (name, size, vma))
+
+    # 两个 hex 会被 testbench 先后 $readmemh 进【同一个数组】。索引一旦相交，
+    # 后读的会静默覆盖先读的 —— 必须显式报错，不能让它悄悄改变程序语义。
+    overlap = set(imem) & set(dmem)
+    if overlap:
+        raise SystemExit(
+            "错误: imem 与 dmem 的 word 索引有 %d 处重叠（最小的 0x%x）。\n"
+            "      统一存储器下两者共用一块 RAM，重叠会静默覆盖。请检查链接脚本。"
+            % (len(overlap), min(overlap)))
+
     write_hex(os.path.join(outdir, "imem.hex"), imem)
     write_hex(os.path.join(outdir, "dmem.hex"), dmem)
+    # 合并镜像：真实 BRAM IP 的初始化通常只吃一份文件，PDS 综合用这个
+    merged = dict(imem)
+    merged.update(dmem)
+    write_hex(os.path.join(outdir, "mem.hex"), merged)
     # 顺便报 tohost 位置，并写入 tohost_addr.hex 供 testbench 运行时读取
     tohost = None
-    for name, size, vma in parse_sections(elf):
+    for name, size, vma, alloc in parse_sections(elf):
         if name == ".tohost":
             tohost = vma
     if tohost is None:

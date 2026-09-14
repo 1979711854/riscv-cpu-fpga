@@ -4,6 +4,13 @@ module core (
     input  wire        resetn,
     output wire [31:0] pc,            // = pc_r，板级调试/示波用
 
+    // ---- 取指口（A 口）----
+    // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
+    // 且【不做任何仲裁/冲突检测】。本模块的 stall/flush 补偿逻辑依赖 A 口
+    // 每拍都能独立工作，加仲裁会直接破坏取指时序。
+    output wire [12:0] imem_addr,     // word 索引；注意是 stall mux 之后的值
+    input  wire [31:0] imem_rd,       // 同步读 1 拍延迟
+
     // ---- 访存口（MEM 级）----
     // 时序契约见 rtl/bus/mem_bus.v 头注释：
     //   第 T   拍 (MEM)：本模块给出 mem_addr / mem_wdata / mem_byte_en / mem_we
@@ -63,23 +70,9 @@ module core (
     assign mem_re   = ex_mem_mem_read;
     assign mem_addr = ex_mem_alu_result;
 
-    // 指令存储器 imem：Dual Port RAM 的 a 口只读，同步读（1 拍延迟）
-    wire [12:0] imem_addr;
-    wire [31:0] imem_rd;
-    imem u_imem(
-        .a_addr   (imem_addr),
-        .a_wr_data(32'd0),
-        .a_rd_data(imem_rd),
-        .a_wr_en  (1'b0),
-        .a_rst    (~resetn),
-        .a_clk    (clk),
-        .b_addr   (13'd0),
-        .b_wr_data(32'd0),
-        .b_rd_data(),
-        .b_wr_en  (1'b0),
-        .b_rst    (~resetn),
-        .b_clk    (clk)
-    );
+    // 指令存储器已移出到 mem_bus（与数据共用一块双端口 BRAM 的 A 口）。
+    // 注意：这里送出的 imem_addr 必须是下面 mux 【之后】的值，不是 pc_r ——
+    // stall 时要靠它退回 if_addr_d 重读同一 word，详见 PC 段注释。
 
     // 取指地址对齐：imem_rd 在下一拍 = mem[本拍 pc_r]，用 if_addr_d 记录本拍 pc_r
     reg [31:0] if_addr_d;

@@ -4,75 +4,9 @@
 //   - core 对 0x7FF8 的 store 1 视为结束（start.S 里 main 返回后写）
 //   - CoreMark/MHz = ITERATIONS * 1e6 / 总周期数
 
-module imem (
-    input  wire [12:0] a_addr,
-    input  wire [31:0] a_wr_data,
-    output reg  [31:0] a_rd_data,
-    input  wire        a_wr_en,
-    input  wire        a_clk,
-    input  wire        a_rst,
-    input  wire [12:0] b_addr,
-    input  wire [31:0] b_wr_data,
-    output reg  [31:0] b_rd_data,
-    input  wire        b_wr_en,
-    input  wire        b_clk,
-    input  wire        b_rst
-);
-    reg [31:0] mem [0:8191];
-    reg [1023:0] hexpath;   // 由 +IMEM= / +DMEM= 覆盖；默认相对运行目录(sim/)
-    integer i;
-    initial begin
-        for (i = 0; i < 8192; i = i + 1) mem[i] = 32'd0;
-        if (!$value$plusargs("IMEM=%s", hexpath)) hexpath = "programs/imem.hex";
-        $readmemh(hexpath, mem);
-    end
-    always @(posedge a_clk or posedge a_rst) begin
-        if (a_rst) a_rd_data <= 32'd0;
-        else begin
-            if (a_wr_en) mem[a_addr] <= a_wr_data;
-            a_rd_data <= mem[a_addr];
-        end
-    end
-    always @(posedge b_clk or posedge b_rst) begin
-        if (b_rst) b_rd_data <= 32'd0;
-        else begin
-            if (b_wr_en) mem[b_addr] <= b_wr_data;
-            b_rd_data <= mem[b_addr];
-        end
-    end
-endmodule
+// 统一存储器行为模型（指令/数据共用一块，A 口取指、B 口访存）
+`include "mem_model.vh"
 
-module bram (
-    input  wire [31:0] wr_data,
-    input  wire [12:0] wr_addr,
-    input  wire        wr_en,
-    input  wire [3:0]  wr_byte_en,
-    input  wire        wr_clk,
-    input  wire        wr_rst,
-    input  wire [12:0] rd_addr,
-    output reg  [31:0] rd_data,
-    input  wire        rd_clk,
-    input  wire        rd_rst
-);
-    reg [31:0] mem [0:8191];
-    reg [1023:0] hexpath;   // 由 +IMEM= / +DMEM= 覆盖；默认相对运行目录(sim/)
-    integer i, k;
-    initial begin
-        for (i = 0; i < 8192; i = i + 1) mem[i] = 32'd0;
-        if (!$value$plusargs("DMEM=%s", hexpath)) hexpath = "programs/dmem.hex";
-        $readmemh(hexpath, mem);
-    end
-    always @(posedge wr_clk) begin
-        if (wr_en) begin
-            for (k = 0; k < 4; k = k + 1)
-                if (wr_byte_en[k]) mem[wr_addr][k*8 +: 8] <= wr_data[k*8 +: 8];
-        end
-    end
-    always @(posedge rd_clk or posedge rd_rst) begin
-        if (rd_rst) rd_data <= 32'd0;
-        else rd_data <= mem[rd_addr];
-    end
-endmodule
 
 module coremark_tb;
     reg         clk;
@@ -82,13 +16,16 @@ module coremark_tb;
     // 周期计数（提前声明：下面 core 例化就要用到 cycle_count）
     reg [63:0] cycle_count;
 
-    // core ↔ mem_bus 的访存口
+    // core ↔ mem_bus 的取指口与访存口
+    wire [12:0] imem_addr;
+    wire [31:0] imem_rd;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
 
     core u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
+        .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata)
     );
@@ -97,6 +34,7 @@ module coremark_tb;
     // 同步递增，故 get_time() 读数与改造前一致。
     mem_bus u_bus (
         .clk(clk), .resetn(resetn),
+        .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),

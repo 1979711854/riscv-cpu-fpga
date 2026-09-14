@@ -48,7 +48,7 @@ foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
     $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
 }
 & iverilog -g2012 -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
-    -I (Join-Path $repo "rtl\bus") `
+    -I (Join-Path $repo "rtl\bus") -I $sim `
     -o $vvp (Join-Path $sim "tb_coremark.v") @rtl
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 
