@@ -1,26 +1,85 @@
 # D:\riscv-cpu-fpga — 嵌入式大赛 FPGA 赛道 · 基于紫光同创(Pango) 的 RISC-V CPU
 
 ## 项目目标
-- 参赛方向：嵌入式芯片与系统设计大赛 FPGA 赛道（选题：RISC-V 处理器设计）
-- 器件平台：紫光同创 Pango FPGA，配套工具 Pango Design Suite (PDS)
-- 设计内容：RV32I CPU，≥3 级流水线（处理数据冒险与分支），集成 UART/GPIO；用 riscv32-unknown-elf-gcc 编译并跑 CoreMark v1.0（时长≥10s）；可选加分项：2路组相联 Cache、BTB+异常/中断、边缘 AI
-- 任务分解见 doc/plan.md；架构文档将放 doc/spec.md
+- 参赛方向：全国大学生嵌入式芯片与系统设计竞赛 FPGA 赛道（选题：**RISC-V 处理器设计**）
+- 器件平台：紫光同创 **Logos2 PG2L200H**（速度 -6，封装 FBB676）；工具 **Pango Design Suite 2022.2-SP6.4**
+- 当前目标板：**远程 FPGA 平台**（27MHz 固定时钟，约束已可用）；本地"盘古2L200H"开发板器件相同，后期只需改 `.fdc` 引脚/时钟
+- 设计内容：**RV32I + M 扩展的 5 级流水线 CPU**（forwarding 前递 + load-use 停顿 + 多拍除法器），集成 UART/GPIO，跑 riscv-tests 与 **CoreMark v1.0**（要求运行 ≥10s）
+- 可选加分项：2 路组相联 I/D Cache、BTB 动态分支预测 + 完整异常/中断、边缘 AI 加速
 
-## 工作约定
-- 交流与输出默认使用简体中文。
-- 代码统一存放在本目录 `D:\riscv-cpu-fpga`，不使用全盘 git。
-- 所有源码通过 git 管理，按里程碑提交，提交信息需清晰说明改动。
-- 上板/综合之前，先在 `sim/` 完成功能仿真验证。
-- PDS 是紫光同创的工具（Vivado 是 Xilinx/AMD 的），涉及工具操作时注意区分。
+## 当前进度（2026-09-15）
+基础任务完成度详见 `doc/base_task_status.md`：
 
-## 目录规划
-- `doc/`      需求、架构、赛题要求、参考资料（含官方 RISC-V 规范/指令手册）
-- `rtl/`      RTL 源码（Verilog / SystemVerilog）
-- `sim/`      仿真 testbench、程序(hex)与波形
-- `pds/`      Pango PDS 工程目录（生成物不入库）
-- `scripts/`  自动化脚本（编译、跑仿真、批处理）
-- `.claude/`  Claude Code 本项目配置（不入库）
+| 基础任务 | 状态 |
+|---|---|
+| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ 达标（5 级流水线、前递、load-use 停顿、6 种分支 + 双拍冲刷） |
+| ① RV32I 基础整数指令集 | ✅ **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
+| ③ 集成基础外设（UART/GPIO） | ✅ 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
 
-## 当前状态
-- 2026-09-08 初始化：移除误建于 D:\ 根的全盘空 git 仓库，在本目录新建独立仓库（main 分支），已建立目录骨架。
-- 2026-09-08 选题确定：RISC-V 处理器设计；完成赛题解析与任务计划 doc/plan.md。尚无 RTL 代码，尚未创建 PDS 工程。
+- 验证：riscv-tests rv32ui → **41 PASS / 1 FAIL / 0 TIMEOUT**
+  （唯一 FAIL 是 `ma_data` 未对齐访问，RISC-V 规范允许，属架构取舍）
+- CoreMark：ITER=1 → **1,529,499 周期**，CoreMark/MHz = 0.6538（27MHz 下 ITER≈200 约 10s）
+- 演示程序：`scripts\run_demo.ps1`（读按键 → 写 LED → 串口打印 + 串口回显）
+- PDS：远程板卡上已验证可正常跑分；bitstream 流程已跑通
+
+**回归纪律（重要）**：改动 RTL 后，riscv-tests 的 41/1/0 与 CoreMark 的 1,529,499 周期
+必须同时保持不变（除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
+
+## 仓库结构（以此为准，勿再新建顶层目录）
+- `rtl/core/`    CPU 核：`core.v`(5 级流水线/冒险/分支) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
+- `rtl/mem/`     `unified_mem.v` —— **统一存储器**（指令+数据共用一块双端口 BRAM：A 口取指 / B 口访存）。
+                 行为级、仅 PDS 综合用，`$readmemh` 读 PDS 工程目录下的 `mem.hex`
+- `rtl/bus/`     `addr_map.vh`(地址映射单点定义) `mem_bus.v`(**唯一的地址译码处** + 读数据 mux)
+- `rtl/periph/`  `uart_tx.v`(发送，1024 深 FIFO) `uart_rx.v`(接收，16 深 FIFO、读弹出) `gpio.v`(LED+按键)
+- `rtl/top/`     `cpu_top.v` SoC 顶层，只做连线（地址映射见 `rtl/bus/addr_map.vh`）
+- `rtl/top.v`    早期 LED 点灯练习工程顶层（保留）
+- `sim/`         `mem_model.vh`(存储器行为模型，被各 tb `include)
+                 `tb_riscv.v` `tb_coremark.v` `tb_demo.v`（集成）+ `tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v`（单元）
+                 `sim/programs/` 为生成的 hex/ELF（**不入库**）
+- `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归) `run_demo.ps1` `sync_firmware.ps1`
+                 `elf2mem.py`(出 imem/dmem/mem 三种 hex) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
+- `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
+- `pds/riscv_cpu/` 早期 LED 练习工程
+- `third_party/coremark/`  官方 CoreMark 源码（含 LICENSE）
+- `doc/`          `plan.md`(计划) `spec.md`(架构) `base_task_status.md`(基础任务核对) `RV32I指令集参考.md` `setup_env.md`(环境搭建) `test_report_riscv-tests.md` `patches/`(给队友的兼容补丁)
+- `.vscode/`      `tasks.json`(一键仿真) `settings.json`(Verilog lint 已改用 iverilog)
+- `riscv32-FPGA-pds/`  队友交接的**原件**（已 gitignore，仅作回归对照，验证完可删）
+
+## 工具链与常用命令
+- **iverilog 14 + GTKWave**（scoop 安装）、**riscv-none-elf-gcc 15.2.0**（`D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin`，等价赛题写的 `riscv32-unknown-elf-`）、PDS 2022.2-SP6.4
+- 常用命令：
+  - `scripts\run_sim.ps1` —— 跑 `sim/` 下全部单测；`-Testbench sim/xxx.v` 单个；`-NoWave` 不弹波形；整核测试台加 `-WithCore`
+  - `scripts\run_coremark.ps1 -Iter 200` —— 编译 CoreMark → 拆 hex → 仿真跑分
+  - `scripts\run_riscv_tests.ps1` —— rv32ui 全量回归 + 汇总（**需 riscv-tests 源码**，见待办）
+  - `scripts\sync_firmware.ps1` —— 把 `sim/programs/*.hex` 同步到 PDS 工程供 BRAM 初始化
+
+## 关键约定（都是踩过的坑）
+1. **iverilog 14 严格要求"先声明后使用"**：信号声明必须出现在使用之前，否则报 `Unable to bind ... declaration after use`（队友原始代码踩过，补丁见 `doc/patches/`）。改 RTL 时务必注意。
+2. **仿真时不要编译 `rtl/mem/`**：testbench 通过 `` `include "mem_model.vh" `` 自带
+   `unified_mem` 行为模型（带 `+IMEM=`/`+DMEM=` plusarg），重复定义会冲突；`rtl/mem` 只在 PDS 综合时用。
+   单测（`tb_alu_*` 等）默认也不编 SoC 级模块（`core.v` / `mem_bus.v`），跑整核/SoC 测试台才用 `-WithCore`。
+3. **Verilog 字符串转义里没有 `\r`**（标准只有 `\n \t \\ \" \ddd`）。iverilog 会把
+   `"\r\n"` 里的 `\r` 当成字面字符 `'r'`，期望串永远对不上。换行统一用 `16'h0D0A` 常量拼。
+4. **外设任何时候都不该把 X 放上总线**。X 被 CPU 读走会污染分支比较（X 参与 `<` 的结果是 X，
+   而 `if (X)` 在 Verilog 里按假处理），导致控制流走错分支 —— 本工程被 `uart_rx` 空 FIFO 坑过。
+5. **测试台驱动同步信号要避开 posedge 竞态**：`ack=1; @(posedge clk); ack=0;` 这种写法里，
+   任务恢复执行与 always 块采样是同一时间步内的不确定顺序，信号可能被提前清零而丢掉这一拍。
+   在 **negedge 之后**驱动就没这个问题。
+6. **取指补偿逻辑是承重的**：stall 时是 `imem_addr` 退回 `if_addr_d`，**不是 `pc_r` 后退**。
+   搞反会复现"指令被复制执行"的老 bug。细节见 `rtl/core/core.v` PC 段注释。
+7. **PDS 工程源文件指向 `../../rtl/**`**：改了 rtl 只需在 PDS 里重新 compile，**不要再往 `pds/` 拷源码副本**。
+8. 综合前先把固件 hex 放到 PDS 工程目录（`scripts\sync_firmware.ps1`）。
+   统一存储器只用**一份** `mem.hex`（指令+数据并集），旧的 `imem.hex`/`dmem.hex` 已废弃。
+9. 外部给的 GBK 文件用"以 GBK 重新打开"查看，**不要覆盖保存**；本项目源码统一 **UTF-8**。
+10. 交流与输出默认使用**简体中文**。
+11. 提交按里程碑拆分、信息写清改动；**不自动 push**。
+12. PDS 是紫光同创的工具（Vivado 是 Xilinx/AMD 的），注意区分。
+
+## 待办
+- **上本地板卡**：`pds/RV32I_1/RV32I_1.fdc` 目前仍指向**远程 FPGA 平台**；新增的
+  `led`/`key`/`uart_rx` 引脚以注释形式预留（盘古 MES2L200HP 实测引脚已填好）。
+  未指定 LOC 会让 place & route 失败（compile/synthesize 不受影响）。
+- **补 riscv-tests 源码**：放到 `third_party/riscv-tests`（需联网 clone）。
+  没有源码时用 `scripts\run_riscv_tests.ps1 -ElfDir <含 *.elf 的目录>` 也能全量回归。
+- **高阶任务**（详见 `doc/spec.md` §6）：2 路组相联 I/D Cache、BTB + 完整异常/中断、边缘 AI。
+  注意：加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"，否则 `fence_i` 会失败。

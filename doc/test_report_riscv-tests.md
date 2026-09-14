@@ -1,113 +1,113 @@
-# riscv-tests 补测结果（RV32I_1 流水线 CPU）
+# riscv-tests 回归报告（RV32I 五级流水线 CPU）
 
-日期：2026-09-10
-方法：不改 CPU、不改 riscv-tests 仓库；用 elf2mem.py 把 ELF 拆成 imem.hex / dmem.hex，
-     重新链接到 0x0 地址（link.ld），testbench 监控 tohost 写判定 PASS/FAIL。
+最近更新：2026-09-15
+方法：不改 CPU、不改 riscv-tests 仓库；`scripts/elf2mem.py` 把 ELF 拆成
+     `imem.hex` / `dmem.hex`（另出合并的 `mem.hex`），`sim/tb_riscv.v` 监控
+     core 对 tohost 的 store，判定 PASS / FAIL / TIMEOUT。
 
-## 总结果
+运行方式（两种任选）：
+
+```powershell
+# 有 riscv-tests 源码（需联网 clone 到 third_party/riscv-tests）
+scripts\run_riscv_tests.ps1
+
+# 只有现成 ELF（无需联网，用于快速回归）
+scripts\run_riscv_tests.ps1 -ElfDir riscv32-FPGA-pds\riscv-tests-run\build
+```
+
+## 当前结果：41 PASS / 1 FAIL / 0 TIMEOUT（共 42）
 
 | 分类 | 数量 | 测试 |
 |------|------|------|
-| PASS | 36 | add addi and andi auipc beq bge bgeu blt bltu bne jal jalr lb lbu lh lhu lui lw or ori simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub xor xori |
-| FAIL | 4 | ma_data、sb、sh、sw |
-| TIMEOUT | 2 | fence_i、ld_st |
+| PASS | 41 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
+| FAIL | 1 | ma_data（未对齐访问，架构取舍，见下） |
+| TIMEOUT | 0 | —— |
 
 ---
 
-## 1. ma_data —— FAIL (testnum 1)【架构限制，非 bug】
+## 1. ma_data —— FAIL【架构限制，预期如此，不修】
 
-`ma_data` 测试未对齐访问（`lh/lhu/lw` 从 `+1/+2/+3` 地址读）。当前 CPU 只支持对齐访问：
+`ma_data` 测试未对齐访问（`lh/lhu/lw` 从 `+1/+2/+3` 地址读）。本 CPU 只支持对齐访问：
 
-- `dmem_addr = ex_mem_alu_result[14:2]` 直接丢掉低 2 位，按字地址取整。
-- `lh` 的 `load_half = addr_low[1] ? dmem_rd[31:16] : dmem_rd[15:0]` 只对偶地址正确，
-  奇地址（addr_low=1）实际应取 bytes[1:2]，当前取 bytes[0:1]。
-- `lw` 从未对齐地址会跨字，当前无法重拼。
+- `mem_addr[14:2]` 直接丢掉低 2 位，按字地址取整
+- `lh` 的 `load_half = addr_low[1] ? ... : ...` 只对偶地址正确
+- `lw` 从未对齐地址会跨字，无法重拼
 
-RISC-V 规范允许实现不处理未对齐访问（可选），简单 CPU 通常直接不支持。
-**判定：架构限制，预期失败，不改。**
+**RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，简单实现通常不支持。
+**判定：架构取舍，预期失败。**
 
-## 2. sb / sh / sw —— FAIL (testnum 11)【CPU 流水线 bug，需修】
+> ⚠️ 回归时这一项必须**仍然 FAIL**。如果它"被修好了"，说明有人动了 load/store 的
+> 字节抽取逻辑，属于非预期改动，要查清楚。
 
-三者都是 TEST_CASE 11 "unaligned base" 失败，根因相同。
+## 2. fence_i —— 已由 TIMEOUT 转为 PASS（2026-09-15）
 
-### 触发代码（以 sb 为例）
+### 这个测试在测什么
 
-```asm
-la  x1, tdat9        # auipc ra + addi ra,-828  → x1 = 0x2008
-li  x2, 0x00003098   # lui sp + addi sp,152      → x2 = 0x3098
-addi x1, x1, -6      # x1 = 0x2002
-sb  x2, 7(x1)        # 应存到 0x2002+7 = 0x2009 (tdat10)
-la  x4, tdat10
-lb  x5, 0(x4)        # 期望 0x98 符号扩展 = 0xffffff98
-```
-
-### 现象
-
-`sb` 实际写到了 **0x2003** 而不是 0x2009。跟踪 WB 发现 `x1` 多了一次异常写入：
+反汇编 `fence_i.elf` 可以看清它是**自修改代码**测试：
 
 ```
-x1 = 0x2008   (addi ra,-828)
-x1 = 0x2002   (addi ra,-6)
-x1 = 0x1ffc   (addi ra,-6 被重复执行了一次！ 0x2002-6)
+1c0: auipc t0,0x0
+1c4: sh    a0,188(t0)   # 把一条新指令写进代码区 0x27c
+1cc: sh    a1,182(t0)   # 接着写 0x27e
+1d0: fence.i            # 要求 store 对取指可见
+1dc: jalr  t1,a5        # 跳到 0x27c 执行刚写进去的指令
 ```
 
-`sb` 读到的 `x1=0x1ffc`，`0x1ffc+7=0x2003`，所以写错地址。
+### 原来为什么挂死
 
-### 根因：取指流水线在 stall 期间被重复取指，导致指令在流水线里"复制"成两份
+原设计是**哈佛结构**：`imem` 与 `bram` 是两块独立的 BRAM，store 只写 dmem、
+取指只读 imem。写进"代码区"的指令永远进不了取指通路，于是：
+`fence.i` 就算是 NOP 也没用，`jalr` 跳到 0x27c 后执行到的仍是旧指令，
+测试在 fail 自旋里跑死（实测 TIMEOUT at pc=0x288，全程未写 tohost）。
 
-core.v 里 stall 时：
+**结论：这不是"少实现一条指令"，是存储器结构决定的。**
 
-```verilog
-else if (stall) pc_r <= if_id_pc + 32'd4;   // 把 PC 退回到"在途指令"地址
-```
+### 怎么修好的
 
-但 `imem_rd` / `if_addr_d`（两级取指寄存器）**没有被 stall 住**，仍然每拍跟着 pc_r 走。
-于是**连续 2 拍的 stall**（例如 `lui` 写 sp、下一条 `addi sp,sp,imm` 读 sp 造成的 RAW 停顿）
-会让 `pc_r` 连续两拍停在同一个地址，导致同一条指令（如 `lui sp`）被取指两次。
+把 `imem` + `bram` 合并成**一块统一的双端口 BRAM**（`rtl/mem/unified_mem.v`）：
 
-级联后果：被复制的是 `addi ra,-6`（非幂等），它执行了两遍，`ra` 被多减了一次 6，
-后随的 `sb` 就用了错的 `ra`。对 `lui` 这种幂等指令（复制两遍写同一个值）无感，所以
-前面 test 2~10 都 PASS，只有 test 11 里被复制的恰好是 `addi` 才暴露。
+- A 口只读、同步读 1 拍 —— 供取指
+- B 口读写、按字节写、同步读 1 拍 —— 供访存
 
-### 结论
+于是 store 写进去的数据，后续取指天然能读到，`fence.i` 实现为 NOP 即满足语义
+（RISC-V 规范允许无 Cache 的实现把 `FENCE`/`FENCE.I` 视作 NOP）。
 
-**stall 与两级取指延迟（imem 同步读 1 拍 + if_id 1 拍）不兼容**。修法方向（以后改）：
-- stall 时让取指寄存器 `imem_rd`/`if_addr_d` 也保持/插入气泡，而不是靠"退 pc_r"来补；
-- 或把取指延迟改回 1 拍（消除 `if_addr_d`/`ex_flush_d` 那套补偿逻辑）。
+这同时落地了 `doc/spec.md` 早先写下的 **modified-Harvard** 路线：软件看到统一
+地址空间，核内部取指/访存通路仍然分离（为后续 I/D Cache 留出干净的后备存储）。
 
-## 3. fence_i —— TIMEOUT【架构限制，非 bug】
+**关键证据：整个回归里，fence_i 是唯一发生变化的一项，其余 40 项逐项一致；
+CoreMark 周期数也一字不差。** 说明这次改动没有引入任何时序副作用。
 
-`fence_i` 做自修改代码：先 `sh` 改代码区，再 `fence.i`，再 `jalr` 跳到被改的代码。
-当前是哈佛结构（imem/dmem 分开），store 只写 dmem，取指只读 imem，改代码永远看不见；
-`fence.i` 在 control.v 里也是 no-op。所以测试挂死。
-**判定：哈佛结构固有限制，不改。**
+### 残留限制（诚实记录）
 
-## 4. ld_st —— TIMEOUT（两个问题）
+如果软件改写**自己取指窗口内**的指令（恰好是 store 之后第 3 条，即 `pc_r` 正好
+指向它），那一拍发出的取指可能已读到旧值并在下一拍进 IF/ID，`fence.i` 也救不回来
+（指令已在流水线里）。这与有没有统一存储器无关，是"没有 I-Cache / 取指缓冲"的
+简单核的固有性质，riscv-tests 未覆盖这种极端情况。
 
-### 4a. testbench 的 tohost 地址写死了 0x1000【测试台 bug，不是 CPU】
+## 3. 历史记录：曾被误判为"CPU bug"的几项
 
-`ld_st` 的 `.text.init` 超过 0x1000，link.ld 里 `.tohost` 被 ALIGN 到 **0x2000**。
-但 `cpu_tb_riscv.v` 里 `TOHOST_ADDR = 32'h1000` 写死，监控地址错了，错过 tohost 写。
-其它测试 `.text.init` 都 <0x1000，tohost 在 0x1000，所以只有 ld_st 踩到。
+2026-09-10 的一份中间报告（`riscv32-FPGA-pds/riscv-tests-run/FAILURES.md`）记录过
+`sb/sh/sw` FAIL、`ld_st` TIMEOUT，并归因为"取指在 stall 期间重复取指导致指令被复制
+执行"。**那两个问题早已被队友修掉，该文档已过时。** 当前设计里：
 
-实测 `ld_st` CPU 已经跑进 fail 循环（PC 停在 0x1014 `beqz zero,1014`），
-也就是它其实 **FAIL** 了（fail 例程往 tohost=0x2000 写，被 testbench 漏掉才显示 TIMEOUT）。
+- `pc_r` 在 stall 时是**保持不动**（不是后退到 `if_id_pc+4`）；
+- `imem_addr` 的 mux 在 stall 时退回 `if_addr_d[14:2]`（重读同一 word），
+  使 `if_id` 在 stall 结束那拍拿到 (pc, 指令) 同址的一对；
+- `ex_flush_d` 提供跳转后的第二道冲刷，杀掉跳转前已发出的那次读。
 
-### 4b. ld_st 为什么 fail —— 大概率同 bug 2
-
-ld_st 是 load-use 密集的 bypass 测试，`lw` 后立刻用结果会频繁触发 2 拍 stall，
-正是 bug 2 的触发条件，导致指令被复制、数据/控制流错乱，最终跳进 fail 而不是 pass。
-
-### 结论
-
-- 测试台需把 tohost 地址改成从 ELF 里读（elf2mem.py 已经打印 `tohost = 0x...`），
-  而不是硬编码 0x1000。
-- 修掉 bug 2 后 ld_st 才能真 PASS。
+这三点是承重逻辑，改动前务必读 `rtl/core/core.v` 里 PC 段的注释。**注意：是
+`imem_addr` 后退，不是 `pc_r` 后退** —— 照字面把 `pc_r` 也往后推会复现那个
+"指令被复制执行"的老 bug。
 
 ---
 
-## 给以后修 CPU 的优先级
+## 回归纪律
 
-1. **修 stall/取指重复 bug（bug 2）** —— 影响 sb/sh/sw，且是 ld_st fail 的根因。
-2. **修 testbench 的 tohost 地址**（从 ELF 读，别硬编码）—— 否则 ld_st 这类大代码测试结果不可信。
-3. ma_data（未对齐）和 fence_i（自修改代码）是架构限制，不修。
+每次改动 RTL 后，以下两条必须同时满足：
+
+1. **本报告的 41/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
+2. **CoreMark ITER=1 的周期数一字不差**（当前基线：**1,529,499** 周期，
+   CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`）
+
+第 2 条是"没有碰坏流水线"最灵敏的探针 —— 多一个停顿、少一次前递都会让它变。

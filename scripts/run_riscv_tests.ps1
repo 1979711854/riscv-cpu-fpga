@@ -1,10 +1,13 @@
 ﻿param(
     [string]$TestsDir = "",     # riscv-tests 源码目录（含 isa/rv32ui）。默认 third_party/riscv-tests
+    [string]$ElfDir = "",       # 已有 ELF 的目录：给了就跳过编译，直接跑这些 ELF
     [int]$FirstN = 0,           # >0 时只跑前 N 个测试（快速回归用）
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
 )
 
 # riscv-tests (rv32ui) 一键：编译全部 .S -> 逐个跑 tb_riscv -> 汇总 PASS/FAIL
+# 没有源码时可用 -ElfDir 指向一份现成的 ELF 目录，跳过编译直接回归。例如：
+#   scripts\run_riscv_tests.ps1 -ElfDir riscv32-FPGA-pds\riscv-tests-run\build
 $ErrorActionPreference = "Stop"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
@@ -16,28 +19,39 @@ $isaDir = Join-Path $TestsDir "isa\rv32ui"
 $macroDir = Join-Path $TestsDir "isa\macros\scalar"
 $linkLd = Join-Path $repo "scripts\riscv_tests_link.ld"
 
-if (-not (Test-Path $isaDir)) {
-    Write-Host "找不到 riscv-tests 源码：$isaDir"
-    Write-Host "获取方式（需联网，建议挂代理）："
-    Write-Host "  git clone --depth 1 https://github.com/riscv-software-src/riscv-tests third_party/riscv-tests"
-    Write-Host "  或把队友机器上的 riscv-tests 目录拷到 third_party/riscv-tests"
-    exit 1
-}
-
 $prog = Join-Path $repo "sim\programs"
 New-Item -ItemType Directory -Force -Path $prog | Out-Null
 
-# ---- 1) 编译全部测试 ELF ----
-Write-Host "[1/3] 编译 rv32ui 测试 ..."
-$elfs = @()
-foreach ($f in Get-ChildItem (Join-Path $isaDir "*.S") | Sort-Object Name) {
-    $name = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-    $elf = Join-Path $prog "$name.elf"
-    & riscv-none-elf-gcc -march=rv32i_zicsr_zifencei -mabi=ilp32 -static -mcmodel=medany `
-        -nostdlib -nostartfiles -I"$isaDir" -I"$macroDir" -T"$linkLd" $f.FullName -o $elf
-    if ($LASTEXITCODE -eq 0) { $elfs += $elf }
+if (-not [string]::IsNullOrWhiteSpace($ElfDir)) {
+    # ---- 1) 直接用现成 ELF，跳过编译 ----
+    if (-not (Test-Path $ElfDir)) { throw "找不到 ELF 目录：$ElfDir" }
+    $elfs = @(Get-ChildItem $ElfDir -Filter "*.elf" | Sort-Object Name | ForEach-Object { $_.FullName })
+    if ($elfs.Count -eq 0) { throw "$ElfDir 下没有 .elf 文件" }
+    Write-Host "[1/3] 使用现成 ELF（-ElfDir）：$($elfs.Count) 个"
 }
-Write-Host "      编译出 $($elfs.Count) 个 ELF"
+else {
+    if (-not (Test-Path $isaDir)) {
+        Write-Host "找不到 riscv-tests 源码：$isaDir"
+        Write-Host "获取方式（需联网，建议挂代理）："
+        Write-Host "  git clone --depth 1 https://github.com/riscv-software-src/riscv-tests third_party/riscv-tests"
+        Write-Host "  或把队友机器上的 riscv-tests 目录拷到 third_party/riscv-tests"
+        Write-Host "  或不改源码、直接用现成 ELF 回归："
+        Write-Host "    scripts\run_riscv_tests.ps1 -ElfDir <含 *.elf 的目录>"
+        exit 1
+    }
+
+    # ---- 1) 编译全部测试 ELF ----
+    Write-Host "[1/3] 编译 rv32ui 测试 ..."
+    $elfs = @()
+    foreach ($f in Get-ChildItem (Join-Path $isaDir "*.S") | Sort-Object Name) {
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+        $elf = Join-Path $prog "$name.elf"
+        & riscv-none-elf-gcc -march=rv32i_zicsr_zifencei -mabi=ilp32 -static -mcmodel=medany `
+            -nostdlib -nostartfiles -I"$isaDir" -I"$macroDir" -T"$linkLd" $f.FullName -o $elf
+        if ($LASTEXITCODE -eq 0) { $elfs += $elf }
+    }
+    Write-Host "      编译出 $($elfs.Count) 个 ELF"
+}
 if ($FirstN -gt 0) { $elfs = $elfs[0..([Math]::Min($FirstN, $elfs.Count) - 1)] }
 
 # ---- 2) 编译 testbench（只编一次）----
