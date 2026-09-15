@@ -1,200 +1,195 @@
-# 基于紫光同创FPGA的RISC-V单周期CPU设计
+# 基于紫光同创 FPGA 的 RISC-V 五级流水线 CPU
 
-> 全国大学生嵌入式芯片与系统设计竞赛 —— FPGA赛道  
-> 紫光同创选题 · 基于RISC-V指令集CPU设计
+> 全国大学生嵌入式芯片与系统设计竞赛 —— FPGA 赛道 · 紫光同创选题
 
-## 📌 项目简介
+器件：紫光同创 **Logos2 PG2L200H-6FBB676**　工具：**Pango Design Suite 2022.2-SP6.4**
+处理器：**RV32I + M 扩展**，5 级流水线（IF/ID/EX/MEM/WB）
 
-本项目基于紫光同创 **Logos-2 PG2L200H-6FBB676** FPGA芯片，使用 **Verilog** 硬件描述语言，设计并实现一个支持 **RV32I基础整数指令集** 的单周期RISC-V处理器核心。
+## 当前成绩
 
-最终目标是：
-- 在PDS中完成综合、布局布线，烧录至开发板运行
-- 移植CoreMark跑分程序，验证处理器性能
-- 为后续升级为**五级流水线**奠定基础
+| 项目 | 结果 |
+|---|---|
+| riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
+| CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`，**2.38 CoreMark/MHz** |
+| 时序（27MHz，多 seed） | Setup +15.495ns / Hold +0.145ns，**失败端点 0** |
 
+> 唯一 FAIL 是 `ma_data`（未对齐访问）。RISC-V 规范 §2.6 把它列为**可选**；
+> 且 gcc 假设变量自然对齐、**永远不会生成未对齐的 load/store**，所以不影响任何 C 程序。
 
 ---
 
-## 📁 目录结构（重要）
+## 🚀 主流程：在 PDS 里做
 
-克隆仓库后，你的本地目录应该是这样的：
+### 第 1 步：打开工程
+
+```
+PDS → File > Open Project →  pds/RV32I_1/RV32I_1.pds
+```
+
+> ⚠️ **工程是 `pds/RV32I_1/`，不是 `pds/riscv_cpu/`**（后者是早期的 LED 练习工程）。
+> 工程里的源文件指向仓库根的 `../../rtl/**`，**不要在 `pds/` 下另存 RTL 副本**，
+> 否则两处会漂移。改 RTL 只需在 PDS 里重新 compile。
+
+### 第 2 步：跑流程
+
+```
+compile → synthesize → device map → place & route → generate bitstream
+```
+
+产物：`pds/RV32I_1/generate_bitstream/cpu_top.sbit`
+
+### 第 3 步：烧录
+
+> ⚠️ 同目录的 `cpu_top.smsk` 是掩码文件，**大小和文件头与 `.sbit` 一模一样**，别点错。
+
+**已知无害告警**（可以忽略）：
+- `C: Bitstream-2001: SCBV has not been set` —— 配置 bank 电压提醒，不影响上板
+- `W: Port 'key[*]' / 'uart_rx' is not constrained` —— GPIO 引脚未分配，跑 CoreMark 无影响
+
+---
+
+## ⚠️ 唯一需要命令行的一步：编译 C 程序
+
+**PDS 不是 C 编译器**，CoreMark 和演示程序都是 C，必须先用 RISC-V gcc 编成机器码，
+再转成 BRAM 能加载的 `mem.hex`。
+
+> 💡 **只有换程序时才需要做这一步。** 平时改 RTL 的话，流程全在 PDS 里。
+
+### 需要装的工具链
+
+```
+RISC-V GCC:  D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin
+Python 3:    用于把 ELF 拆成 hex
+```
+
+### 两条命令（几秒钟）
+
+```powershell
+# 1) 生成固件（二选一）
+scripts\run_coremark.ps1 -Iter 700 -SkipSim   # 跑分用：板上约 10.9 秒，满足 ≥10s
+scripts\run_demo.ps1 -SkipSim                 # 演示用：读按键 → 写 LED → 串口打印
+
+# 2) 同步到 PDS 工程目录
+scripts\sync_firmware.ps1
+```
+
+然后回 PDS 重新 compile → … → bitstream。
+
+> `-SkipSim` = 只生成固件、不跑仿真。**上板流程只需要 `mem.hex`**，加上这个开关
+> 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，ITER=700
+> 大约要跑十几分钟。
+
+> 🔴 **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
+> `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** —— 但 BRAM 是空的，
+> 板上什么都不跑，**且没有任何其他报错**。这个坑踩过，极难排查。
+> 综合前务必确认 `pds/RV32I_1/mem.hex` 存在。
+
+---
+
+## 📁 目录结构
 
 ```
 riscv-cpu-fpga/
-├── README.md              # 项目说明
-├── .gitignore             # Git忽略规则（已配置好）
+├── rtl/                     RTL 源码
+│   ├── core/                CPU 核：core/control/alu/divider/imm_gen/regfile
+│   ├── mem/                 unified_mem.v  统一存储器（仅 PDS 综合用）
+│   ├── bus/                 addr_map.vh + mem_bus.v（唯一的地址译码处）
+│   ├── periph/              uart_tx / uart_rx / gpio
+│   └── top/cpu_top.v        SoC 顶层
 │
-├── doc/                   # 📄 文档：数据手册、原理图、控制信号表等
-├── rtl/                   # ⚙️ 硬件源码：所有 .v 文件
-│   └── top.v              # 顶层模块
-├── sim/                   # 🧪 仿真文件：Testbench、波形文件
-├── scripts/               # 🔧 自动化脚本
-└── pds/                   # 🗂️ PDS工程目录
-    └── riscv_cpu/         # PDS工程文件夹（里面是 .pdsproj 等文件）
+├── pds/RV32I_1/             ★ PDS 工程（源文件指向 ../../rtl/**）
+│   ├── RV32I_1.pds          工程文件
+│   ├── RV32I_1.fdc          引脚/时钟约束
+│   ├── mem.hex              固件快照（BRAM 初值）
+│   └── README.md            工程交接说明（含 7 条踩过的坑，建议先读）
+│
+├── sim/                     仿真测试台（可选，见下）
+├── scripts/                 一键脚本 + 固件生成工具
+├── doc/                     架构、进度、测试报告
+└── third_party/             CoreMark 源码、riscv-tests 基线 ELF
 ```
 
-
-
-> ⚠️ **注意**：PDS编译生成的中间文件（synth/、impl/、.sbit等）已被 `.gitignore` 屏蔽，**不会**提交到Git仓库，所以你的仓库会很轻量。每个人在自己的电脑上重新编译即可。
-
----
-
-## 🛠️ 开发环境配置（每位队友必做）
-
-### 1. PDS（紫光同创开发工具）
-- 已经安装好的队友：确认版本可用
-- 尚未安装的队友：从紫光同创官网下载并安装 **Pango Design Suite**
-- 安装路径**不要有中文或空格**
-
-### 2. RISC-V工具链（用于编译C/汇编测试程序）
-- Windows推荐使用 **Scoop** 安装：
-  ```powershell
-  scoop install iverilog gtkwave   # 仿真工具
-
-
-## 🔄 Git代码管理规范（必读）
-
-**仓库地址**：`https://github.com/1979711854/riscv-cpu-fpga.git`
+**生成物不入库**：`pds/RV32I_1/` 下的 `compile/ synthesize/ device_map/ place_route/`
+`report_timing/ generate_bitstream/` 等都已被 `.gitignore` 屏蔽，各自本地重新编译即可。
 
 ---
 
-### 📥 首次克隆（每人只做一次）
+## 地址映射
 
-打开命令行，进入你想存放工程的目录（如 `D:\`），执行：
+单点定义在 `rtl/bus/addr_map.vh`：
 
-```powershell
-git clone https://github.com/1979711854/riscv-cpu-fpga.git
-cd riscv-cpu-fpga
+```
+0x0000_0000 - 0x0000_7FEF   RAM（32KB 内可用部分，栈顶 ≤ 0x7FF0）
+0x0000_7FF0 - 0x0000_7FFF   兼容区（CoreMark 移植层硬编码，不可移动）
+    0x7FF4 R 周期计数   0x7FF8 W done   0x7FFC W UART 发送
+0x8000_0000 起              外设区
+    0x00 W LED / R {key, led}   0x08 W UART 发送
+    0x0C R UART 接收（读弹出）   0x10 R 周期计数
 ```
 
 ---
 
-### 🔁 日常开发流程（每天必做）
+## 🔧 可选：命令行仿真与回归
 
-#### 第一步：开始工作前，先拉取最新代码
-
-```powershell
-git pull origin main
-```
-
-#### 第二步：修改代码后，提交并推送
+改 RTL 后建议跑一遍，比上板快得多：
 
 ```powershell
-git status                 # 查看改了哪些文件
-git add .                  # 添加所有修改
-git commit -m "描述你做了什么"   # 提交到本地
-git push origin main       # 推送到GitHub
+scripts\run_riscv_tests.ps1     # 49 PASS / 1 FAIL / 0 TIMEOUT（不需联网）
+scripts\run_sim.ps1             # 6 个模块单元测试
+scripts\run_coremark.ps1 -Iter 1
+scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 ```
+
+**回归纪律**：改动 RTL 后，下面两条必须同时保持不变（除非本次改动就是要改变某一项）：
+
+1. riscv-tests 的 **49/1/0**
+2. CoreMark ITER=1 的 **1,529,499 周期** ← "没碰坏流水线"最灵敏的探针
+
+工具链（scoop 安装）：`scoop install iverilog gtkwave`
 
 ---
 
-### ⚠️ 如果推送被拒绝（别人先推了）
+## 📚 文档索引
+
+| 文件 | 内容 |
+|---|---|
+| `pds/README.md` | **PDS 工程交接说明**（先读这个） |
+| `doc/spec.md` | 架构：流水线、存储器与总线、地址映射、已知限制 |
+| `doc/base_task_status.md` | 基础任务三条逐条核对 |
+| `doc/test_report_riscv-tests.md` | 回归结果、CoreMark 口径推导、板上验证证据 |
+| `doc/plan.md` | 开发计划 |
+
+---
+
+## 🔄 Git 协作
 
 ```powershell
-git pull origin main       # 先拉取合并
-```
-
-> 如果有冲突，手动解决冲突后，执行：
-
-```powershell
+git pull origin main                    # 开始工作前
 git add .
-git commit -m "解决合并冲突"
+git commit -m "feat: 描述你做了什么"
 git push origin main
 ```
 
----
+提交信息前缀：`feat:` 新功能 · `fix:` 修复 · `docs:` 文档 · `refactor:` 重构
 
-### 📝 提交信息格式参考
-
-| 前缀 | 用途 | 示例 |
-| :--- | :--- | :--- |
-| `feat:` | 新增功能 | `feat: 添加ALU模块` |
-| `fix:` | 修复Bug | `fix: 修复PC跳转逻辑错误` |
-| `docs:` | 文档修改 | `docs: 更新README` |
-| `refactor:` | 代码重构 | `refactor: 优化控制单元代码` |
-
-
-### 仿真工具（iverilog + GTKWave）
-
-本项目使用 **Icarus Verilog (`iverilog`)** 进行仿真编译，使用 **GTKWave** 查看波形图，适合快速验证模块。
-
-#### 安装方法（Windows + Scoop）
-
-如果你已经安装了 Scoop（包管理器），可以直接在 PowerShell 中执行：
-
-```powershell
-# 添加 extras 软件库（gtkwave 在这个库里）
-scoop bucket add extras
-
-# 安装 iverilog 和 gtkwave
-scoop install iverilog gtkwave
-```
-
-安装完成后，验证是否成功：
-
-```powershell
-iverilog -V
-gtkwave -V
-```
-
-如果看到版本号输出，说明安装成功。
-
-
-使用方法：
-
-```powershell
-# 进入仓库根目录
-cd d:\riscv-cpu-fpga
-
-# 在 VSCode 终端中执行：
-# Terminal -> Run Task -> Run All Verilog Simulations and Waveforms
-# 或直接在任务面板选择该任务
-```
-
-
-## 📂 PDS工程如何打开（队友必看）
-
-> **🚀 工程位置**
-> 
-> 工程文件已经创建好，路径为：
-> D:\riscv-cpu-fpga\pds\riscv_cpu\riscv_cpu.pdsproj
-
-### 📝 打开步骤
-
-1. **启动** `Pango Design Suite`
-2. 点击菜单栏 **`File`** → **`Open Project`**
-3. 浏览到 `pds/riscv_cpu/` 目录，选择 **`riscv_cpu.pdsproj`** 文件
-4. 点击 **`打开`** 即可
-
-### 💡 重要提示
-  
-> PDS工程文件里记录的是 **相对路径**，只要整个仓库目录结构不变，就能正常打开。
-
-## 🔧 芯片型号（已配置，请勿修改）
-
-| 项目 | 值 |
-| :--- | :--- |
-| **系列** | `Logos-2` |
-| **型号** | `PG2L200H-6IFBB676` |
-
-> ⚠️ **这个型号已经配置好了，不要擅自修改**，否则可能导致管脚约束失效，编译通不过。
+> ⚠️ **不要提交 PDS 生成物**（`compile/`、`synthesize/`、`.sbit` 等）。
+> `.gitignore` 已配置好，用 `git add .` 时它们不会被加入。
+> 唯一例外是 `pds/RV32I_1/mem.hex`——它是固件快照，有意入库，便于复现比特流。
 
 ---
 
 ## ⚠️ 常见问题
 
-### Q：PDS打开工程后，找不到 `top.v`？
+**Q：PDS 打开工程后提示找不到源文件？**
+A：确认仓库结构完整（`rtl/` 与 `pds/` 同级）。工程用的是相对路径 `../../rtl/**`，
+整个仓库目录结构变了就会失效。
 
-**A**：检查 `rtl/` 目录下是否有 `top.v` 文件。如果没有，从队友那里同步一下（`git pull`）。如果文件存在但 PDS 没加载，在 Project 窗口中右键 → `Add Source` 手动添加。
+**Q：板上什么都没反应，串口没输出？**
+A：先查 `pds/RV32I_1/mem.hex` 是否存在。缺失时 PDS 会静默生成空 BRAM 的比特流，
+板上什么都不会跑（详见上文红字）。
 
----
+**Q：烧录提示"设备唤醒失败"？**
+A：远程平台偶发问题，**多烧录几次即可**，不是设计问题。
 
-### Q：我改了代码，但编译结果和队友不一样？
-
-**A**：这是正常的。PDS 的编译中间文件（`synth/`、`impl/` 等）不会被 Git 同步。每个人在本地重新编译即可。
-
----
-
-### Q：如何确认自己的模块功能正确？
-
-**A**：每个子模块都要写独立的 Testbench 进行仿真验证，**不要等所有模块写完再一起调试**。仿真通过后再提交代码。
+**Q：改了 RTL，板上行为没变？**
+A：PDS 里的 compile 是不是没重跑？另外确认 PDS 打开的是 `pds/RV32I_1/` 而不是旧副本。

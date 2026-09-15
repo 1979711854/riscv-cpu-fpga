@@ -1,6 +1,7 @@
 ﻿param(
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin",
     [switch]$SkipBuild,          # 跳过编译，复用已有 ELF
+    [switch]$SkipSim,            # 只生成固件、不跑仿真（上板流程只需要 mem.hex）
     [switch]$NoWave              # 不弹 GTKWave
 )
 
@@ -37,6 +38,13 @@ else { Write-Host "[1/3] 跳过编译（-SkipBuild）" }
 Write-Host "[2/3] 拆 ELF -> imem.hex / dmem.hex / mem.hex ..."
 & python (Join-Path $repo "scripts\elf2mem.py") $elf $prog
 if ($LASTEXITCODE -ne 0) { throw "elf2mem.py 失败" }
+
+if ($SkipSim) {
+    Write-Host "      已跳过仿真（-SkipSim）"
+    Write-Host "      固件:     $prog\mem.hex"
+    Write-Host "      下一步:   scripts\sync_firmware.ps1  同步到 PDS 工程目录"
+    exit 0
+}
 
 Write-Host "[3/3] 编译 testbench 并仿真 ..."
 $sim = Join-Path $repo "sim"
