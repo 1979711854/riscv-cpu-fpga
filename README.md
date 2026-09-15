@@ -65,28 +65,15 @@ Python 3:    用于把 ELF 拆成 hex
 ### 两条命令（几秒钟）
 
 ```powershell
-# 1) 生成固件（三选一）
+# 1) 生成固件（二选一）
 scripts\run_coremark.ps1 -Iter 700 -SkipSim   # 跑分用：板上约 10.9 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用：读按键 → 写 LED → 串口打印
-scripts\build_c.ps1 -Dir scripts\myprog       # 你自己的 C 程序（见下）
 
 # 2) 同步到 PDS 工程目录
 scripts\sync_firmware.ps1
 ```
 
 然后回 PDS 重新 compile → … → bitstream。
-
-### 写自己的 C 程序
-
-复制 `scripts/template/` 改 `main.c` 即可，另外三个文件（`uart.h` / `start.S` / `link.ld`）
-是裸机环境必需的脚手架：
-
-```powershell
-scripts\build_c.ps1 -Dir scripts\myprog -Run    # 编译 + 在电脑上跑一遍看串口输出
-scripts\build_c.ps1 -Dir scripts\myprog -Sync   # 编译 + 同步到 PDS 工程
-```
-
-详见 `scripts/template/README.md`（含五条裸机硬约束）。
 
 > `-SkipSim` = 只生成固件、不跑仿真。**上板流程只需要 `mem.hex`**，加上这个开关
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，ITER=700
