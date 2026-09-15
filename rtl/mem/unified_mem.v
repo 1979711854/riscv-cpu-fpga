@@ -38,10 +38,13 @@ module unified_mem (
     // 否则高位被静默截断。
     (* syn_ramstyle = "block_ram" *) reg [31:0] mem [0:8191];
 
-    // 先清零再加载：未初始化地址读出 X 会让比较类测试莫名其妙地失败
-    integer i;
+    // ★ 这里【不要】加整数组清零的 for 循环。
+    //   PDS 的循环展开上限是 2000 次（Verilog-4092: Loop limit 2000 exceeded），
+    //   8192 次的清零循环会直接让 compile 失败。
+    //   仿真侧需要清零是另一回事 —— 那是为了防 X 传播，写在 sim/mem_model.vh 里，
+    //   iverilog 没有这个限制，而且本文件在仿真时根本不参与编译。
+    //   硬件上 BRAM 由下面这行 $readmemh 初始化，未覆盖到的位置按上电默认值（0）。
     initial begin
-        for (i = 0; i < 8192; i = i + 1) mem[i] = 32'd0;
         $readmemh("mem.hex", mem);
     end
 
