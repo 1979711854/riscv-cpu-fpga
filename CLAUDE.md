@@ -50,7 +50,9 @@
 - `sim/`         `mem_model.vh`(存储器行为模型，被各 tb `include)
                  `tb_riscv.v` `tb_coremark.v` `tb_demo.v`（集成）+ `tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v`（单元）
                  `sim/programs/` 为生成的 hex/ELF（**不入库**）
-- `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归) `run_demo.ps1` `sync_firmware.ps1`
+- `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归)
+                 `run_demo.ps1` `sync_firmware.ps1` `build_c.ps1`(**编译任意目录的 C 程序**)
+                 `template/`(**写自己的 C 的起点**: main.c + uart.h + start.S + link.ld)
                  `elf2mem.py`(出 imem/dmem/mem 三种 hex) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
 - `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
 - `pds/riscv_cpu/` 早期 LED 练习工程
@@ -66,6 +68,8 @@
   - `scripts\run_coremark.ps1 -Iter 700 -SkipSim` —— **上板用**：只生成固件，几秒钟
   - `scripts\run_coremark.ps1 -Iter 700` —— 完整仿真跑分（ITER=700 要跑十几分钟）
   - `scripts\run_demo.ps1 -SkipSim` —— 演示程序固件，同上
+  - `scripts\build_c.ps1 -Dir scripts\myprog -Run` —— **编译任意目录的 C 程序**并仿真看输出；
+    起点是 `scripts\template\`（复制改 `main.c` 即可）。加 `-Sync` 直接同步到 PDS 工程
   - `scripts\run_riscv_tests.ps1` —— rv32ui 全量回归 + 汇总（**需 riscv-tests 源码**，见待办）
   - `scripts\sync_firmware.ps1` —— 把 `sim/programs/*.hex` 同步到 PDS 工程供 BRAM 初始化
 
