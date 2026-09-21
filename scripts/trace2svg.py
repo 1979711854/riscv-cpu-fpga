@@ -6,13 +6,17 @@
     python scripts/trace2svg.py sim/programs/trace.txt doc/figures/pipeline_waveform.svg
 
 配套流程（抓一段 CoreMark 关键循环的波形）:
-    1) scripts\\run_coremark.ps1 -Iter 1 -SkipBuild -SkipSim   # 确保固件与 vvp 就绪
+    1) scripts\\run_coremark.ps1 -Iter 1 -SkipSim   # 确保固件与 vvp 就绪
     2) cd sim && vvp tb_coremark.vvp "+ITER=1" "+IMEM=programs/imem.hex" \
            "+DMEM=programs/dmem.hex" "+PROF" "+TRACE_START=<起始拍>" "+TRACE_LEN=40"
+       （注意 +TRACE_* 受 +PROF 门控，掉了 +PROF 会一个字符都写不出来）
     3) python scripts/trace2svg.py sim/programs/trace.txt doc/figures/pipeline_waveform.svg
 
 设计说明: 图分两块 —— 上半是五级流水的"占用格"(每格一条指令，格内是 PC 低 4 位十六进制)，
 下半是控制信号的电平波形。stall / flush 周期用整列底色标出，方便一眼定位气泡来源。
+
+想找窗口就先抓一大段（+TRACE_LEN 给足）再用本脚本切 —— 不必先猜。例如：
+    vvp ... "+PROF" "+TRACE_START=21000" "+TRACE_LEN=395000" "+TRACE_FILE=programs/trace_full.txt"
 """
 import argparse
 import sys
@@ -27,14 +31,19 @@ STAGES = [
 ]
 
 # (显示名, 取值字段或组合键, 说明)
+# 注意：2026-09-21 取指重定向改造后 ex_flush_d 已从设计里删除，
+# 旧版本这里有一条 "冲刷第 2 拍 / fd" 的 lane —— 而 tb 的 +TRACE 输出
+# 从来没有 fd 字段，那条线一直恒为 0，属于无效 lane。现改为真实存在的信号。
 BIT_LANES = [
     ("load-use 停顿", "st", "amber"),
     ("分支/跳转冲刷", "fl", "red"),
-    ("冲刷第 2 拍", "fd", "red"),
+    ("分支指令 (EX)", "br", "purple"),
+    ("分支 taken", "br_taken", "purple"),
+    ("jal / jalr", "jump", "purple"),
     ("前递 EX/MEM", "fwd_ex", "blue"),
     ("前递 MEM/WB", "fwd_wb", "blue"),
-    ("MEM 写 (sw/sb)", "mwe", "teal"),
     ("MEM 读 (lw/lb)", "mre", "teal"),
+    ("MEM 写 (sw/sb)", "mwe", "teal"),
 ]
 
 PALETTE = {
@@ -48,6 +57,7 @@ PALETTE = {
     "amber": "#BA7517",
     "red": "#A32D2D",
     "blue": "#185FA5",
+    "purple": "#6B3FA0",
     "teal": "#0F6E56",
 }
 
@@ -84,6 +94,12 @@ def lane_state(rec, key):
         return bit(rec, "faex") or bit(rec, "fbex")
     if key == "fwd_wb":
         return bit(rec, "fawb") or bit(rec, "fbwb")
+    # branch_taken 是比较器的裸结果，非分支指令上也可能为 1，
+    # 所以必须与 id_ex_branch（br）相与，才是"这条分支真的跳了"。
+    if key == "br_taken":
+        return bit(rec, "br") and bit(rec, "bt")
+    if key == "jump":
+        return bit(rec, "jmp") or bit(rec, "jr")
     return bit(rec, key)
 
 
@@ -103,6 +119,11 @@ def render(rows, out_path, cell_w=30, label_w=150, title=None):
     y_lanes0 = y_stage0 + len(STAGES) * stage_h + gap_h
     h = y_lanes0 + len(BIT_LANES) * lane_h + pad + 18
     w = label_w + n * cell_w + pad
+
+    # 画布至少能放下标题（CJK 按 14px/字、ASCII 按 8px/字 估算）
+    if title:
+        need = sum(14 if ord(ch) > 0x2E80 else 8 for ch in title) + 2 * pad
+        w = max(w, need)
 
     out = []
     a = out.append
@@ -124,12 +145,17 @@ def render(rows, out_path, cell_w=30, label_w=150, title=None):
         if bit(rec, "st") or bit(rec, "dv"):
             a(f'<rect x="{x}" y="{head_h + top_off}" width="{cell_w}" height="{band_h}" '
               f'fill="{PALETTE["amber"]}" opacity="0.10"/>')
-        if bit(rec, "fl") or bit(rec, "fd"):
+        if bit(rec, "fl"):
             a(f'<rect x="{x}" y="{head_h + top_off}" width="{cell_w}" height="{band_h}" '
               f'fill="{PALETTE["red"]}" opacity="0.10"/>')
 
-    # ---- 表头：周期号。每格都标会连成一片看不清，按窗口长度取步长，最多标 8 个 ----
-    step = max(1, n // 8)
+    # ---- 表头：周期号。每格都标会连成一片看不清，按标签宽度定步长 ----
+    sample = rows[0].get("cyc", "0")
+    # 6 位数字在 font-size=10 的等宽字体下约 6px/字符；留 8px 间隙
+    need_px = len(sample) * 6 + 8
+    step = max(1, -(-need_px // cell_w))          # 向上取整
+    if n // step > 10:                            # 标签仍太密就再稀释
+        step = max(step, -(-n // 10))
     for i, rec in enumerate(rows):
         if i % step:
             continue
