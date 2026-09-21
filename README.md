@@ -9,12 +9,15 @@
 
 | 项目 | 结果 |
 |---|---|
-| riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
-| CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`，**2.38 CoreMark/MHz** |
-| 时序（27MHz，多 seed） | Setup +15.495ns / Hold +0.145ns，**失败端点 0** |
+| riscv-tests（rv32ui + rv32um，50 项） | **50 PASS / 0 FAIL / 0 TIMEOUT** |
+| CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`（旧取指路径 / ITER=700） |
+| CoreMark 效率 | **2.611 CoreMark/MHz**（当前设计，仿真每迭代 382,972 周期）；改造前 2.380 |
+| 时序（27MHz，新设计） | Estimated **47.8126 MHz**，Setup +16.122ns / Hold +0.147ns，**失败端点 0** |
+| 资源（新设计） | LUT **2,316**（1.45%）、FF 1,913、DRM 16、APM 11 |
 
-> 唯一 FAIL 是 `ma_data`（未对齐访问）。RISC-V 规范 §2.6 把它列为**可选**；
-> 且 gcc 假设变量自然对齐、**永远不会生成未对齐的 load/store**，所以不影响任何 C 程序。
+> `ma_data`（未对齐访问）此前长期是唯一的 FAIL，2026-09-21 取指重定向改造后
+> **自动转为 PASS** —— 说明它更像是冲刷路径上的一个潜在 bug，而不是架构限制。
+> 但未对齐通路没有专门的测试覆盖，**不把它当作已实现的功能对外承诺**。
 
 ---
 
@@ -66,7 +69,7 @@ Python 3:    用于把 ELF 拆成 hex
 
 ```powershell
 # 1) 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 700 -SkipSim   # 跑分用：板上约 10.9 秒，满足 ≥10s
+scripts\run_coremark.ps1 -Iter 770 -SkipSim   # 跑分用：板上约 10.9 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用：读按键 → 写 LED → 串口打印
 
 # 2) 同步到 PDS 工程目录
@@ -76,13 +79,23 @@ scripts\sync_firmware.ps1
 然后回 PDS 重新 compile → … → bitstream。
 
 > `-SkipSim` = 只生成固件、不跑仿真。**上板流程只需要 `mem.hex`**，加上这个开关
-> 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，ITER=700
-> 大约要跑十几分钟。
+> 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
+>
+> **ITER 必须跟着"每迭代周期"走。** 当前设计每迭代 382,972 周期，27MHz 下
+> ITER=770 → 10.92 秒。改造前是 420,094 周期/迭代（ITER=700 → 10.89 秒）；
+> **现在还用 700 只剩 9.93 秒，CoreMark 会判 invalid。**
 
-> 🔴 **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
+> **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
 > `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** —— 但 BRAM 是空的，
 > 板上什么都不跑，**且没有任何其他报错**。这个坑踩过，极难排查。
 > 综合前务必确认 `pds/RV32I_1/mem.hex` 存在。
+>
+> **文件在、但内容是上一次的程序，更隐蔽。** PDS 读的是 `pds/RV32I_1/mem.hex`，
+> **不是** `sim/programs/mem.hex`，而且从不比较时间戳。跑过 `run_demo.ps1` /
+> `run_riscv_tests.ps1` 之后再 sync，工程里就留下 demo / riscv-test 的镜像；
+> 此后无论怎么改 RTL、重新综合布线，**板上跑的还是那个旧程序**，PDS 全程零报错。
+> **纪律：每次上板前重新跑一遍 `sync_firmware.ps1`。**
+> 核对：`mem.hex` 字数应与 ELF 的 `.text` 规模相当 —— CoreMark 固件 = **4209 字**。
 
 ---
 
@@ -134,7 +147,7 @@ riscv-cpu-fpga/
 改 RTL 后建议跑一遍，比上板快得多：
 
 ```powershell
-scripts\run_riscv_tests.ps1     # 49 PASS / 1 FAIL / 0 TIMEOUT（不需联网）
+scripts\run_riscv_tests.ps1     # 50 PASS / 0 FAIL / 0 TIMEOUT（不需联网）
 scripts\run_sim.ps1             # 6 个模块单元测试
 scripts\run_coremark.ps1 -Iter 1
 scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
@@ -142,8 +155,8 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 **回归纪律**：改动 RTL 后，下面两条必须同时保持不变（除非本次改动就是要改变某一项）：
 
-1. riscv-tests 的 **49/1/0**
-2. CoreMark ITER=1 的 **1,529,499 周期** ← "没碰坏流水线"最灵敏的探针
+1. riscv-tests 的 **50/0/0**
+2. CoreMark 计时区间 **382,972 拍**（测试台总周期 1,488,333）← "没碰坏流水线"最灵敏的探针
 
 工具链（scoop 安装）：`scoop install iverilog gtkwave`
 
@@ -157,6 +170,9 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 | `doc/spec.md` | 架构：流水线、存储器与总线、地址映射、已知限制 |
 | `doc/base_task_status.md` | 基础任务三条逐条核对 |
 | `doc/test_report_riscv-tests.md` | 回归结果、CoreMark 口径推导、板上验证证据 |
+| `doc/resource_efficiency.md` | 赛题三个性能指标成文（CoreMark/MHz、Fmax、CoreMark/LUTs） |
+| `doc/ila_analysis.md` | 流水线效率剖析 + ILA 抓取方案（含 `.fic` 生成流程） |
+| `doc/reports/` | 单次改动的验证记录（如取指重定向改造） |
 | `doc/plan.md` | 开发计划 |
 
 ---
@@ -193,3 +209,9 @@ A：远程平台偶发问题，**多烧录几次即可**，不是设计问题。
 
 **Q：改了 RTL，板上行为没变？**
 A：PDS 里的 compile 是不是没重跑？另外确认 PDS 打开的是 `pds/RV32I_1/` 而不是旧副本。
+
+**Q：板子跑起来了，但输出的是**上一次**的程序（比如 demo），不是刚编的那个？**
+A：**`pds/RV32I_1/mem.hex` 过期了。** PDS 综合读的是工程目录里那一份，不看时间戳，
+也**不会**自动从 `sim/programs/` 取新固件。重跑 `scripts\sync_firmware.ps1` 再综合。
+排查方法：对 `mem.hex` 的字数 —— CoreMark 固件 **4209 字**，demo 只有 **101 字**，
+riscv-test 约 **431 字**；数字对不上就是拿错镜像了。

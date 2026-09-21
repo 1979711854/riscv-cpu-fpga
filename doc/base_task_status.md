@@ -1,6 +1,6 @@
 # 基础任务完成度核对（对照《紫光同创.pdf》选题指南）
 
-> 核对日期：2026-09-15（更新）　依据：赛题"核心设计任务 → 基础任务"三条 + 代码与仿真核对
+> 核对日期：2026-09-21（更新）　依据：赛题"核心设计任务 → 基础任务"三条 + 代码与仿真核对
 > 结论：**基础任务三条全部达成**，另有若干项超出基础要求。
 
 ## 赛题原文（基础任务）
@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | ✅ 达标 |
 | 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | ✅ 达标 |
-| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` + `ex_flush_d` 双拍冲刷（**实际吞吐损失 3 拍**，2026-09-21 实测更正） | ✅ 达标 |
+| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（吞吐损失 **2 拍**，2026-09-21 取指重定向改造） | ✅ 达标 |
 | 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | ✅ 达标 |
 | 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | ✅ 达标 |
 | 3b | GPIO | LED 输出 + 按键输入（`rtl/periph/gpio.v`，输入 2 级同步） | ✅ 达标 |
@@ -49,14 +49,15 @@
   （riscv-tests 与 CoreMark 的 start.S 本来就是这个写法）。将来接异常机制时，
   这里就是 trap 的入口。
 
-## 验证结果（2026-09-15）
+## 验证结果（2026-09-21）
 
 | 项目 | 结果 |
 |---|---|
-| riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**，唯一 FAIL 是 `ma_data`（未对齐访问，架构取舍） |
+| riscv-tests（50 项：rv32ui 42 + rv32um 8） | **50 PASS / 0 FAIL / 0 TIMEOUT**（取指重定向后 `ma_data` 由 FAIL 转 PASS） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（板上实测，ITER=700）** | `Total ticks 294,065,438` → **实际 10.89 秒**，`Correct operation validated` ✅ **达标** |
-| CoreMark 效率 | **每迭代 420,094 周期（板上）/ 420,070（仿真，ITER=1 计时区间实测），差 0.0057%** → **2.38 CoreMark/MHz** |
+| **CoreMark v1.0（板上实测，ITER=770，当前设计）** | `Total ticks 294,888,440` → **实际 10.92 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致 |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **382,972** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.611 CoreMark/MHz**；**ITER=770 已上板复测通过（10.92 秒，CRC 吻合）** |
+| 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
 | 单元测试 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` `tb_control` `tb_gpio` `tb_uart_rx` 全部 PASS |
@@ -85,7 +86,8 @@
 
 ## 已知限制（诚实记录，避免答辩被问倒）
 
-1. **未对齐 load/store 不支持** —— `ma_data` 因此 FAIL。RISC-V 规范允许。
+1. **未对齐 load/store 不保证支持** —— RISC-V 规范允许。`ma_data` 在当前设计下已 PASS，
+   但未对齐通路没有专门测试覆盖（原因分析见 `doc/reports/2026-09-21_branch_opt_verify.md`）。
 2. **按键无硬件消抖** —— `gpio.v` 只做 2 级同步；去抖放在演示程序里
    （采样—延时 10ms—再采样），这样更容易验证。
 3. **EBREAK 是软停机** —— 不停 PC，需软件配合自旋循环。

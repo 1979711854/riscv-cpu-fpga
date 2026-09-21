@@ -57,9 +57,12 @@ scripts\run_riscv_tests.ps1
 ## 用这批 ELF 测得的基线
 
 ```
-49 PASS / 1 FAIL / 0 TIMEOUT   （共 50 项）
-唯一 FAIL: ma_data（未对齐访问，RISC-V 规范允许，属架构取舍）
+50 PASS / 0 FAIL / 0 TIMEOUT   （共 50 项）
 ```
+
+`ma_data`（未对齐访问）此前长期是唯一的 FAIL，曾归因为"RISC-V 规范允许的架构取舍"。
+**2026-09-21 取指重定向改造后它自动转为 PASS** —— 说明该 FAIL 更可能是冲刷路径上的
+一个潜在 bug，而非架构限制。但未对齐通路没有专门测试覆盖，不当作已实现的功能。
 
 详见 `doc/test_report_riscv-tests.md`。
 

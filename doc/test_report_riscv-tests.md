@@ -1,6 +1,6 @@
 # riscv-tests 回归报告（RV32IM 五级流水线 CPU）
 
-最近更新：2026-09-15
+最近更新：2026-09-21
 方法：不改 CPU、不改 riscv-tests 仓库；`scripts/elf2mem.py` 把 ELF 拆成
      `imem.hex` / `dmem.hex`（另出合并的 `mem.hex`），`sim/tb_riscv.v` 监控
      core 对 tohost 的 store，判定 PASS / FAIL / TIMEOUT。
@@ -21,13 +21,13 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 > 同一批二进制，基线漂移会让人误判成自己改坏了 CPU。来源与再生成方式见
 > `third_party/riscv-tests-elf/README.md`。
 
-## 当前结果：49 PASS / 1 FAIL / 0 TIMEOUT（共 50）
+## 当前结果：50 PASS / 0 FAIL / 0 TIMEOUT（共 50）
 
 | 分类 | 数量 | 测试 |
 |------|------|------|
-| PASS（rv32ui） | 41 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
+| PASS（rv32ui） | 42 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw **ma_data** or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
 | PASS（rv32um） | 8 | **div divu mul mulh mulhsu mulhu rem remu** |
-| FAIL | 1 | ma_data（未对齐访问，架构取舍，见下） |
+| FAIL | 0 | ——（`ma_data` 已于 2026-09-21 转 PASS，原因见 §1） |
 | TIMEOUT | 0 | —— |
 
 > **rv32um 这 8 项是 2026-09-15 补上的。** 本 CPU 实现了 M 扩展、CoreMark 也是用
@@ -36,7 +36,7 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 
 ---
 
-## 1. ma_data —— FAIL【架构限制，预期如此，不修】
+## 1. ma_data —— 已由 FAIL 转为 PASS（2026-09-21）
 
 `ma_data` 测试未对齐访问（`lh/lhu/lw` 从 `+1/+2/+3` 地址读）。本 CPU 只支持对齐访问：
 
@@ -44,11 +44,19 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 - `lh` 的 `load_half = addr_low[1] ? ... : ...` 只对偶地址正确
 - `lw` 从未对齐地址会跨字，无法重拼
 
-**RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，简单实现通常不支持。
-**判定：架构取舍，预期失败。**
+**RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，所以此前把这项 FAIL
+判定为"架构取舍、预期失败"。2026-09-21 的**取指重定向改造**（删除 `ex_flush_d`、
+跳转目标同拍旁路给取指端）之后，它**自动变成 PASS**，本报告随之变为 50 PASS / 0 FAIL。
 
-> ⚠️ 回归时这一项必须**仍然 FAIL**。如果它"被修好了"，说明有人动了 load/store 的
-> 字节抽取逻辑，属于非预期改动，要查清楚。
+> **这个转变得认真对待 —— 它推翻了原来的解释。** 那次改造只碰了取指重定向路径，
+> 完全没有动 load/store 的字节抽取逻辑。所以 `ma_data` 此前的 FAIL 更可能是
+> **冲刷路径上的一个潜在 bug**（跳转前后取指错位，破坏了测试数据），
+> 而不是"未对齐访问不支持"。原判断已被证伪。
+>
+> 两件事仍需诚实记录：
+> (a) **未对齐通路没有专门测试覆盖**，`ma_data` 通过 ≠ 未对齐访问已完整实现，
+>     不对外承诺这个能力；
+> (b) 原「回归时这一项必须仍然 FAIL」的纪律**作废**，改为「必须保持 PASS」。
 
 ## 2. fence_i —— 已由 TIMEOUT 转为 PASS（2026-09-15）
 
@@ -105,7 +113,9 @@ CoreMark 周期数也一字不差。** 说明这次改动没有引入任何时�
 - `pc_r` 在 stall 时是**保持不动**（不是后退到 `if_id_pc+4`）；
 - `imem_addr` 的 mux 在 stall 时退回 `if_addr_d[14:2]`（重读同一 word），
   使 `if_id` 在 stall 结束那拍拿到 (pc, 指令) 同址的一对；
-- `ex_flush_d` 提供跳转后的第二道冲刷，杀掉跳转前已发出的那次读。
+- 跳转时 `ex_flush` **只清 IF/ID 一拍**，同时把目标地址**同拍**旁路给取指端
+  （`imem_addr` 的 mux 取 `ex_target`），使目标指令早 1 拍进 IF/ID —— 惩罚 2 拍。
+  （旧设计另有 `ex_flush_d` 做第二道冲刷、惩罚 3 拍；2026-09-21 已随取指重定向一并移除）
 
 这三点是承重逻辑，改动前务必读 `rtl/core/core.v` 里 PC 段的注释。**注意：是
 `imem_addr` 后退，不是 `pc_r` 后退** —— 照字面把 `pc_r` 也往后推会复现那个
@@ -113,9 +123,9 @@ CoreMark 周期数也一字不差。** 说明这次改动没有引入任何时�
 
 ---
 
-## 附：CoreMark 与板上验证（2026-09-15）
+## 附：CoreMark 与板上验证
 
-### 板上实测结果（远程 FPGA 平台，27MHz，ITER=700）
+### 板上实测结果（远程 FPGA 平台，27MHz，ITER=700）—— 取指重定向改造【前】的设计
 
 ```
 CoreMark Size    : 666
@@ -141,30 +151,42 @@ Correct operation validated. See README.md for run and reporting rules.
 板上两次实测一解方程，口径完全自洽：
 
 ```
-ITER=200 → Total ticks  84,018,579 / 200 = 420,093 周期/迭代
-ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代
-仿真（ITER=1）                           420,070 周期/迭代
+ITER=200 → Total ticks  84,018,579 / 200 = 420,093 周期/迭代   ← 改造前设计
+ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造前设计
+仿真（ITER=1，改造前）                    420,070 周期/迭代
+仿真（ITER=1，改造后，当前设计）          382,972 周期/迭代
 ```
 
-**真机与仿真只差 0.0057%** → 仿真模型可信，仿真数据可以放心写进报告。
-**CoreMark/MHz = 1,000,000 / 420,094 ≈ 2.38**
+**改造前真机与仿真只差 0.0057%** → 仿真模型可信，仿真数据可以放心写进报告。
+**改造前 CoreMark/MHz = 1,000,000 / 420,094 ≈ 2.38**
+**改造后（当前设计，仿真）= 1,000,000 / 382,972 ≈ 2.611**
 
-> 仿真的 420,070 是 2026-09-21 用 `+PROF` 直接读 CoreMark 的 `Total ticks` 得到的，
-> 并用 `start_time`/`stop_time` 两次读 `0x7FF4` 的周期号交叉验证（21,533 → 441,603）。
+> 仿真的 420,070（改造前）与 382,972（改造后）都是 2026-09-21 用 `+PROF` 直接读
+> CoreMark 的 `Total ticks` 得到的。逐拍 trace 复核：`stop_time` 的读指令
+> （PC `0x2920` 的 `lw a5,0(a5)`，读 MMIO `0x7FF4`）在第 **402,182** 拍进入 MEM 级；
+> 区间的**长度** 382,972 拍与 CoreMark 自报的 `Total ticks` 逐位一致。
+> （起点在本次 trace 窗口之前，未实测，所以这里不给起点值。）
 > 此前的文档写「仿真 ≈ 420,414」，该值无法复现，已更正。
-> 注意改动前后 `ITER=1` 的测试台总周期逐位一致（都是 1,529,499），
-> 说明改动前的仿真也必然是 420,070。
+> 注意改造前后 `ITER=1` 的测试台总周期不是同一个值（1,529,499 → 1,488,333）——
+> 因为本次改造的目的就是减少周期数；但区域内提交指令数、停顿数、前递数、访存数
+> **完全相同**，说明只改了时序、没改行为。
 
-> ⚠️ **别用 ITER=1 的 1,529,499 周期当"每迭代成本"。** 那是**仿真测试台**的总周期，
-> 含约 110 万周期的一次性 UART 打印开销；而 CoreMark 自己的 `Total ticks` 计时在打印
-> **之前**就停了、**不含**打印。两个口径不同，混用会把迭代成本算错。
+> ⚠️ **别用 ITER=1 的测试台总周期（当前 1,488,333）当"每迭代成本"。** 那是**仿真
+> 测试台**的总周期，含约 108 万周期的一次性 UART 打印开销；而 CoreMark 自己的
+> `Total ticks` 计时在打印**之前**就停了、**不含**打印。两个口径不同，混用会把
+> 迭代成本算错。
 >
 > 本项目就踩过：据此写成"ITER≈200 约 10s"，实测只有 **3.11s**，被 CoreMark 判 invalid。
 
 ### 迭代次数的选取
 
-27MHz 下跑满 10s 需要 `270,000,000 / 420,094 ≈ 643` 次。
-用 **ITER=700**（10.89s，留 8.9% 余量，防止板上主频略有偏差时掉到 10s 以下）。
+**当前设计每迭代 382,972 周期**，27MHz 下跑满 10 s 需要
+`270,000,000 / 382,972 ≈ 705` 次。用 **ITER=770**（10.92s，留 9.2% 余量，
+防止板上主频略有偏差时掉到 10 s 以下）。
+
+> ⚠️ **改了流水线就必须重算这个数。** 旧设计 420,094 周期/迭代时用 700 正合适
+> （10.89s）；改造后每迭代降到 382,972，**ITER=700 只剩 9.93s，会被判 invalid**。
+> 每次动流水线后先跑 `run_coremark.ps1 -Iter 1` 读 `Total ticks`，再定 ITER。
 
 ### 平台注意事项
 
@@ -172,6 +194,13 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代
 - 综合前必须把 `mem.hex` 放进 PDS 工程目录（`scripts\sync_firmware.ps1`）。
   缺失时 PDS 只报 `Cannot open specified data file "mem.hex"` 然后**照常生成比特流**，
   但 BRAM 是空的 —— 板上什么都不会跑，且没有任何其他报错
+- ⚠️ **同一类坑的第二种形态：文件在，但内容过期。** PDS 综合读的是
+  `pds\RV32I_1\mem.hex`，**不是** `sim\programs\mem.hex`，而且从不检查时间戳。
+  跑过 `run_demo.ps1` / `run_riscv_tests.ps1` 之后再 `sync_firmware.ps1`，
+  工程里就留下 demo / riscv-test 的镜像；此后无论怎么改 RTL、重新综合布线，
+  **板上跑的都还是那个旧程序**，PDS 全程零报错（2026-09-21 实踩）。
+  判据：看 `pds.log` 里的 `Loading memory data from file ... mem.hex`，
+  再核对 `mem.hex` 字数与 ELF 的 `.text` 规模是否相当（CoreMark = **4209 字**）。
 - 日志里的 `SCBV has not been set` 是配置 bank 电压的提醒，**实测不影响上板运行**
 
 ---
@@ -180,8 +209,12 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代
 
 每次改动 RTL 后，以下两条必须同时满足：
 
-1. **本报告的 49/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
-2. **CoreMark ITER=1 的周期数一字不差**（当前基线：**1,529,499** 周期，
-   CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`）
+1. **本报告的 50/0/0 逐项不变**（除非本次改动的目的就是改变某一项）
+2. **CoreMark 计时区间**（`+PROF` 读到的 `Total ticks`）**一字不差**
+   —— 当前基线：**382,972** 拍（测试台总周期 1,488,333），
+   CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`
 
 第 2 条是"没有碰坏流水线"最灵敏的探针 —— 多一个停顿、少一次前递都会让它变。
+
+> 改造前的基线是 420,070 拍（测试台 1,529,499）。2026-09-21 的取指重定向
+> **目的就是改变它**，所以数值变了；除这种"目的即改变"的情况外，它不该动。

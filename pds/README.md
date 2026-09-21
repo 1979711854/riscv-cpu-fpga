@@ -16,7 +16,7 @@
 | 了解测试结果与基线 | `doc/test_report_riscv-tests.md` |
 | 跑回归 | `scripts/run_riscv_tests.ps1`（不带参数即可，不需联网） |
 
-> ⚠️ **不要从 `riscv32-FPGA-pds/RV32I_1/` 打开。** 那是你交接时的原始副本，里面的 RTL
+>  **不要从 `riscv32-FPGA-pds/RV32I_1/` 打开。** 那是你交接时的原始副本，里面的 RTL
 > 已是旧版本。正式工程是 `pds/RV32I_1/`，源文件指向仓库根的 `../../rtl/**`（单一真相）。
 
 ---
@@ -27,11 +27,11 @@
 
 | 赛题要求 | 状态 | 证据 |
 |---|---|---|
-| ① 支持 RV32I 基础整数指令集 | ✅ 全覆盖 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（含 M 扩展 8 项） |
-| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ | 你原来的 5 级流水线，未改结构 |
+| ① 支持 RV32I 基础整数指令集 | ✅ 全覆盖 | riscv-tests **50 PASS / 0 FAIL / 0 TIMEOUT**（含 M 扩展 8 项） |
+| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ | 5 级流水线；2026-09-21 做取指重定向，分支惩罚 3 拍 → **2 拍** |
 | ③ 集成 UART / GPIO 用于系统控制与结果输出 | ✅ | 总线 + GPIO + UART 收发；演示程序仿真端到端 7/7 PASS |
-| 测评：CoreMark 运行 ≥10s | ✅ **板上实测** | `Total ticks 294,065,438` → **10.89 秒**，`Correct operation validated` |
-| 测评：CoreMark/MHz | ✅ | **2.38**（真机 420,094 周期/迭代 vs 仿真 420,070，差 0.0057%） |
+| 测评：CoreMark 运行 ≥10s | ✅ 板上实测通过（当前设计，ITER=770） | `Total ticks 294,888,440` → **10.92 秒**，`Correct operation validated`，四个 CRC 与仿真逐位一致 |
+| 测评：CoreMark/MHz | ✅ | **2.611**（当前设计，仿真：每迭代 382,972 周期）<br>改造前：2.380（真机 420,094 vs 仿真 420,070，差 0.0057%） |
 
 ---
 
@@ -70,7 +70,7 @@
 `control.v` 新增 `7'b0001111`（FENCE/FENCE.I → NOP）与 `7'b1110011`
 （ECALL → NOP；EBREAK → 置 `sys_ebreak` 停机钩子，经 ID/EX→EX/MEM 送到核外）。
 
-### 3.5 ⚠️ 一处**没改**但容易被"好心改坏"的地方
+### 3.5  一处**没改**但容易被"好心改坏"的地方
 
 `core.v` 里取指通路的补偿逻辑是**承重的**，请不要动：
 
@@ -81,7 +81,13 @@ stall / div_stall 时：pc_r 与 if_addr_d 都保持不动，
 
 **是 `imem_addr` 后退，不是 `pc_r` 后退。** 若把 `pc_r` 也往后推，连续两拍 stall 会让
 同一条指令被取两次，非幂等指令被重复执行 —— 你交接的那版之前就踩过这个坑
-（`sb`/`sh`/`sw` 曾因此 FAIL，后来你修好了）。`ex_flush_d` 的第二道冲刷同理。
+（`sb`/`sh`/`sw` 曾因此 FAIL，后来你修好了）。
+
+> 补充（2026-09-21）：这段话原有的后半句是「`ex_flush_d` 的第二道冲刷同理」。
+> 现在 `ex_flush_d` 已被**删除**（取指重定向改造：跳转目标改为在冲刷**当拍**旁路给
+> 取指端，惩罚从 3 拍降到 2 拍），但**这条纪律仍然成立** —— `imem_addr` 那层的
+> "后退"逻辑没有变化，别顺手把 `pc_r` 也推回去。另外注意 `pc_r <= ex_target + 4`
+> 里的 `+4`：地址已在当拍发出，不加 `+4` 会让目标指令被取两次。
 
 ---
 
@@ -93,16 +99,23 @@ stall / div_stall 时：pc_r 与 if_addr_d 都保持不动，
 
 ```powershell
 # 1) 生成固件（选一种）
-scripts\run_coremark.ps1 -Iter 700     # 跑分用：10.89s，满足赛题 ≥10s
-scripts\run_demo.ps1                   # 演示用：读按键→写 LED→串口打印
+scripts\run_coremark.ps1 -Iter 770 -SkipSim   # 跑分用：10.92s，满足赛题 ≥10s（当前设计）
+scripts\run_demo.ps1                          # 演示用：读按键→写 LED→串口打印
 
 # 2) 同步到本工程目录（会删掉过期的 imem.hex/dmem.hex）
 scripts\sync_firmware.ps1
 ```
 
-> ⚠️ **`mem.hex` 缺失时 PDS 不会拦住你。** 它只报一行
+>  **`mem.hex` 缺失时 PDS 不会拦住你。** 它只报一行
 > `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** —— 但 BRAM 是空的，
 > 板上什么都不跑，且**没有任何其他报错**。这个坑我们踩过，极难排查。
+>
+>  **`mem.hex` 过期时更隐蔽（2026-09-21 实踩）**：文件存在、大小也正常，只是内容是
+> 上一次构建的镜像（例如跑完 demo 之后）。综合**照常成功**、时序资源全部正常，
+> 但板上跑的是**旧程序**。PDS 从不比较时间戳。
+> **纪律：每次上板前都重新跑一遍 `sync_firmware.ps1`，别凭"上次同步过了"判断。**
+> 核对方法：`mem.hex` 的字数应与 ELF 的 `.text` 规模相当 —— CoreMark 固件是
+> **4209 字 / 67,693 字节**，而 demo 只有 101 字、riscv-test 约 431 字。
 
 ### 4.2 PDS 里跑流程
 
@@ -134,7 +147,7 @@ compile → synthesize → device map → place & route → generate bitstream
     0x0C  R UART 接收（读弹出）                     0x10  R 周期计数器
 ```
 
-> ⚠️ RAM 译码**显式挖掉了 `0x7FF0~0x7FFF`**。若把它改回连续译码，CoreMark 写 `0x7FF8`
+> RAM 译码**显式挖掉了 `0x7FF0~0x7FFF`**。若把它改回连续译码，CoreMark 写 `0x7FF8`
 > 会落进 RAM，`done` 永不拉高。
 > **栈顶必须 ≤ 0x7FF0**（CoreMark 用 0x7000）。
 
@@ -143,56 +156,67 @@ compile → synthesize → device map → place & route → generate bitstream
 ## 六、已验证的结果（附复现命令）
 
 ```powershell
-scripts\run_riscv_tests.ps1     # 49 PASS / 1 FAIL / 0 TIMEOUT
+scripts\run_riscv_tests.ps1     # 50 PASS / 0 FAIL / 0 TIMEOUT
 scripts\run_sim.ps1             # 6 个单元测试全过
 scripts\run_coremark.ps1 -Iter 1
 scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 ```
 
-**riscv-tests：49 PASS / 1 FAIL / 0 TIMEOUT**（50 项）
-- 唯一 FAIL 是 `ma_data`（未对齐访问）—— 见 §7
+**riscv-tests：50 PASS / 0 FAIL / 0 TIMEOUT**（50 项）
+- `ma_data`（未对齐访问）此前长期是唯一的 FAIL，**2026-09-21 取指重定向后转 PASS**
+  —— 说明它更像是冲刷路径上的潜在 bug，而非架构取舍（见 §7）
 - `fence_i` 已从 TIMEOUT 转 PASS
 - rv32um 的 8 项（mul/mulh/mulhsu/mulhu/div/divu/rem/remu）**一次全过**，
   给 M 扩展补上了官方测试背书（此前只有手写单测）
 
-**CoreMark（远程平台实测，ITER=700）**
+**CoreMark（远程平台实测，ITER=770，取指重定向后的当前设计）**
 ```
-Total ticks      : 294065438     → 实际 10.89 秒
-Iterations       : 700
+Total ticks      : 294888440     → 实际 10.92 秒
+Iterations       : 770
 seedcrc/crclist/crcmatrix/crcstate 四个 CRC 与仿真逐位一致
 Correct operation validated.
 ```
 
-**时序（27MHz，多 seed 报告）**
+**时序（27MHz 约束，2026-09-21 取指重定向后的新设计）**
 ```
-Setup(Slow) 最差裕量 : +15.495 ns     失败端点 : 0
-Hold(Slow)  最差裕量 : +0.145 ns      失败端点 : 0
+Estimated Frequency  : 47.8126 MHz      （约束 27.0000 MHz）
+Setup(Slow) 最差裕量 : +16.122 ns     失败端点 : 0
+Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 收敛率 : 100%
 ```
-裕量还有 15.5ns / 周期 37.037ns → 关键路径约 21.5ns，**理论上还能跑到约 46MHz**
-（粗略外推，真要提频需要重新约束和验证）。
+裕量还有 16.1ns / 周期 37.037ns → 关键路径约 20.9ns，**理论上还能跑到约 47.8MHz**
+（工具估计值；真要提频需要重新约束和验证）。
+
+> 读时序/资源报告前先确认它与当前 RTL **同批**。改造前的数据
+> （46.4209 MHz / +15.495 ns / 2301 LUT）备份在 `report_timing/bak/`、`synthesize/bak/`，
+> 别和新的混用。
 
 ### 回归纪律（请务必遵守）
 
 改动 RTL 后，**这两条必须同时保持不变**（除非本次改动的目的就是改变某一项）：
 
-1. riscv-tests 的 **49/1/0**
-2. CoreMark ITER=1 的 **1,529,499 周期**
+1. riscv-tests 的 **50/0/0**
+2. CoreMark 计时区间 **382,972 拍**（测试台总周期 1,488,333）
 
 第 2 条是"没碰坏流水线"最灵敏的探针 —— 多一个停顿、少一次前递都会让它变。
 
+> 2026-09-21 的取指重定向改造**目的就是改变第 2 条**，所以基线从
+> 420,070 / 1,529,499 换成了现在这两个数。除这种"目的即改变"的情况外，它不该动。
+> 顺带：**跑 `run_coremark.ps1` 之前先确认 `sim/programs/*.hex` 对应的是当前 ELF**
+> —— `elf2mem.py` 若中途失败会留下上一次的镜像，让回归结论完全失真。
+
 ---
 
-## 七、还没做的（截至 2026-09-15）
+## 七、还没做的（截至 2026-09-21）
 
 ### 高优先级
 
 | 项目 | 说明 |
 |---|---|
-| **`ma_data` 未对齐访问** | 唯一的 FAIL。RISC-V 规范 §2.6 允许多不做，但评委大概率会问。实现后回归可全绿 |
+| `ma_data` 未对齐访问 | ~~此前的唯一 FAIL~~ → **2026-09-21 取指重定向后已转 PASS**（见 §六）。规范要求外的未对齐通路仍无专门测试（见 `doc/base_task_status.md` §已知限制） |
 | **演示程序上板** | 目前**只在仿真里验证过**。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得换本地盘古板 |
 | **GPIO 引脚未分配** | `cpu_top` 的 `led[7:0]` / `key[7:0]` / `uart_rx` 共 17 个端口**没有位置约束**（`.fdc` 里被注释掉了）。跑 CoreMark 无影响，但 P&R 只做时序告警就放过去了 |
-| **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：LUT 2,301 (1.44%)，CoreMark/LUTs = 1.035 每千 LUT |
+| **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：LUT **2,316**，**CoreMark/LUTs = 1.127**（取指重定向后当前设计） |
 
 ### 中优先级
 
@@ -206,8 +230,8 @@ Hold(Slow)  最差裕量 : +0.145 ns      失败端点 : 0
 
 | 方向 | 注意 |
 |---|---|
-| 2 路组相联 I/D Cache | ⚠️ **加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"**，否则 `fence_i` 会退回失败 |
-| BTB 动态分支预测 | 当前分支惩罚固定 **3 拍**（`ex_flush` + `ex_flush_d` 双拍冲刷 + 1 拍等取指数据回填），BTB 可显著降低 |
+| 2 路组相联 I/D Cache |  **加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"**，否则 `fence_i` 会退回失败 |
+| BHT / BTB 动态分支预测 | 当前分支惩罚固定 **2 拍**（`ex_flush` 单拍冲刷 + 1 拍等取指数据回填），无任何预测。实测区域内后向分支 25,664 条中 **90.8% 都跳转**，「后向分支预测跳转」这类静态规则即可覆盖大部分循环回边，BHT 可进一步降低 |
 | 完整异常/中断 | `EBREAK` 已留好 `sys_ebreak` 钩子，CSR 与 trap 通路需新增 |
 | 边缘 AI 加速 | —— |
 
@@ -216,6 +240,13 @@ Hold(Slow)  最差裕量 : +0.145 ns      失败端点 : 0
 ## 八、会咬人的坑（都踩过）
 
 1. **`mem.hex` 缺失 → 静默生成空 BRAM 比特流**（见 §4.1）
+1b. **`mem.hex` 过期 → 板上跑的是上一次的程序，PDS 全程零报错**（2026-09-21 实踩）。
+   本工程综合读的是 `pds/RV32I_1/mem.hex`，**不是** `sim/programs/mem.hex`，且不看时间戳。
+   跑过 `run_demo.ps1` / `run_riscv_tests.ps1` 之后再 `sync_firmware.ps1`，工程里就留下
+   demo / riscv-test 的镜像；此后无论怎么改 RTL、重新综合布线，板上跑的都还是那个旧程序。
+   判据：`pds.log` 里 `Loading memory data from file ... mem.hex` + 核对字数
+   （CoreMark 固件 = **4209 字 / 67,693 字节**；demo 仅 101 字）。
+   **纪律：每次上板前重新 sync，别凭"上次同步过了"判断。**
 2. **Verilog 转义里没有 `\r`**。标准只有 `\n \t \\ \" \ddd`，iverilog 会把 `"\r\n"` 里的
    `\r` 当成字面字符 `'r'`，测试台的期望串永远对不上。换行用 `16'h0D0A` 拼
 3. **外设不该把 X 放上总线**。`uart_rx` 空 FIFO 曾返回未初始化槽位（值是 X），

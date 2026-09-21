@@ -14,11 +14,18 @@
 
 ```powershell
 # 例：完整回归（改完 RTL 后必跑）
-scripts\run_riscv_tests.ps1 -ElfDir riscv32-FPGA-pds\riscv-tests-run\build
-scripts\run_coremark.ps1 -Iter 1        # 周期数必须仍是 1,529,499
+scripts\run_riscv_tests.ps1                 # 期望 50 PASS / 0 FAIL
+scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 382,972 拍（测试台总周期 1,488,333）
 scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
 ```
+
+> ⚠️ **上板前记得换回 ITER=770 并同步**：跑过 `-Iter 1` 之后
+> `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有 0.014 秒、CoreMark 判 invalid。
+> ```powershell
+> scripts\run_coremark.ps1 -Iter 770 -SkipSim
+> scripts\sync_firmware.ps1
+> ```
 
 > `run_riscv_tests.ps1` 的三条路，按优先级：
 > 1. `-ElfDir <目录>` —— 直接用指定目录里的现成 ELF
@@ -42,9 +49,15 @@ scripts\run_sim.ps1 -NoWave
 统一存储器只初始化**一个**数组，所以 PDS 综合用合并后的 `mem.hex`；
 `imem.hex`/`dmem.hex` 保留给 testbench 的 `+IMEM=`/`+DMEM=` 参数用。
 
-`elf2mem.py` 有两个防呆：
+`elf2mem.py` 有三个防呆：
 - 两个 hex 的 word 索引一旦相交就**报错退出**（统一存储器下会静默覆盖）
 - 已分配(`SHF_ALLOC`)却不属于指令段/数据段的段会**打警告**（避免"指令凭空消失"）
+- 产物为空时**报错退出**；临时文件清理失败**只警告、不中止**
+
+> 第 3 条是 2026-09-21 修的一个真 bug：原先 `os.remove(_sec.tmp.bin)` 排在 `write_hex()`
+> **之前**，而该调用在沙箱/被杀软占用等环境会抛异常 —— 一旦抛出，脚本就在
+> **写出 hex 之前**中止，目录里留着上一次构建的镜像。表现是"gcc 成功、脚本成功、
+> 上板却跑旧程序"，极难排查。现在清理挪到最后并容错。
 
 ## VSCode 一键入口
 
