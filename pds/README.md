@@ -31,7 +31,7 @@
 | ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ | 你原来的 5 级流水线，未改结构 |
 | ③ 集成 UART / GPIO 用于系统控制与结果输出 | ✅ | 总线 + GPIO + UART 收发；演示程序仿真端到端 7/7 PASS |
 | 测评：CoreMark 运行 ≥10s | ✅ **板上实测** | `Total ticks 294,065,438` → **10.89 秒**，`Correct operation validated` |
-| 测评：CoreMark/MHz | ✅ | **2.38**（真机 420,094 周期/迭代 vs 仿真 420,414，差 0.08%） |
+| 测评：CoreMark/MHz | ✅ | **2.38**（真机 420,094 周期/迭代 vs 仿真 420,070，差 0.0057%） |
 
 ---
 
@@ -192,13 +192,13 @@ Hold(Slow)  最差裕量 : +0.145 ns      失败端点 : 0
 | **`ma_data` 未对齐访问** | 唯一的 FAIL。RISC-V 规范 §2.6 允许多不做，但评委大概率会问。实现后回归可全绿 |
 | **演示程序上板** | 目前**只在仿真里验证过**。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得换本地盘古板 |
 | **GPIO 引脚未分配** | `cpu_top` 的 `led[7:0]` / `key[7:0]` / `uart_rx` 共 17 个端口**没有位置约束**（`.fdc` 里被注释掉了）。跑 CoreMark 无影响，但 P&R 只做时序告警就放过去了 |
-| **资源效率未测** | 赛题评分项 `CoreMark/LUTs`。PDS GUI 里 `Design > Report > Utilization` 可直接读到 |
+| **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：LUT 2,301 (1.44%)，CoreMark/LUTs = 1.035 每千 LUT |
 
 ### 中优先级
 
 | 项目 | 说明 |
 |---|---|
-| **ILA 波形分析** | 赛题明确要求"用 ILA 抓取的波形图分析流水线效率"，属分析报告内容 |
+| **ILA 波形抓取** | 分析部分已完成（`doc/ila_analysis.md`）。硬件抓取待做：平台出 JTAG 与波形界面，**探针描述文件 `.fic` 要本地 PDS 用 Fabric Inserter 生成**，步骤见该文档 §7。注意 `.fic` 与 `.sbit` 必须同批成对 |
 | **riscv-arch-test** | RISC-V 官方合规套件，用签名文件逐字节比对，比 riscv-tests 更严格 |
 | **应用场景构建** | 目前只有"读按键→写 LED→串口"雏形，赛题有独立评分项 |
 
@@ -207,7 +207,7 @@ Hold(Slow)  最差裕量 : +0.145 ns      失败端点 : 0
 | 方向 | 注意 |
 |---|---|
 | 2 路组相联 I/D Cache | ⚠️ **加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"**，否则 `fence_i` 会退回失败 |
-| BTB 动态分支预测 | 当前分支惩罚固定 2 拍（`ex_flush` + `ex_flush_d` 双拍冲刷），BTB 可显著降低 |
+| BTB 动态分支预测 | 当前分支惩罚固定 **3 拍**（`ex_flush` + `ex_flush_d` 双拍冲刷 + 1 拍等取指数据回填），BTB 可显著降低 |
 | 完整异常/中断 | `EBREAK` 已留好 `sys_ebreak` 钩子，CSR 与 trap 通路需新增 |
 | 边缘 AI 加速 | —— |
 

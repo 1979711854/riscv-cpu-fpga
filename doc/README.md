@@ -10,6 +10,10 @@
 | `test_report_riscv-tests.md` | **riscv-tests 回归报告** + CoreMark 基线 + 回归纪律 |
 | `RV32I指令集参考.md` | 指令编码速查 |
 | `setup_env.md` | 环境搭建（工具链、iverilog、PDS） |
+| `resource_efficiency.md` | **赛题三条性能指标成文**（CoreMark/MHz、Fmax、CoreMark/LUTs） |
+| `ila_analysis.md` | **流水线效率分析**（CPI/停顿/冲刷占比）+ ILA 抓取方案 + 优化建议 |
+| `figures/` | 流水线时序波形图（`pipeline_*.svg` / `.png`） |
+| `paper/` | 论文撰写思路与获奖策略 |
 | `patches/` | 给队友的兼容补丁（历史记录） |
 
 ## 两份最重要的"别踩坑"文档

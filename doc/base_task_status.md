@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | ✅ 达标 |
 | 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | ✅ 达标 |
-| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` + `ex_flush_d` 双拍冲刷 | ✅ 达标 |
+| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` + `ex_flush_d` 双拍冲刷（**实际吞吐损失 3 拍**，2026-09-21 实测更正） | ✅ 达标 |
 | 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | ✅ 达标 |
 | 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | ✅ 达标 |
 | 3b | GPIO | LED 输出 + 按键输入（`rtl/periph/gpio.v`，输入 2 级同步） | ✅ 达标 |
@@ -56,7 +56,7 @@
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**，唯一 FAIL 是 `ma_data`（未对齐访问，架构取舍） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
 | **CoreMark v1.0（板上实测，ITER=700）** | `Total ticks 294,065,438` → **实际 10.89 秒**，`Correct operation validated` ✅ **达标** |
-| CoreMark 效率 | **每迭代 420,094 周期（板上）/ 420,414（仿真），差 0.08%** → **2.38 CoreMark/MHz** |
+| CoreMark 效率 | **每迭代 420,094 周期（板上）/ 420,070（仿真，ITER=1 计时区间实测），差 0.0057%** → **2.38 CoreMark/MHz** |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
 | 单元测试 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` `tb_control` `tb_gpio` `tb_uart_rx` 全部 PASS |
