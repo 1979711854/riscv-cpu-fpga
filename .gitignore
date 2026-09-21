@@ -93,3 +93,6 @@ $RECYCLE.BIN/
 *.runs/
 *.bit
 *.ltx
+
+# ---- 其他 agent 工具的本地数据目录 ----
+.workbuddy/

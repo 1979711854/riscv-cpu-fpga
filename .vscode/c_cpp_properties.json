@@ -1,0 +1,76 @@
+{
+    /* 让 VSCode 的 IntelliSense 认识 RISC-V 交叉工具链的 stdio.h 等头文件。
+     *
+     * 本仓库里的 C 源码（scripts\demo\、scripts\coremark_port\、third_party\coremark\）
+     * 都是给 riscv-none-elf-gcc 编的，头文件在工具链自己的目录下；而 cpptools 默认
+     * 拿宿主机（Windows/MSVC）的头文件路径去找，两边毫不相干 —— 于是报
+     * 「无法打开源文件 stdio.h」。编译本身一直是好的，这纯粹是编辑器显示问题。
+     *
+     * 为什么还要 compilerPath：
+     *   cpptools 到 1.34 为止【没有 RISC-V 的 intelliSenseMode】（只有 x86 / arm 那几个），
+     *   所以没法靠 intelliSenseMode 描述目标架构。指定 compilerPath 之后，
+     *   扩展会去问这个编译器「你的内建宏和系统头路径是什么」，这才是跨编译的正路。
+     *   下面 defines / includePath 是它问不出来时的兜底，重复了也无害。
+     *
+     * 配套：D:\riscv-cpu-c\.vscode\c_cpp_properties.json 是同一份（那边是写 C 的工作台）。
+     * 这个文件不影响 PDS 综合，也不参与任何脚本 —— 删掉只会让 IntelliSense 重新报错。
+     *
+     * 改了这里要让它生效：Ctrl+Shift+P -> "C/C++: Reset IntelliSense Database"，
+     * 或者直接重载窗口（Developer: Reload Window）。
+     */
+    "version": 4,
+    "configurations": [
+        {
+            "name": "RISC-V rv32im 裸机（newlib-nano）",
+
+            "compilerPath": "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-gcc.exe",
+            /* 和 scripts\run_coremark.ps1 / run_demo.ps1 用的参数保持一致 */
+            "compilerArgs": [
+                "-march=rv32im",
+                "-mabi=ilp32",
+                "-mcmodel=medany",
+                "-specs=nano.specs"
+            ],
+
+            /* 顺序照抄 riscv-none-elf-gcc -E -Wp,-v 打印的搜索顺序。
+             * newlib-nano 必须排在 riscv-none-elf/include 前面 —— 它里面的
+             * newlib.h 要覆盖掉完整版那个（这正是 -specs=nano.specs 干的事）。 */
+            "includePath": [
+                "${workspaceFolder}/**",
+                "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/riscv-none-elf/include/newlib-nano",
+                "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/lib/gcc/riscv-none-elf/15.2.0/include",
+                "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/lib/gcc/riscv-none-elf/15.2.0/include-fixed",
+                "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/riscv-none-elf/include"
+            ],
+
+            /* 取自 riscv-none-elf-gcc -march=rv32im -mabi=ilp32 -dM -E。
+             * 有 __riscv_xlen=32 才是"long 和指针都是 4 字节"，没有它
+             * IntelliSense 会按 64 位瞎猜，跳转和报错都跟着错。 */
+            "defines": [
+                "__riscv=1",
+                "__riscv_xlen=32",
+                "__riscv_i=2001000",
+                "__riscv_m=2000000",
+                "__riscv_mul=1",
+                "__riscv_div=1",
+                "__riscv_muldiv=1",
+                "__riscv_zmmul=1000000",
+                "__riscv_float_abi_soft=1",
+                "__riscv_cmodel_medany=1",
+                "__ELF__=1"
+            ],
+
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "${default}",
+
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "D:/riscv-toolchain/xpack-riscv-none-elf-gcc-15.2.0-1/riscv-none-elf/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ]
+}
