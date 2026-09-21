@@ -27,7 +27,7 @@
 
 | 赛题要求 | 状态 | 证据 |
 |---|---|---|
-| ① 支持 RV32I 基础整数指令集 | ✅ 全覆盖 | riscv-tests **50 PASS / 0 FAIL / 0 TIMEOUT**（含 M 扩展 8 项） |
+| ① 支持 RV32I 基础整数指令集 | ✅ 全覆盖 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（含 M 扩展 8 项；唯一 FAIL 是未对齐访存，规范允许） |
 | ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ | 5 级流水线；2026-09-21 做取指重定向，分支惩罚 3 拍 → **2 拍** |
 | ③ 集成 UART / GPIO 用于系统控制与结果输出 | ✅ | 总线 + GPIO + UART 收发；演示程序仿真端到端 7/7 PASS |
 | 测评：CoreMark 运行 ≥10s | ✅ 板上实测通过（当前设计，ITER=770） | `Total ticks 294,888,440` → **10.92 秒**，`Correct operation validated`，四个 CRC 与仿真逐位一致 |
@@ -156,15 +156,16 @@ compile → synthesize → device map → place & route → generate bitstream
 ## 六、已验证的结果（附复现命令）
 
 ```powershell
-scripts\run_riscv_tests.ps1     # 50 PASS / 0 FAIL / 0 TIMEOUT
+scripts\run_riscv_tests.ps1     # 49 PASS / 1 FAIL / 0 TIMEOUT
 scripts\run_sim.ps1             # 6 个单元测试全过
 scripts\run_coremark.ps1 -Iter 1
 scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 ```
 
-**riscv-tests：50 PASS / 0 FAIL / 0 TIMEOUT**（50 项）
-- `ma_data`（未对齐访问）此前长期是唯一的 FAIL，**2026-09-21 取指重定向后转 PASS**
-  —— 说明它更像是冲刷路径上的潜在 bug，而非架构取舍（见 §7）
+**riscv-tests：49 PASS / 1 FAIL / 0 TIMEOUT**（50 项）
+- 唯一 FAIL 是 `ma_data`（未对齐访存，testnum 1）—— **架构取舍**，规范允许实现不支持。
+  2026-09-21 曾据一次测量称"取指重定向后它转 PASS"，**该结论经复核已撤回**
+  （用改造前的 RTL 复测同样是 FAIL，前后行为一致）
 - `fence_i` 已从 TIMEOUT 转 PASS
 - rv32um 的 8 项（mul/mulh/mulhsu/mulhu/div/divu/rem/remu）**一次全过**，
   给 M 扩展补上了官方测试背书（此前只有手写单测）
@@ -195,7 +196,7 @@ Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 
 改动 RTL 后，**这两条必须同时保持不变**（除非本次改动的目的就是改变某一项）：
 
-1. riscv-tests 的 **50/0/0**
+1. riscv-tests 的 **49/1/0**
 2. CoreMark 计时区间 **382,972 拍**（测试台总周期 1,488,333）
 
 第 2 条是"没碰坏流水线"最灵敏的探针 —— 多一个停顿、少一次前递都会让它变。
@@ -213,7 +214,7 @@ Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 
 | 项目 | 说明 |
 |---|---|
-| `ma_data` 未对齐访问 | ~~此前的唯一 FAIL~~ → **2026-09-21 取指重定向后已转 PASS**（见 §六）。规范要求外的未对齐通路仍无专门测试（见 `doc/base_task_status.md` §已知限制） |
+| `ma_data` 未对齐访问 | **唯一的 FAIL**（testnum 1，确定性）。规范允许实现不支持未对齐访存，属架构取舍。未对齐通路仍无专门测试覆盖（见 `doc/base_task_status.md` §已知限制） |
 | **演示程序上板** | 目前**只在仿真里验证过**。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得换本地盘古板 |
 | **GPIO 引脚未分配** | `cpu_top` 的 `led[7:0]` / `key[7:0]` / `uart_rx` 共 17 个端口**没有位置约束**（`.fdc` 里被注释掉了）。跑 CoreMark 无影响，但 P&R 只做时序告警就放过去了 |
 | **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：LUT **2,316**，**CoreMark/LUTs = 1.127**（取指重定向后当前设计） |

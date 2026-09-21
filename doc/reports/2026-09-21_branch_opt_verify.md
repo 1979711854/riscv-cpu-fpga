@@ -36,12 +36,22 @@ IF/ID，惩罚由 3 拍降到 2 拍。`pc_r <= ex_target + 4` 的关键在于地
 
 | 项目 | 基线 | 现在 | 判定 |
 |---|---|---|---|
-| riscv-tests（50 项） | 49 PASS / 1 FAIL（`ma_data`） | **50 PASS / 0 FAIL** | **改善** |
+| riscv-tests（50 项） | 49 PASS / 1 FAIL（`ma_data`，testnum 1） | **49 PASS / 1 FAIL**（逐项不变） | **无变化** |
 | CoreMark CRC | 0xe9f5 / 0xe714 / 0x1fd7 / 0x8e3a | **完全相同** | **逐位一致** |
 
-> `ma_data` 从 FAIL 变 PASS 值得留意：此前把它归因为"未对齐访问不支持、规范允许的架构取舍"，
-> 但这次改动只碰了取指重定向，**说明当时更可能是冲刷路径上的一个潜在 bug**，
-> 而不是避免不了的架构限制。这一点值得查清后写进论文 —— "从 FAIL 到 PASS 的闭环"是很好的素材。
+> ⚠️ **本节初稿写错了，已更正。** 初稿称 `ma_data` 从 FAIL 变 PASS、并据此推断
+> "它更像是冲刷路径上的潜在 bug"。**该结论无法复现**：
+>
+> 1. 用取指重定向【之前】的 RTL 单独跑 `ma_data` → 同样 **FAIL (testnum 1)**
+> 2. 改造【之后】单独跑两次 → **FAIL (testnum 1)**，确定性复现
+> 3. 50 个基线 ELF 的 `sha256sum -c` 全部通过，且仓库内无 riscv-tests 源码
+>    → 两次测量用的是**同一批二进制**
+>
+> 且从代码即可确证：本次改造只碰取指重定向路径，**完全没有动 load/store 的字节
+> 抽取逻辑**，物理上不可能改变未对齐访存的结果。原文"架构取舍"的归因才是对的。
+>
+> **教训**：`ma_data` 的 PASS/FAIL 被当成了改造效果的证据，但它其实与改造无关。
+> 一处结论要写进文档与论文之前，必须能**独立复现**，而不是只跑一次就采信。
 
 ### 2.2 性能（CoreMark ITER=1）
 
@@ -128,7 +138,7 @@ ITER = 770  →  770 × 382,972 / 27MHz = 10.92 s  ✓ 余量 9.2%（与原来 8
 | `pds/README.md` | BTB 行、交付状态表、时序段、回归纪律、坑 1b | 已改 |
 | `doc/resource_efficiency.md` | §0–§6 全部指标、新增 §9 对照表 | 已改 |
 | `doc/paper/*.md` | 多处「3 拍」「`ex_flush_d`」、指标表、风险表 | 已改 |
-| `doc/test_report_riscv-tests.md` | §1 整节（`ma_data` 转 PASS）、CoreMark 附录、回归纪律 | 已改 |
+| `doc/test_report_riscv-tests.md` | §1 整节（已二次更正：`ma_data` 仍是 FAIL）、CoreMark 附录、回归纪律 | 已改 |
 | `README.md` / `doc/README.md` / `rtl/README.md` / `scripts/README.md` / `third_party/riscv-tests-elf/README.md` | 成绩表、回归基线 | 已改 |
 | `scripts/trace2svg.py` + `doc/figures/*` | `fd` lane（本来就是死线）、两张旧波形图 | 已改：`fd` 换成 `br`/`br_taken`/`jal-jalr`；图按 `core_bench_list` 的两个热循环重做 |
 
@@ -139,7 +149,7 @@ ITER = 770  →  770 × 382,972 / 27MHz = 10.92 s  ✓ 余量 9.2%（与原来 8
 
 ```powershell
 # 正确性
-scripts\run_riscv_tests.ps1                  # 期望 50/0/0
+scripts\run_riscv_tests.ps1                  # 期望 49/1/0
 
 # 性能（先确认 sim\programs\*.hex 与 coremark.elf 对应 —— 固件错配会给出假结论）
 scripts\run_coremark.ps1 -Iter 1             # 期望 total cycles 1,488,333

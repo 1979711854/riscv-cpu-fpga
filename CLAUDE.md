@@ -16,12 +16,19 @@
 | ① RV32I 基础整数指令集 | ✅ **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
 | ③ 集成基础外设（UART/GPIO） | ✅ 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
 
-- 验证：riscv-tests rv32ui + rv32um（50 项）→ **50 PASS / 0 FAIL / 0 TIMEOUT**
+- 验证：riscv-tests rv32ui + rv32um（50 项）→ **49 PASS / 1 FAIL / 0 TIMEOUT**
   （M 扩展的 mul/mulh/mulhsu/mulhu/div/divu/rem/remu 8 项也纳入回归 —— CPU 实现了
    M 扩展且 CoreMark 用 `-march=rv32im` 编译，此前只有手写单测覆盖）
-  > `ma_data` 原是唯一的 FAIL，此前归因为"未对齐访问不支持、RISC-V 规范允许的架构取舍"。
-  > 2026-09-21 取指重定向改造后它自动 PASS → **该 FAIL 更像是冲刷路径上的一个潜在
-  > bug，而不是架构限制**（详见 `doc/reports/2026-09-21_branch_opt_verify.md`）。
+  > 唯一 FAIL 是 `ma_data`（testnum 1），归因是**未对齐访存不做特殊处理**：
+  > `load_half = addr_low[1] ? … : …` 假设按访问宽度对齐，而该测试在 0x2001 做
+  > `lh`（半字跨字节边界）→ 取错字节。**RISC-V 规范允许实现不支持未对齐访问**，
+  > 属架构取舍，不是 bug。
+  > ⚠️ **2026-09-21 勘误**：此前本文档与多份报告称"取指重定向后 `ma_data` 自动
+  > 转 PASS、说明它是冲刷路径上的潜在 bug"——**该结论无法复现，已撤回**。
+  > 用取指重定向【之前】的 RTL 复测，同样是 FAIL (testnum 1)，改造前后行为完全一致；
+  > 且基线 ELF 的 SHA256 全部校验通过、riscv-tests 源码不存在，不存在"重编译出
+  > 不同二进制"的可能。原文"架构取舍"的归因才是对的。详见
+  > `doc/reports/2026-09-21_branch_opt_verify.md` §2.1。
   > 未对齐通路仍无专门测试覆盖，不把它当作已实现的功能对外承诺。
 - **CoreMark**：2026-09-15 已在远程平台实测通过（旧取指路径，ITER=700，
   `Total ticks 294,065,438` → 10.89 秒，`Correct operation validated`，
@@ -59,7 +66,7 @@
   > 2 拍，省下的拍数 `420,070 − 382,972 = 37,098` **恰好等于冲刷次数**（每次省 1 拍），
   > 计时区间提速 **8.83%**。优化记录见 `doc/reports/2026-09-21_branch_opt_verify.md`。
 
-**回归纪律（重要）**：改动 RTL 后，riscv-tests 的 **50/0/0** 与 CoreMark 的
+**回归纪律（重要）**：改动 RTL 后，riscv-tests 的 **49/1/0** 与 CoreMark 的
 **计时区间 382,972 拍**（测试台总周期 1,488,333）必须同时保持不变
 （除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
 

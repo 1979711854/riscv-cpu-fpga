@@ -21,13 +21,13 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 > 同一批二进制，基线漂移会让人误判成自己改坏了 CPU。来源与再生成方式见
 > `third_party/riscv-tests-elf/README.md`。
 
-## 当前结果：50 PASS / 0 FAIL / 0 TIMEOUT（共 50）
+## 当前结果：49 PASS / 1 FAIL / 0 TIMEOUT（共 50）
 
 | 分类 | 数量 | 测试 |
 |------|------|------|
 | PASS（rv32ui） | 42 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw **ma_data** or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
 | PASS（rv32um） | 8 | **div divu mul mulh mulhsu mulhu rem remu** |
-| FAIL | 0 | ——（`ma_data` 已于 2026-09-21 转 PASS，原因见 §1） |
+| FAIL | 1 | `ma_data`（未对齐访存，testnum 1；规范允许不支持的架构取舍，见 §1） |
 | TIMEOUT | 0 | —— |
 
 > **rv32um 这 8 项是 2026-09-15 补上的。** 本 CPU 实现了 M 扩展、CoreMark 也是用
@@ -36,27 +36,35 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 
 ---
 
-## 1. ma_data —— 已由 FAIL 转为 PASS（2026-09-21）
+## 1. ma_data —— 唯一的 FAIL，架构取舍（2026-09-21 复核更正）
 
 `ma_data` 测试未对齐访问（`lh/lhu/lw` 从 `+1/+2/+3` 地址读）。本 CPU 只支持对齐访问：
 
 - `mem_addr[14:2]` 直接丢掉低 2 位，按字地址取整
-- `lh` 的 `load_half = addr_low[1] ? ... : ...` 只对偶地址正确
+- `lh` 的 `load_half = addr_low[1] ? load_src[31:16] : load_src[15:0]`
+  **只对偶地址正确**。测试在 `0x2001` 做 `lh`（半字跨字节边界），
+  `addr_low = 1` → `addr_low[1] = 0` → 取字节 0-1，而实际要的是字节 1-2 → 取错
 - `lw` 从未对齐地址会跨字，无法重拼
 
-**RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，所以此前把这项 FAIL
-判定为"架构取舍、预期失败"。2026-09-21 的**取指重定向改造**（删除 `ex_flush_d`、
-跳转目标同拍旁路给取指端）之后，它**自动变成 PASS**，本报告随之变为 50 PASS / 0 FAIL。
+**RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，所以这项 FAIL
+判定为"架构取舍、预期失败"。失败是**确定性**的，testnum 恒为 1。
 
-> **这个转变得认真对待 —— 它推翻了原来的解释。** 那次改造只碰了取指重定向路径，
-> 完全没有动 load/store 的字节抽取逻辑。所以 `ma_data` 此前的 FAIL 更可能是
-> **冲刷路径上的一个潜在 bug**（跳转前后取指错位，破坏了测试数据），
-> 而不是"未对齐访问不支持"。原判断已被证伪。
+> ⚠️ **勘误（2026-09-21）**：本报告曾有一个版本写着"取指重定向改造后 `ma_data`
+> 自动转为 PASS，说明它此前更可能是冲刷路径上的潜在 bug"——**该结论无法复现，
+> 现已撤回。** 复核方式：
 >
-> 两件事仍需诚实记录：
-> (a) **未对齐通路没有专门测试覆盖**，`ma_data` 通过 ≠ 未对齐访问已完整实现，
->     不对外承诺这个能力；
-> (b) 原「回归时这一项必须仍然 FAIL」的纪律**作废**，改为「必须保持 PASS」。
+> 1. 用取指重定向【之前】的 RTL（`git show 9616ab5:rtl/core/core.v`）单独跑
+>    `ma_data` → 同样 **FAIL (testnum 1)**
+> 2. 改造【之后】单独跑两次 → **FAIL (testnum 1)**，确定性复现
+> 3. `third_party/riscv-tests-elf/` 的 50 个 ELF 全部通过 `sha256sum -c`，
+>    且仓库内不存在 riscv-tests 源码 → 两次测量用的是**同一批二进制**，
+>    不存在"重新编译出不同 ma_data"的可能
+>
+> 且从代码即可确证：那次改造只碰了取指重定向路径，**完全没有动 load/store 的
+> 字节抽取逻辑**，物理上不可能改变未对齐访存的结果。原文"架构取舍"的归因是对的。
+>
+> 仍需诚实记录：**未对齐通路没有专门测试覆盖**，`ma_data` 是唯一的哨兵，
+> 不对外承诺这个能力。
 
 ## 2. fence_i —— 已由 TIMEOUT 转为 PASS（2026-09-15）
 
@@ -209,7 +217,7 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 
 每次改动 RTL 后，以下两条必须同时满足：
 
-1. **本报告的 50/0/0 逐项不变**（除非本次改动的目的就是改变某一项）
+1. **本报告的 49/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
 2. **CoreMark 计时区间**（`+PROF` 读到的 `Total ticks`）**一字不差**
    —— 当前基线：**382,972** 拍（测试台总周期 1,488,333），
    CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`

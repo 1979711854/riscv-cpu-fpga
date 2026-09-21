@@ -9,15 +9,17 @@
 
 | 项目 | 结果 |
 |---|---|
-| riscv-tests（rv32ui + rv32um，50 项） | **50 PASS / 0 FAIL / 0 TIMEOUT** |
+| riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
 | CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`（旧取指路径 / ITER=700） |
 | CoreMark 效率 | **2.611 CoreMark/MHz**（当前设计，仿真每迭代 382,972 周期）；改造前 2.380 |
 | 时序（27MHz，新设计） | Estimated **47.8126 MHz**，Setup +16.122ns / Hold +0.147ns，**失败端点 0** |
 | 资源（新设计） | LUT **2,316**（1.45%）、FF 1,913、DRM 16、APM 11 |
 
-> `ma_data`（未对齐访问）此前长期是唯一的 FAIL，2026-09-21 取指重定向改造后
-> **自动转为 PASS** —— 说明它更像是冲刷路径上的一个潜在 bug，而不是架构限制。
-> 但未对齐通路没有专门的测试覆盖，**不把它当作已实现的功能对外承诺**。
+> 唯一 FAIL 是 `ma_data`（未对齐访存）。2026-09-21 曾据一次测量认为"取指重定向后
+> 它自动转为 PASS、说明是冲刷路径的潜在 bug"，**该结论已复核并撤回**：用改造
+> 【之前】的 RTL 复测同样是 FAIL (testnum 1)，前后行为完全一致。
+> 真实归因是未对齐访存不做特殊处理（**RISC-V 规范允许**，属架构取舍）。
+> 未对齐通路没有专门的测试覆盖，**不把它当作已实现的功能对外承诺**。
 
 ---
 
@@ -147,7 +149,7 @@ riscv-cpu-fpga/
 改 RTL 后建议跑一遍，比上板快得多：
 
 ```powershell
-scripts\run_riscv_tests.ps1     # 50 PASS / 0 FAIL / 0 TIMEOUT（不需联网）
+scripts\run_riscv_tests.ps1     # 49 PASS / 1 FAIL / 0 TIMEOUT（不需联网）
 scripts\run_sim.ps1             # 6 个模块单元测试
 scripts\run_coremark.ps1 -Iter 1
 scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
@@ -155,7 +157,7 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 **回归纪律**：改动 RTL 后，下面两条必须同时保持不变（除非本次改动就是要改变某一项）：
 
-1. riscv-tests 的 **50/0/0**
+1. riscv-tests 的 **49/1/0**
 2. CoreMark 计时区间 **382,972 拍**（测试台总周期 1,488,333）← "没碰坏流水线"最灵敏的探针
 
 工具链（scoop 安装）：`scoop install iverilog gtkwave`

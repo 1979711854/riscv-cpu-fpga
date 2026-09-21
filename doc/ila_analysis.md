@@ -433,7 +433,7 @@ python -c "import io,re; p=r'rtl/core/core.v'; s=io.open(p,encoding='utf-8').rea
 
 # 复查：应为 0 条，且回归必须回到基线
 Select-String -Path rtl\core\core.v -Pattern "synthesis syn_" | Measure-Object | Select-Object -ExpandProperty Count
-scripts\run_riscv_tests.ps1             # 期望 50/0/0
+scripts\run_riscv_tests.ps1             # 期望 49/1/0
 scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 382,972 拍（测试台总周期 1,488,333）
 ```
 
@@ -500,7 +500,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 382,972 拍（测�
    若通道数少于 §7.1 的 80 位计划，需要再裁剪探针。
 4. 截图分辨率与报告排版要求（建议原图，不要压缩到看不清信号名）。
 5. 抓完后**移除调试属性与调试核，重跑一次综合与回归**，确认
-   `50/0/0`、计时区间 `382,972` 拍、**2,316 LUT / 47.81 MHz** 都回到基线。
+   `49/1/0`、计时区间 `382,972` 拍、**2,316 LUT / 47.81 MHz** 都回到基线。
 
 ---
 
@@ -539,7 +539,7 @@ scripts\sync_firmware.ps1
 `scripts/trace2svg.py` 里。`+PROF` / `+TRACE_*` **默认关闭**、不参与仿真，
 所以开关它不会改变周期数，对照组之间可比。
 
-当前基线：riscv-tests **50/0/0**；CoreMark 计时区间 **382,972** 拍
+当前基线：riscv-tests **49/1/0**；CoreMark 计时区间 **382,972** 拍
 （测试台总周期 **1,488,333**）。
 > RTL 侧同时做过一次与观测无关的改动（2026-09-21 取指重定向），
 > 它**目的就是改变周期数** —— 所以旧基线 1,529,499 不再适用。

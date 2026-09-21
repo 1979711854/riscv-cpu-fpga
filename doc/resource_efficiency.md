@@ -281,7 +281,7 @@ region cycles    : 420,070   <- 与 CoreMark 自报 Total ticks 逐位一致
 - 资源与时序取自 **2026-09-21 14:08** 的 PDS 综合/布线/时序报告，与改造后的 RTL 同批
   （`pds/RV32I_1/multiseed_summary.csv`、`report_timing/cpu_top.rtr`）
 - 性能与损失构成取自 `+PROF` 仿真（CoreMark 计时区间 382,972 拍）
-- 完整验证记录（正确性 50/0/0、CRC 逐位一致、自洽校验）见
+- 完整验证记录（正确性 49/1/0、CRC 逐位一致、自洽校验）见
   `doc/reports/2026-09-21_branch_opt_verify.md`
 
 > ⚠️ **两条纪律**

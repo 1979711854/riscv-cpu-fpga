@@ -53,7 +53,7 @@
 
 | 项目 | 结果 |
 |---|---|
-| riscv-tests（50 项：rv32ui 42 + rv32um 8） | **50 PASS / 0 FAIL / 0 TIMEOUT**（取指重定向后 `ma_data` 由 FAIL 转 PASS） |
+| riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
 | **CoreMark v1.0（板上实测，ITER=770，当前设计）** | `Total ticks 294,888,440` → **实际 10.92 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致 |
 | **CoreMark 效率（当前设计，仿真）** | 每迭代 **382,972** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.611 CoreMark/MHz**；**ITER=770 已上板复测通过（10.92 秒，CRC 吻合）** |
@@ -86,8 +86,10 @@
 
 ## 已知限制（诚实记录，避免答辩被问倒）
 
-1. **未对齐 load/store 不保证支持** —— RISC-V 规范允许。`ma_data` 在当前设计下已 PASS，
-   但未对齐通路没有专门测试覆盖（原因分析见 `doc/reports/2026-09-21_branch_opt_verify.md`）。
+1. **未对齐 load/store 不保证支持** —— RISC-V 规范允许。`ma_data` 是当前唯一的 FAIL
+   （testnum 1，确定性复现），属架构取舍；未对齐通路没有专门测试覆盖。
+   注意：曾有一版文档称该 FAIL 在取指重定向后转 PASS，**该结论无法复现、已撤回**
+   （见 `doc/reports/2026-09-21_branch_opt_verify.md` §2.1）。
 2. **按键无硬件消抖** —— `gpio.v` 只做 2 级同步；去抖放在演示程序里
    （采样—延时 10ms—再采样），这样更容易验证。
 3. **EBREAK 是软停机** —— 不停 PC，需软件配合自旋循环。

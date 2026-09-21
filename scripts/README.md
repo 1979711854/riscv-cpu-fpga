@@ -14,7 +14,7 @@
 
 ```powershell
 # 例：完整回归（改完 RTL 后必跑）
-scripts\run_riscv_tests.ps1                 # 期望 50 PASS / 0 FAIL
+scripts\run_riscv_tests.ps1                 # 期望 49 PASS / 1 FAIL
 scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 382,972 拍（测试台总周期 1,488,333）
 scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
