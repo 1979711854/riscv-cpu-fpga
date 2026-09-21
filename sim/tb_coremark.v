@@ -68,6 +68,25 @@ module coremark_tb;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
     reg [63:0] c_commit, c_inst_in;
 
+    // 条件分支的方向细分。
+    // **设计分支预测器需要 not-taken 的条数** —— 现在 not-taken 是零代价的，
+    // 预测器一旦猜错就会给它加上惩罚，所以必须知道分母。
+    // 同时按 imm[31]（偏移正负）分出前向/后向，用来评估"后向分支预测跳转"
+    // 这条静态规则的命中率。
+    //
+    // 这些计数一律挂在**解析结果**（id_ex_branch / branch_taken / id_ex_jump*）上，
+    // 【不】挂在 ex_flush 上 —— 加了预测之后，预测正确的 taken 不再产生 ex_flush，
+    // 挂在冲刷信号上的计数会塌掉，改造前后也就没法比。
+    //   c_br_tot  = 到达 EX 的条件分支总数（每条恰好计一次：分支的 id_ex_is_div=0，
+    //               所以 div_stall=0，ID/EX 必在下一拍推进；stall/ex_flush 会清零
+    //               id_ex_branch，也不会重复计）
+    //   c_br_bwd  = 其中偏移为负（后向，通常是循环回边）
+    reg [63:0] c_br_tot, c_br_bwd, c_br_bwd_tk;
+    // jal / jalr 拆分：前者目标只依赖 if_id_pc+imm，ID 级就能算，可静态预测；
+    // 后者目标是 (rs1+imm)&~1，依赖寄存器值，ID 级没有前递通路，预测不了。
+    // 两者的条数比直接决定"ID 级预测"能覆盖多少冲刷事件。
+    reg [63:0] c_jal, c_jalr;
+
     // CoreMark 计时区间内的同类统计。
     // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0x7FF4
     // （barebones_clock），在访存口上是 mem_re && mem_addr==0x7FF4，可精确观测。
@@ -78,6 +97,8 @@ module coremark_tb;
     reg        in_timed;
     reg [63:0] tc_all, tc_stall, tc_div, tc_flush;
     reg [63:0] tc_fwdex, tc_fwdwb, tc_mem, tc_commit;
+    reg [63:0] tc_br_tot, tc_br_tk, tc_br_bwd, tc_br_bwd_tk;
+    reg [63:0] tc_jal, tc_jalr;
 
     // 影子流水线 valid：逐级镜像 core 的清零/暂停条件，用来数"真正提交的指令数"。
     // 不能直接用 mem_wb_reg_write 计数 —— store/branch/jump 不回写寄存器，会被漏掉。
@@ -174,6 +195,12 @@ module coremark_tb;
                 $display("--- events ---");
                 $display("taken branches   : %0d", c_br_taken);
                 $display("jumps jal/jalr   : %0d", c_jump);
+                // 全局分支构成 —— 回归探针（total cycles）是【全局】周期数，
+                // 所以推演"这次改动能省多少拍"必须用全局计数，
+                // 拿 coremark 计时区间的计数去减全局周期是口径错误。
+                $display("  cond branches  : %0d  (bwd %0d, bwd&taken %0d)",
+                         c_br_tot, c_br_bwd, c_br_bwd_tk);
+                $display("  jal %0d  jalr %0d", c_jal, c_jalr);
                 $display("fwd from ex/mem  : %0d", c_fwdex);
                 $display("fwd from mem/wb  : %0d", c_fwdwb);
                 $display("mem accesses     : %0d", c_mem);
@@ -195,6 +222,24 @@ module coremark_tb;
                     $display("region fwd ex    : %0d", tc_fwdex);
                     $display("region fwd wb    : %0d", tc_fwdwb);
                     $display("region mem acc   : %0d", tc_mem);
+                    $display("--- branch direction (region) ---");
+                    $display("cond branches    : %0d", tc_br_tot);
+                    $display("  taken          : %0d", tc_br_tk);
+                    $display("  not taken      : %0d", tc_br_tot - tc_br_tk);
+                    $display("  backward       : %0d", tc_br_bwd);
+                    $display("  bwd & taken    : %0d", tc_br_bwd_tk);
+                    $display("  bwd & not-taken: %0d", tc_br_bwd - tc_br_bwd_tk);
+                    $display("  forward        : %0d", tc_br_tot - tc_br_bwd);
+                    $display("  fwd & taken    : %0d", tc_br_tk - tc_br_bwd_tk);
+                    $display("--- jumps (region) ---");
+                    $display("  jal            : %0d", tc_jal);
+                    $display("  jalr           : %0d", tc_jalr);
+                    if (tc_br_bwd > 0)
+                        $display("  bwd taken rate : %f%%",
+                                 (tc_br_bwd_tk * 100.0) / tc_br_bwd);
+                    // 这里【只报原始计数】，不报"预测器能省多少拍" —— 那取决于
+                    // 具体实现能达到几拍惩罚，是要随设计变的假设，混进测试台
+                    // 会让人把假设当成实测。推演见 doc/ila_analysis.md 的优化章节。
                 end
                 $display("--- histogram (bucket = %0d cycles) ---", HBUCKET);
                 for (ph = 0; ph < NH; ph = ph + 1)
@@ -220,6 +265,8 @@ module coremark_tb;
             c_stall <= 64'd0; c_div <= 64'd0; c_flush <= 64'd0; c_flushd <= 64'd0;
             c_fwdex <= 64'd0; c_fwdwb <= 64'd0; c_mem <= 64'd0;
             c_br_taken <= 64'd0; c_jump <= 64'd0;
+            c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
+            c_jal <= 64'd0; c_jalr <= 64'd0;
             c_commit <= 64'd0; c_inst_in <= 64'd0;
             v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
             h_idx <= 0; h_cnt <= 0;
@@ -228,6 +275,9 @@ module coremark_tb;
             tc_all <= 64'd0; tc_stall <= 64'd0; tc_div <= 64'd0; tc_flush <= 64'd0;
             tc_fwdex <= 64'd0; tc_fwdwb <= 64'd0; tc_mem <= 64'd0;
             tc_commit <= 64'd0;
+            tc_br_tot <= 64'd0; tc_br_tk <= 64'd0;
+            tc_br_bwd <= 64'd0; tc_br_bwd_tk <= 64'd0;
+            tc_jal <= 64'd0; tc_jalr <= 64'd0;
         end else if (prof_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             v_wb  <= v_mem;
@@ -249,9 +299,21 @@ module coremark_tb;
             if (u_core.fwd_a_ex || u_core.fwd_b_ex) c_fwdex <= c_fwdex + 64'd1;
             if (u_core.fwd_a_wb || u_core.fwd_b_wb) c_fwdwb <= c_fwdwb + 64'd1;
             if (u_core.mem_re  || u_core.mem_we)    c_mem   <= c_mem + 64'd1;
-            if (u_core.ex_flush && u_core.id_ex_branch && u_core.branch_taken)
-                c_br_taken <= c_br_taken + 64'd1;
-            if (u_core.ex_flush && !u_core.id_ex_branch)
+            // 事件计数一律挂在【解析结果】上，而不是 ex_flush。
+            // 理由：加了分支预测之后，预测正确的 taken 不再产生 ex_flush，
+            // 挂在冲刷信号上的计数会直接塌掉，改造前后也就没法比。
+            // 每条指令在 EX 只停留一拍（见声明处注释），所以不会重复计数。
+            if (u_core.id_ex_branch) begin
+                c_br_tot <= c_br_tot + 64'd1;
+                if (u_core.id_ex_imm[31]) c_br_bwd <= c_br_bwd + 64'd1;
+                if (u_core.branch_taken) begin
+                    c_br_taken <= c_br_taken + 64'd1;
+                    if (u_core.id_ex_imm[31]) c_br_bwd_tk <= c_br_bwd_tk + 64'd1;
+                end
+            end
+            if (u_core.id_ex_jump)     c_jal  <= c_jal  + 64'd1;
+            if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
+            if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
                 c_jump <= c_jump + 64'd1;
 
             // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0x7FF4）----
@@ -271,6 +333,17 @@ module coremark_tb;
                 if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
                 if (u_core.mem_re || u_core.mem_we)     tc_mem   <= tc_mem + 64'd1;
                 if (v_wb)             tc_commit <= tc_commit + 64'd1;
+                if (u_core.id_ex_branch) begin
+                    tc_br_tot <= tc_br_tot + 64'd1;
+                    if (u_core.id_ex_imm[31]) tc_br_bwd <= tc_br_bwd + 64'd1;
+                    if (u_core.branch_taken) begin
+                        tc_br_tk <= tc_br_tk + 64'd1;
+                        if (u_core.id_ex_imm[31])
+                            tc_br_bwd_tk <= tc_br_bwd_tk + 64'd1;
+                    end
+                end
+                if (u_core.id_ex_jump)     tc_jal  <= tc_jal  + 64'd1;
+                if (u_core.id_ex_jump_reg) tc_jalr <= tc_jalr + 64'd1;
             end
 
             // ---- 直方图 ----
