@@ -50,7 +50,7 @@ module coremark_tb;
     // 输入。prof_on=0 时计数器不递增、不打印，所以 run_coremark.ps1 的默认运行
     // （不带 +PROF）周期数与加入本段之前完全一致 —— 这是回归纪律的硬要求。
     //
-    // 之所以能这样做：core 的 stall / div_stall / ex_flush / ex_flush_d / 四路
+    // 之所以能这样做：core 的 stall / div_stall / ex_flush / 四路
     // 前递判定都是模块内部信号，用层次引用（u_core.xxx）即可观测，不需要为了
     // 测量去改 RTL（改 RTL 会触发全量回归）。
     //
@@ -64,7 +64,7 @@ module coremark_tb;
     reg [1023:0] trace_fname;
 
     // 周期构成累计
-    reg [63:0] c_stall, c_div, c_flush, c_flushd;
+    reg [63:0] c_stall, c_div, c_flush;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
     reg [63:0] c_commit, c_inst_in;
 
@@ -188,10 +188,13 @@ module coremark_tb;
                          (c_stall * 100.0) / cycle_count);
                 $display("div stall        : %0d  %f%%", c_div,
                          (c_div * 100.0) / cycle_count);
-                $display("br/jmp flush     : %0d  %f%%", c_flush,
+                $display("br/jmp redirect  : %0d  %f%%", c_flush,
                          (c_flush * 100.0) / cycle_count);
-                $display("flush 2nd cycle  : %0d  %f%%", c_flushd,
-                         (c_flushd * 100.0) / cycle_count);
+                // 气泡数 = 总周期 − 提交指令数。这是【与冲刷实现无关】的口径：
+                // 不去假设每次冲刷值几拍，直接看有多少拍没提交指令。
+                // 历史教训：此前文档把分支惩罚误记为 2 拍，就是"拍数假设"惹的祸。
+                $display("pipeline bubbles : %0d  %f%%", cycle_count - c_commit,
+                         ((cycle_count - c_commit) * 100.0) / cycle_count);
                 $display("--- events ---");
                 $display("taken branches   : %0d", c_br_taken);
                 $display("jumps jal/jalr   : %0d", c_jump);
@@ -262,7 +265,7 @@ module coremark_tb;
     // ========================================================================
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            c_stall <= 64'd0; c_div <= 64'd0; c_flush <= 64'd0; c_flushd <= 64'd0;
+            c_stall <= 64'd0; c_div <= 64'd0; c_flush <= 64'd0;
             c_fwdex <= 64'd0; c_fwdwb <= 64'd0; c_mem <= 64'd0;
             c_br_taken <= 64'd0; c_jump <= 64'd0;
             c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
@@ -284,10 +287,10 @@ module coremark_tb;
             v_mem <= u_core.div_stall ? 1'b0 : v_ex;
             v_ex  <= (u_core.ex_flush || u_core.stall) ? 1'b0 :
                      (u_core.div_stall ? v_ex : v_id);
-            v_id  <= (u_core.ex_flush || u_core.ex_flush_d) ? 1'b0 :
+            v_id  <= u_core.ex_flush ? 1'b0 :
                      ((!u_core.stall && !u_core.div_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
-            if (!u_core.ex_flush && !u_core.ex_flush_d &&
+            if (!u_core.ex_flush &&
                 !u_core.stall && !u_core.div_stall)
                 c_inst_in <= c_inst_in + 64'd1;
 
@@ -295,7 +298,6 @@ module coremark_tb;
             if (u_core.stall)      c_stall  <= c_stall + 64'd1;
             if (u_core.div_stall)  c_div    <= c_div + 64'd1;
             if (u_core.ex_flush)   c_flush  <= c_flush + 64'd1;
-            if (u_core.ex_flush_d) c_flushd <= c_flushd + 64'd1;
             if (u_core.fwd_a_ex || u_core.fwd_b_ex) c_fwdex <= c_fwdex + 64'd1;
             if (u_core.fwd_a_wb || u_core.fwd_b_wb) c_fwdwb <= c_fwdwb + 64'd1;
             if (u_core.mem_re  || u_core.mem_we)    c_mem   <= c_mem + 64'd1;
@@ -375,7 +377,7 @@ module coremark_tb;
             end
             if (trace_left > 0 && trace_fd != 0) begin
                 $fdisplay(trace_fd,
-                    "T cyc=%0d pc=%h ipc=%h ins=%h epc=%h eop=%h erd=%h mpc=%h mrd=%h mwe=%b mre=%b wrd=%h wwe=%b st=%b dv=%b fl=%b fd=%b faex=%b fbex=%b fawb=%b fbwb=%b vid=%b vex=%b vmem=%b vwb=%b br=%b bt=%b jmp=%b jr=%b",
+                    "T cyc=%0d pc=%h ipc=%h ins=%h epc=%h eop=%h erd=%h mpc=%h mrd=%h mwe=%b mre=%b wrd=%h wwe=%b st=%b dv=%b fl=%b faex=%b fbex=%b fawb=%b fbwb=%b vid=%b vex=%b vmem=%b vwb=%b br=%b bt=%b jmp=%b jr=%b",
                     cycle_count, pc,
                     u_core.if_id_pc, u_core.if_id_instr,
                     u_core.id_ex_pc, u_core.id_ex_alu_op, u_core.id_ex_rd,
@@ -383,7 +385,7 @@ module coremark_tb;
                     u_core.mem_we, u_core.mem_re,
                     u_core.mem_wb_rd, u_core.mem_wb_reg_write,
                     u_core.stall, u_core.div_stall,
-                    u_core.ex_flush, u_core.ex_flush_d,
+                    u_core.ex_flush,
                     u_core.fwd_a_ex, u_core.fwd_b_ex,
                     u_core.fwd_a_wb, u_core.fwd_b_wb,
                     v_id, v_ex, v_mem, v_wb,
