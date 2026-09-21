@@ -43,6 +43,54 @@ module coremark_tb;
         .done()            // 周期计数器已从 mem_bus 去掉（无使用者）
     );
 
+    // ========================================================================
+    // 流水线效率剖析（+PROF / +TRACE，默认关闭）
+    // ------------------------------------------------------------------------
+    // 设计原则：**纯被动观测**。这里只读 core 的内部信号，不驱动 core 的任何
+    // 输入。prof_on=0 时计数器不递增、不打印，所以 run_coremark.ps1 的默认运行
+    // （不带 +PROF）周期数与加入本段之前完全一致 —— 这是回归纪律的硬要求。
+    //
+    // 之所以能这样做：core 的 stall / div_stall / ex_flush / ex_flush_d / 四路
+    // 前递判定都是模块内部信号，用层次引用（u_core.xxx）即可观测，不需要为了
+    // 测量去改 RTL（改 RTL 会触发全量回归）。
+    //
+    //   +PROF              打印周期构成统计 + 每 5 万拍直方图
+    //   +TRACE_START=<n>   第 n 拍起逐拍打印五级流水线状态
+    //   +TRACE_LEN=<m>     连续打印 m 拍（默认 64）
+    //   +TRACE_FILE=<path> trace 输出文件（默认 programs/trace.txt）
+    // ========================================================================
+    integer      prof_on;
+    integer      trace_start_cyc, trace_len, trace_left, trace_fd;
+    reg [1023:0] trace_fname;
+
+    // 周期构成累计
+    reg [63:0] c_stall, c_div, c_flush, c_flushd;
+    reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
+    reg [63:0] c_commit, c_inst_in;
+
+    // CoreMark 计时区间内的同类统计。
+    // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0x7FF4
+    // （barebones_clock），在访存口上是 mem_re && mem_addr==0x7FF4，可精确观测。
+    // 有了区间边界才能把"纯 CoreMark 算法"的 CPI 从"含串口打印"的总 CPI 里剥出来
+    // —— 打印区间是纯轮询，会把 CPI 严重拉高，两者混算没有意义。
+    reg [63:0] t_timer_cyc [0:7];
+    integer    t_timer_n;
+    reg        in_timed;
+    reg [63:0] tc_all, tc_stall, tc_div, tc_flush;
+    reg [63:0] tc_fwdex, tc_fwdwb, tc_mem, tc_commit;
+
+    // 影子流水线 valid：逐级镜像 core 的清零/暂停条件，用来数"真正提交的指令数"。
+    // 不能直接用 mem_wb_reg_write 计数 —— store/branch/jump 不回写寄存器，会被漏掉。
+    reg v_id, v_ex, v_mem, v_wb;
+
+    // 直方图：32 桶 × 5 万拍 = 160 万拍，覆盖 ITER=1 全程
+    localparam NH = 32, HBUCKET = 50000;
+    reg [63:0] h_stall [0:NH-1];
+    reg [63:0] h_flush [0:NH-1];
+    reg [63:0] h_mem   [0:NH-1];
+    reg [63:0] h_cmt   [0:NH-1];
+    integer    h_idx, h_cnt, pi, ph;
+
     initial clk = 1'b0;
     always #5 clk = ~clk;   // 100MHz
 
@@ -62,6 +110,26 @@ module coremark_tb;
     integer iter;
     initial begin
         if (!$value$plusargs("ITER=%d", iter)) iter = 1;
+    end
+
+    // 剖析开关与 trace 参数
+    initial begin
+        prof_on         = 0;
+        trace_start_cyc = -1;
+        trace_len       = 64;
+        trace_left      = 0;
+        trace_fd        = 0;
+        trace_fname     = "programs/trace.txt";
+        if ($test$plusargs("PROF")) prof_on = 1;
+        $value$plusargs("TRACE_START=%d", trace_start_cyc);
+        $value$plusargs("TRACE_LEN=%d",   trace_len);
+        $value$plusargs("TRACE_FILE=%s",  trace_fname);
+        t_timer_n = 0;
+        for (pi = 0; pi < 8; pi = pi + 1) t_timer_cyc[pi] = 64'd0;
+        for (pi = 0; pi < NH; pi = pi + 1) begin
+            h_stall[pi] = 64'd0; h_flush[pi] = 64'd0;
+            h_mem[pi]   = 64'd0; h_cmt[pi]   = 64'd0;
+        end
     end
 
     // UART：core 对 0x7FFC 的 store 视为输出一个字符
@@ -85,6 +153,54 @@ module coremark_tb;
             if (cycle_count > 0)
                 $display("CoreMark/MHz : %f",
                          (iter * 1000000.0) / cycle_count);
+            // ---- 流水线效率剖析（+PROF 时才有内容）----
+            if (prof_on) begin
+                $display("");
+                $display("=== pipeline profile ===");
+                $display("committed instr  : %0d", c_commit);
+                $display("if/id loads      : %0d", c_inst_in);
+                if (c_commit > 0)
+                    $display("CPI              : %f",
+                             cycle_count / (c_commit * 1.0));
+                $display("--- cycle composition ---");
+                $display("load-use stall   : %0d  %f%%", c_stall,
+                         (c_stall * 100.0) / cycle_count);
+                $display("div stall        : %0d  %f%%", c_div,
+                         (c_div * 100.0) / cycle_count);
+                $display("br/jmp flush     : %0d  %f%%", c_flush,
+                         (c_flush * 100.0) / cycle_count);
+                $display("flush 2nd cycle  : %0d  %f%%", c_flushd,
+                         (c_flushd * 100.0) / cycle_count);
+                $display("--- events ---");
+                $display("taken branches   : %0d", c_br_taken);
+                $display("jumps jal/jalr   : %0d", c_jump);
+                $display("fwd from ex/mem  : %0d", c_fwdex);
+                $display("fwd from mem/wb  : %0d", c_fwdwb);
+                $display("mem accesses     : %0d", c_mem);
+                $display("--- coremark timed region (start_time -> stop_time) ---");
+                $display("timer reads seen : %0d", t_timer_n);
+                if (t_timer_n >= 1) $display("start_time cycle : %0d", t_timer_cyc[0]);
+                if (t_timer_n >= 2) $display("stop_time  cycle : %0d", t_timer_cyc[1]);
+                $display("region cycles    : %0d", tc_all);
+                $display("region commit    : %0d", tc_commit);
+                if (tc_commit > 0)
+                    $display("region CPI       : %f", tc_all / (tc_commit * 1.0));
+                if (tc_all > 0) begin
+                    $display("region stall     : %0d  %f%%", tc_stall,
+                             (tc_stall * 100.0) / tc_all);
+                    $display("region div stall : %0d  %f%%", tc_div,
+                             (tc_div * 100.0) / tc_all);
+                    $display("region flush     : %0d  %f%%", tc_flush,
+                             (tc_flush * 100.0) / tc_all);
+                    $display("region fwd ex    : %0d", tc_fwdex);
+                    $display("region fwd wb    : %0d", tc_fwdwb);
+                    $display("region mem acc   : %0d", tc_mem);
+                end
+                $display("--- histogram (bucket = %0d cycles) ---", HBUCKET);
+                for (ph = 0; ph < NH; ph = ph + 1)
+                    $display("h %0d stall=%0d flush=%0d mem=%0d commit=%0d",
+                             ph, h_stall[ph], h_flush[ph], h_mem[ph], h_cmt[ph]);
+            end
             $finish;
         end
     end
@@ -94,5 +210,115 @@ module coremark_tb;
         #1000000000;
         $display("\n=== TIMEOUT (pc=0x%h) ===", pc);
         $finish;
+    end
+
+    // ========================================================================
+    // 剖析主逻辑（只在 +PROF 时工作）
+    // ========================================================================
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            c_stall <= 64'd0; c_div <= 64'd0; c_flush <= 64'd0; c_flushd <= 64'd0;
+            c_fwdex <= 64'd0; c_fwdwb <= 64'd0; c_mem <= 64'd0;
+            c_br_taken <= 64'd0; c_jump <= 64'd0;
+            c_commit <= 64'd0; c_inst_in <= 64'd0;
+            v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
+            h_idx <= 0; h_cnt <= 0;
+            t_timer_n <= 0;
+            in_timed  <= 1'b0;
+            tc_all <= 64'd0; tc_stall <= 64'd0; tc_div <= 64'd0; tc_flush <= 64'd0;
+            tc_fwdex <= 64'd0; tc_fwdwb <= 64'd0; tc_mem <= 64'd0;
+            tc_commit <= 64'd0;
+        end else if (prof_on) begin
+            // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
+            v_wb  <= v_mem;
+            v_mem <= u_core.div_stall ? 1'b0 : v_ex;
+            v_ex  <= (u_core.ex_flush || u_core.stall) ? 1'b0 :
+                     (u_core.div_stall ? v_ex : v_id);
+            v_id  <= (u_core.ex_flush || u_core.ex_flush_d) ? 1'b0 :
+                     ((!u_core.stall && !u_core.div_stall) ? 1'b1 : v_id);
+            if (v_wb) c_commit <= c_commit + 64'd1;
+            if (!u_core.ex_flush && !u_core.ex_flush_d &&
+                !u_core.stall && !u_core.div_stall)
+                c_inst_in <= c_inst_in + 64'd1;
+
+            // ---- 周期构成 ----
+            if (u_core.stall)      c_stall  <= c_stall + 64'd1;
+            if (u_core.div_stall)  c_div    <= c_div + 64'd1;
+            if (u_core.ex_flush)   c_flush  <= c_flush + 64'd1;
+            if (u_core.ex_flush_d) c_flushd <= c_flushd + 64'd1;
+            if (u_core.fwd_a_ex || u_core.fwd_b_ex) c_fwdex <= c_fwdex + 64'd1;
+            if (u_core.fwd_a_wb || u_core.fwd_b_wb) c_fwdwb <= c_fwdwb + 64'd1;
+            if (u_core.mem_re  || u_core.mem_we)    c_mem   <= c_mem + 64'd1;
+            if (u_core.ex_flush && u_core.id_ex_branch && u_core.branch_taken)
+                c_br_taken <= c_br_taken + 64'd1;
+            if (u_core.ex_flush && !u_core.id_ex_branch)
+                c_jump <= c_jump + 64'd1;
+
+            // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0x7FF4）----
+            if (u_core.mem_re && u_core.mem_addr == 32'h7FF4) begin
+                if (t_timer_n < 8) begin
+                    t_timer_cyc[t_timer_n] <= cycle_count;
+                    t_timer_n <= t_timer_n + 1;
+                end
+                in_timed <= (t_timer_n == 0) ? 1'b1 : 1'b0;
+            end
+            if (in_timed) begin
+                tc_all <= tc_all + 64'd1;
+                if (u_core.stall)     tc_stall  <= tc_stall + 64'd1;
+                if (u_core.div_stall) tc_div    <= tc_div + 64'd1;
+                if (u_core.ex_flush)  tc_flush  <= tc_flush + 64'd1;
+                if (u_core.fwd_a_ex || u_core.fwd_b_ex) tc_fwdex <= tc_fwdex + 64'd1;
+                if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
+                if (u_core.mem_re || u_core.mem_we)     tc_mem   <= tc_mem + 64'd1;
+                if (v_wb)             tc_commit <= tc_commit + 64'd1;
+            end
+
+            // ---- 直方图 ----
+            if (h_idx < NH) begin
+                if (u_core.stall)     h_stall[h_idx] <= h_stall[h_idx] + 64'd1;
+                if (u_core.ex_flush)  h_flush[h_idx] <= h_flush[h_idx] + 64'd1;
+                if (u_core.mem_re || u_core.mem_we)
+                                      h_mem[h_idx]   <= h_mem[h_idx] + 64'd1;
+                if (v_wb)             h_cmt[h_idx]   <= h_cmt[h_idx] + 64'd1;
+            end
+            if (h_cnt == HBUCKET - 1) begin
+                h_cnt <= 0;
+                if (h_idx < NH - 1) h_idx <= h_idx + 1;
+            end else begin
+                h_cnt <= h_cnt + 1;
+            end
+        end
+    end
+
+    // ========================================================================
+    // 逐拍五级流水线 trace（+TRACE_START/+TRACE_LEN），用于画时序波形图。
+    // 输出到独立文件，避免与 UART 的 $write 字符流混在一起。
+    // ========================================================================
+    always @(posedge clk) begin
+        if (resetn && prof_on && trace_start_cyc >= 0) begin
+            if (trace_left == 0 && cycle_count == trace_start_cyc) begin
+                trace_fd   = $fopen(trace_fname, "w");
+                trace_left = trace_len;
+            end
+            if (trace_left > 0 && trace_fd != 0) begin
+                $fdisplay(trace_fd,
+                    "T cyc=%0d pc=%h ipc=%h ins=%h epc=%h eop=%h erd=%h mpc=%h mrd=%h mwe=%b mre=%b wrd=%h wwe=%b st=%b dv=%b fl=%b fd=%b faex=%b fbex=%b fawb=%b fbwb=%b vid=%b vex=%b vmem=%b vwb=%b br=%b bt=%b jmp=%b jr=%b",
+                    cycle_count, pc,
+                    u_core.if_id_pc, u_core.if_id_instr,
+                    u_core.id_ex_pc, u_core.id_ex_alu_op, u_core.id_ex_rd,
+                    u_core.ex_mem_pc, u_core.ex_mem_rd,
+                    u_core.mem_we, u_core.mem_re,
+                    u_core.mem_wb_rd, u_core.mem_wb_reg_write,
+                    u_core.stall, u_core.div_stall,
+                    u_core.ex_flush, u_core.ex_flush_d,
+                    u_core.fwd_a_ex, u_core.fwd_b_ex,
+                    u_core.fwd_a_wb, u_core.fwd_b_wb,
+                    v_id, v_ex, v_mem, v_wb,
+                    u_core.id_ex_branch, u_core.branch_taken,
+                    u_core.id_ex_jump, u_core.id_ex_jump_reg);
+                trace_left = trace_left - 1;
+                if (trace_left == 0) $fclose(trace_fd);
+            end
+        end
     end
 endmodule
