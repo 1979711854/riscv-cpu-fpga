@@ -86,6 +86,8 @@ module coremark_tb;
     // 后者目标是 (rs1+imm)&~1，依赖寄存器值，ID 级没有前递通路，预测不了。
     // 两者的条数比直接决定"ID 级预测"能覆盖多少冲刷事件。
     reg [63:0] c_jal, c_jalr;
+    // 分支预测事件：ID 级重定向（预测生效）与 EX 级误判恢复
+    reg [63:0] c_redir, c_mispred;
 
     // CoreMark 计时区间内的同类统计。
     // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0x7FF4
@@ -99,6 +101,7 @@ module coremark_tb;
     reg [63:0] tc_fwdex, tc_fwdwb, tc_mem, tc_commit;
     reg [63:0] tc_br_tot, tc_br_tk, tc_br_bwd, tc_br_bwd_tk;
     reg [63:0] tc_jal, tc_jalr;
+    reg [63:0] tc_redir, tc_mispred;
 
     // 影子流水线 valid：逐级镜像 core 的清零/暂停条件，用来数"真正提交的指令数"。
     // 不能直接用 mem_wb_reg_write 计数 —— store/branch/jump 不回写寄存器，会被漏掉。
@@ -204,6 +207,7 @@ module coremark_tb;
                 $display("  cond branches  : %0d  (bwd %0d, bwd&taken %0d)",
                          c_br_tot, c_br_bwd, c_br_bwd_tk);
                 $display("  jal %0d  jalr %0d", c_jal, c_jalr);
+                $display("  ID redirect %0d  mispredict %0d", c_redir, c_mispred);
                 $display("fwd from ex/mem  : %0d", c_fwdex);
                 $display("fwd from mem/wb  : %0d", c_fwdwb);
                 $display("mem accesses     : %0d", c_mem);
@@ -237,6 +241,8 @@ module coremark_tb;
                     $display("--- jumps (region) ---");
                     $display("  jal            : %0d", tc_jal);
                     $display("  jalr           : %0d", tc_jalr);
+                    $display("  ID redirect    : %0d", tc_redir);
+                    $display("  mispredict     : %0d", tc_mispred);
                     if (tc_br_bwd > 0)
                         $display("  bwd taken rate : %f%%",
                                  (tc_br_bwd_tk * 100.0) / tc_br_bwd);
@@ -270,6 +276,7 @@ module coremark_tb;
             c_br_taken <= 64'd0; c_jump <= 64'd0;
             c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
             c_jal <= 64'd0; c_jalr <= 64'd0;
+            c_redir <= 64'd0; c_mispred <= 64'd0;
             c_commit <= 64'd0; c_inst_in <= 64'd0;
             v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
             h_idx <= 0; h_cnt <= 0;
@@ -281,16 +288,17 @@ module coremark_tb;
             tc_br_tot <= 64'd0; tc_br_tk <= 64'd0;
             tc_br_bwd <= 64'd0; tc_br_bwd_tk <= 64'd0;
             tc_jal <= 64'd0; tc_jalr <= 64'd0;
+            tc_redir <= 64'd0; tc_mispred <= 64'd0;
         end else if (prof_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             v_wb  <= v_mem;
             v_mem <= u_core.div_stall ? 1'b0 : v_ex;
-            v_ex  <= (u_core.ex_flush || u_core.stall) ? 1'b0 :
+            v_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.stall) ? 1'b0 :
                      (u_core.div_stall ? v_ex : v_id);
-            v_id  <= u_core.ex_flush ? 1'b0 :
+            v_id  <= (u_core.ex_flush || u_core.ex_mispred || u_core.id_redirect) ? 1'b0 :
                      ((!u_core.stall && !u_core.div_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
-            if (!u_core.ex_flush &&
+            if (!u_core.ex_flush && !u_core.ex_mispred && !u_core.id_redirect &&
                 !u_core.stall && !u_core.div_stall)
                 c_inst_in <= c_inst_in + 64'd1;
 
@@ -313,6 +321,8 @@ module coremark_tb;
                     if (u_core.id_ex_imm[31]) c_br_bwd_tk <= c_br_bwd_tk + 64'd1;
                 end
             end
+            if (u_core.id_redirect) c_redir   <= c_redir   + 64'd1;
+            if (u_core.ex_mispred)  c_mispred <= c_mispred + 64'd1;
             if (u_core.id_ex_jump)     c_jal  <= c_jal  + 64'd1;
             if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
             if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
@@ -344,6 +354,8 @@ module coremark_tb;
                             tc_br_bwd_tk <= tc_br_bwd_tk + 64'd1;
                     end
                 end
+                if (u_core.id_redirect) tc_redir   <= tc_redir   + 64'd1;
+                if (u_core.ex_mispred)  tc_mispred <= tc_mispred + 64'd1;
                 if (u_core.id_ex_jump)     tc_jal  <= tc_jal  + 64'd1;
                 if (u_core.id_ex_jump_reg) tc_jalr <= tc_jalr + 64'd1;
             end
@@ -377,7 +389,7 @@ module coremark_tb;
             end
             if (trace_left > 0 && trace_fd != 0) begin
                 $fdisplay(trace_fd,
-                    "T cyc=%0d pc=%h ipc=%h ins=%h epc=%h eop=%h erd=%h mpc=%h mrd=%h mwe=%b mre=%b wrd=%h wwe=%b st=%b dv=%b fl=%b faex=%b fbex=%b fawb=%b fbwb=%b vid=%b vex=%b vmem=%b vwb=%b br=%b bt=%b jmp=%b jr=%b",
+                    "T cyc=%0d pc=%h ipc=%h ins=%h epc=%h eop=%h erd=%h mpc=%h mrd=%h mwe=%b mre=%b wrd=%h wwe=%b st=%b dv=%b fl=%b fd=%b ir=%b faex=%b fbex=%b fawb=%b fbwb=%b vid=%b vex=%b vmem=%b vwb=%b br=%b bt=%b jmp=%b jr=%b",
                     cycle_count, pc,
                     u_core.if_id_pc, u_core.if_id_instr,
                     u_core.id_ex_pc, u_core.id_ex_alu_op, u_core.id_ex_rd,
@@ -385,7 +397,7 @@ module coremark_tb;
                     u_core.mem_we, u_core.mem_re,
                     u_core.mem_wb_rd, u_core.mem_wb_reg_write,
                     u_core.stall, u_core.div_stall,
-                    u_core.ex_flush,
+                    u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
                     u_core.fwd_a_ex, u_core.fwd_b_ex,
                     u_core.fwd_a_wb, u_core.fwd_b_wb,
                     v_id, v_ex, v_mem, v_wb,
