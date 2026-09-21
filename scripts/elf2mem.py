@@ -121,8 +121,6 @@ def main():
         target = imem if kind == "imem" else dmem
         data = extract(elf, name, tmp)
         target.update(group_words(data, vma))
-    if os.path.exists(tmp):
-        os.remove(tmp)
 
     for name, size, vma in unassigned:
         print("警告: 已分配段 %s (size=0x%x, vma=0x%x) 既非指令段也非数据段，已被丢弃"
@@ -142,6 +140,11 @@ def main():
     # 合并镜像：真实 BRAM IP 的初始化通常只吃一份文件，PDS 综合用这个
     merged = dict(imem)
     merged.update(dmem)
+    if not merged:
+        raise SystemExit(
+            "错误: 没有解析到任何指令/数据段，mem.hex 会是空的。\n"
+            "      多半是链接脚本或段名与 elf2mem.py 的归类不符。显式报错，\n"
+            "      总好过产出一份空镜像、板上什么都不跑却不报任何错。")
     write_hex(os.path.join(outdir, "mem.hex"), merged)
     # 顺便报 tohost 位置，并写入 tohost_addr.hex 供 testbench 运行时读取
     tohost = None
@@ -153,6 +156,20 @@ def main():
     with open(os.path.join(outdir, "tohost_addr.hex"), "w") as f:
         f.write("%08x\n" % tohost)
     print("tohost = 0x%x (word 0x%x)" % (tohost, tohost >> 2))
+    print("imem %d 字 / dmem %d 字 / mem %d 字 -> %s"
+          % (len(imem), len(dmem), len(merged), outdir))
+
+    # 临时文件清理：必须放在【所有输出都写完】之后，且必须容错。
+    # 2026-09-21 实踩 —— 这段原本排在 write_hex() 之前，而 os.remove 在某些环境
+    # （沙箱拦截、被杀软或其它进程占用）会抛异常。一旦抛出，main() 会在【写出 hex
+    # 之前】中止，目录里留着上一次构建的镜像：仿真和上板跑的都是旧程序，而 gcc 与
+    # 本脚本都显示成功、全程无任何报错，极难排查。清理失败绝不该影响交付物。
+    if os.path.exists(tmp):
+        try:
+            os.remove(tmp)
+        except OSError as e:
+            print("警告: 临时文件 %s 删除失败（%s），已忽略；不影响上面生成的 hex"
+                  % (tmp, e))
 
 
 if __name__ == "__main__":
