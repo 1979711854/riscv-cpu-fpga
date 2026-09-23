@@ -96,3 +96,6 @@ $RECYCLE.BIN/
 
 # ---- 其他 agent 工具的本地数据目录 ----
 .workbuddy/
+
+# ---- 一次性调试产物（研究完即可删）----
+*.keepbak
