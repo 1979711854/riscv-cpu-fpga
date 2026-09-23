@@ -1,126 +1,149 @@
-# 主时钟约束：27MHz（远程 FPGA 平台固定时钟，周期 37.037ns）
+# ============================================================================
+# 引脚约束 —— 盘古 MES2L676-200HP 本地开发板（核心板 PG2L200H-6IFBB676）
+# ----------------------------------------------------------------------------
+# 引脚来源：《MES2L676-200HP硬件使用手册_v1.2》，逐条核对 PDS 封装库后确认。
+#   clk       2.2.3  FPGA_GCLK_27M        D18    板载 27MHz 晶振（U11）
+#   resetn    3.4.1  KEY0                 C22    按键；本板无独立复位引脚，用 KEY0 兼作复位
+#   led[0:7]  3.4.2  ——                  C19 C18 E18 A17 A20 A18 C17 B17   输出高电平点亮
+#                     ↑ 注意：**不按手册 LED0..LED7 的顺序**，见下方"LED 重排"说明
+#   key[0:3]  3.4.1  KEY1..KEY4           C23 B22 A22 B20                   按下 = 0
+#   uart      3.2.5  FPGA_UART_RXD/TXD    B24 / C24   经 CP2102 接 USB Type-C
+#
+# ★ 2026-09-23 本地板实测确认（串口日志 doc/board/uart_20260923_200737.txt）：
+#     从左到右依次按 4 个用户开关 -> KEY=0x01 / 0x02 / 0x04 / 0x08
+#     即 key[0..3] 的顺序与板上开关的左右顺序一致；复位键（C22）正常，能重启程序。
+#   引脚物理左右顺序即 C22 < C23 < B22 < A22 < B20，与手册 KEY0..KEY4 一致。
+#
+#   两点如实记录，均非映射错误：
+#     * 手册是 0 起编号、板上丝印是 1 起编号（手册 KEY0..KEY4 = 丝印 KEY1..KEY5）。
+#     * 板上 LED 丝印（D12..D19）相对开关是乱序排布 —— 这是硬件现状。
+#       根因：按键的管脚是按排列分配的（C22<C23<B22<A22<B20 正好左到右），
+#       而 LED 的管脚是按布线就近分配的，所以 LED0..LED7 在板上不是空间顺序。
+#
+# ★ LED 重排（2026-09-23，为了让现场演示直观）：
+#   手册 LEDn ↔ 管脚/丝印 两张表拼起来是：
+#     LED0=A20=D17  LED1=C18=D18  LED2=C19=D19  LED3=E18=D13
+#     LED4=A17=D14  LED5=A18=D15  LED6=C17=D16  LED7=B17=D12
+#   板上开关与 D 编号的位置关系（实测）：SW3→D17  SW4→D19  SW5→D18
+#                                        SW6→D13  SW7→D14
+#   而 key[i] 对应 SW(i+4)，所以把 led[i] 改成 SW(i+4) 正下方那个灯的管脚：
+#     led[0]=C19(D19, SW4 下)  led[1]=C18(D18, SW5 下)
+#     led[2]=E18(D13, SW6 下)  led[3]=A17(D14, SW7 下)
+#     led[4]=A20(D17, SW3 下)  led[5..7]=A18/C17/B17(D15/D16/D12)
+#   效果：演示程序（LED=KEY）按哪个开关，正下方那个灯就亮。
+#   ⚠️ 因此 led[i] **不再等于**手册 LEDi；报告里需注明"按板卡实际位置重排"。
+#
+# 器件与远程 FPGA 平台是同一颗，故时钟约束保持 27MHz / 37.037ns 不变。
+#
+# 本工程 top module 是 cpu_top_board（不是 cpu_top）—— 它把 pc[31:0] / done
+# 这两个板级调试口挡在外面，并把 key[7:4] 恒定接 1。
+#   * PDS 会把未指定 LOC 的输出端口自动布到 BANKR5 的任意引脚（实测
+#     pc[0]→M2、led[0]→P6），而本板 BANKR5 有 SFP/HSST 等已连接引脚，
+#     32 位输出乱布有驱动冲突风险。
+#   * pc 仍是仿真侧的分析数据源（tb_coremark 的 +TRACE dump / TIMEOUT 诊断），
+#     所以仿真继续用 cpu_top 原样，不动它的端口。
+# 本文件因此**没有**任何未约束端口。
+# ============================================================================
+
+# ---- 主时钟：27MHz ----
 create_clock -name {clk} [get_ports {clk}] -period {37.037} -waveform {0.000 18.518} -add
 
-define_attribute {p:done} {PAP_IO_DIRECTION} {OUTPUT}
-define_attribute {p:done} {PAP_IO_LOC} {U16}
-define_attribute {p:done} {PAP_IO_VCCIO} {3.3}
-define_attribute {p:done} {PAP_IO_STANDARD} {LVCMOS33}
-define_attribute {p:done} {PAP_IO_DRIVE} {8}
-define_attribute {p:done} {PAP_IO_NONE} {TRUE}
-define_attribute {p:done} {PAP_IO_SLEW} {SLOW}
-define_attribute {p:uart_tx} {PAP_IO_DIRECTION} {OUTPUT}
-define_attribute {p:uart_tx} {PAP_IO_LOC} {AB26}
-define_attribute {p:uart_tx} {PAP_IO_VCCIO} {3.3}
-define_attribute {p:uart_tx} {PAP_IO_STANDARD} {LVCMOS33}
-define_attribute {p:uart_tx} {PAP_IO_DRIVE} {8}
-define_attribute {p:uart_tx} {PAP_IO_NONE} {TRUE}
-define_attribute {p:uart_tx} {PAP_IO_SLEW} {SLOW}
+# ---- 时钟输入 ----
 define_attribute {p:clk} {PAP_IO_DIRECTION} {INPUT}
 define_attribute {p:clk} {PAP_IO_LOC} {D18}
 define_attribute {p:clk} {PAP_IO_VCCIO} {3.3}
 define_attribute {p:clk} {PAP_IO_STANDARD} {LVCMOS33}
 define_attribute {p:clk} {PAP_IO_NONE} {TRUE}
+
+# ---- 复位（手册 KEY0 / 丝印 KEY1，低有效）----
 define_attribute {p:resetn} {PAP_IO_DIRECTION} {INPUT}
 define_attribute {p:resetn} {PAP_IO_LOC} {C22}
 define_attribute {p:resetn} {PAP_IO_VCCIO} {3.3}
 define_attribute {p:resetn} {PAP_IO_STANDARD} {LVCMOS33}
 define_attribute {p:resetn} {PAP_IO_PULLUP} {TRUE}
 
-# ============================================================================
-# 以下为 cpu_top 新增端口 led[7:0] / key[7:0] / uart_rx
-# ----------------------------------------------------------------------------
-# 当前工程按【远程 FPGA 平台】约束（clk/resetn/uart_tx/done 见上），远程平台
-# 没有这几个外设引脚，所以先整块注释掉。
-#
-# ⚠️ 未指定 PAP_IO_LOC 的端口会让 place & route 失败。
-#    compile / synthesize 不受影响，所以仿真与综合验证可以照常做。
-#    确认要上【盘古 MES2L200HP】本地板卡时，把下面整块取消注释即可 ——
-#    引脚取自《盘古2L200H开发板》手册表 3-8/3-9/3-5，器件同为 PG2L200H：
-#      LED1-8  BANK L3，输出高电平点亮
-#      KEY1-8  普通 IO，按键低电平有效（按下 = 0）
-#      UART    CP2102，UART0_TX / UART0_RX
-#    同时别忘了把上面的 clk/resetn/uart_tx/done 改成盘古板的引脚。
-# ============================================================================
-#
-# # ---- LED1..LED8 ----
-# define_attribute {p:led[0]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[0]} {PAP_IO_LOC} {F13}
-# define_attribute {p:led[0]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[0]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[1]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[1]} {PAP_IO_LOC} {F14}
-# define_attribute {p:led[1]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[1]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[2]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[2]} {PAP_IO_LOC} {E13}
-# define_attribute {p:led[2]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[2]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[3]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[3]} {PAP_IO_LOC} {E14}
-# define_attribute {p:led[3]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[3]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[4]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[4]} {PAP_IO_LOC} {E16}
-# define_attribute {p:led[4]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[4]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[5]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[5]} {PAP_IO_LOC} {D16}
-# define_attribute {p:led[5]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[5]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[6]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[6]} {PAP_IO_LOC} {F16}
-# define_attribute {p:led[6]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[6]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:led[7]} {PAP_IO_DIRECTION} {OUTPUT}
-# define_attribute {p:led[7]} {PAP_IO_LOC} {E17}
-# define_attribute {p:led[7]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:led[7]} {PAP_IO_STANDARD} {LVCMOS33}
-#
-# # ---- KEY1..KEY8（低电平有效，输入加上拉）----
-# define_attribute {p:key[0]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[0]} {PAP_IO_LOC} {Y19}
-# define_attribute {p:key[0]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[0]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[0]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[1]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[1]} {PAP_IO_LOC} {W20}
-# define_attribute {p:key[1]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[1]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[1]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[2]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[2]} {PAP_IO_LOC} {T20}
-# define_attribute {p:key[2]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[2]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[2]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[3]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[3]} {PAP_IO_LOC} {V22}
-# define_attribute {p:key[3]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[3]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[3]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[4]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[4]} {PAP_IO_LOC} {P20}
-# define_attribute {p:key[4]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[4]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[4]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[5]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[5]} {PAP_IO_LOC} {N15}
-# define_attribute {p:key[5]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[5]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[5]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[6]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[6]} {PAP_IO_LOC} {J19}
-# define_attribute {p:key[6]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[6]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[6]} {PAP_IO_PULLUP} {TRUE}
-# define_attribute {p:key[7]} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:key[7]} {PAP_IO_LOC} {H19}
-# define_attribute {p:key[7]} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:key[7]} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:key[7]} {PAP_IO_PULLUP} {TRUE}
-#
-# # ---- UART 接收（发送 uart_tx 见文件开头）----
-# define_attribute {p:uart_rx} {PAP_IO_DIRECTION} {INPUT}
-# define_attribute {p:uart_rx} {PAP_IO_LOC} {P14}
-# define_attribute {p:uart_rx} {PAP_IO_VCCIO} {3.3}
-# define_attribute {p:uart_rx} {PAP_IO_STANDARD} {LVCMOS33}
-# define_attribute {p:uart_rx} {PAP_IO_PULLUP} {TRUE}
+# ---- UART：输出 uart_tx / 输入 uart_rx ----
+define_attribute {p:uart_tx} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:uart_tx} {PAP_IO_LOC} {C24}
+define_attribute {p:uart_tx} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:uart_tx} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:uart_tx} {PAP_IO_DRIVE} {8}
+define_attribute {p:uart_tx} {PAP_IO_SLEW} {SLOW}
+
+define_attribute {p:uart_rx} {PAP_IO_DIRECTION} {INPUT}
+define_attribute {p:uart_rx} {PAP_IO_LOC} {B24}
+define_attribute {p:uart_rx} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:uart_rx} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:uart_rx} {PAP_IO_PULLUP} {TRUE}
+
+# ---- LED0..LED7（输出高电平点亮）----
+define_attribute {p:led[0]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[0]} {PAP_IO_LOC} {C19}
+define_attribute {p:led[0]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[0]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[0]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[0]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[1]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[1]} {PAP_IO_LOC} {C18}
+define_attribute {p:led[1]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[1]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[1]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[1]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[2]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[2]} {PAP_IO_LOC} {E18}
+define_attribute {p:led[2]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[2]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[2]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[2]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[3]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[3]} {PAP_IO_LOC} {A17}
+define_attribute {p:led[3]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[3]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[3]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[3]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[4]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[4]} {PAP_IO_LOC} {A20}
+define_attribute {p:led[4]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[4]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[4]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[4]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[5]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[5]} {PAP_IO_LOC} {A18}
+define_attribute {p:led[5]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[5]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[5]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[5]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[6]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[6]} {PAP_IO_LOC} {C17}
+define_attribute {p:led[6]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[6]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[6]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[6]} {PAP_IO_SLEW} {SLOW}
+define_attribute {p:led[7]} {PAP_IO_DIRECTION} {OUTPUT}
+define_attribute {p:led[7]} {PAP_IO_LOC} {B17}
+define_attribute {p:led[7]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:led[7]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:led[7]} {PAP_IO_DRIVE} {8}
+define_attribute {p:led[7]} {PAP_IO_SLEW} {SLOW}
+
+# ---- KEY1..KEY4 → key[0..3]（按下 = 0；手册 KEY0 / 丝印 KEY1 已用作 resetn）----
+define_attribute {p:key[0]} {PAP_IO_DIRECTION} {INPUT}
+define_attribute {p:key[0]} {PAP_IO_LOC} {C23}
+define_attribute {p:key[0]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:key[0]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:key[0]} {PAP_IO_PULLUP} {TRUE}
+define_attribute {p:key[1]} {PAP_IO_DIRECTION} {INPUT}
+define_attribute {p:key[1]} {PAP_IO_LOC} {B22}
+define_attribute {p:key[1]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:key[1]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:key[1]} {PAP_IO_PULLUP} {TRUE}
+define_attribute {p:key[2]} {PAP_IO_DIRECTION} {INPUT}
+define_attribute {p:key[2]} {PAP_IO_LOC} {A22}
+define_attribute {p:key[2]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:key[2]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:key[2]} {PAP_IO_PULLUP} {TRUE}
+define_attribute {p:key[3]} {PAP_IO_DIRECTION} {INPUT}
+define_attribute {p:key[3]} {PAP_IO_LOC} {B20}
+define_attribute {p:key[3]} {PAP_IO_VCCIO} {3.3}
+define_attribute {p:key[3]} {PAP_IO_STANDARD} {LVCMOS33}
+define_attribute {p:key[3]} {PAP_IO_PULLUP} {TRUE}
