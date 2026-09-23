@@ -12,7 +12,7 @@
 
 | 基础任务 | 状态 |
 |---|---|
-| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ 达标（5 级流水线、前递、load-use 停顿、6 种分支；**分支惩罚 2 拍**，见下） |
+| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ 达标（5 级流水线、前递、load-use 停顿、6 种分支；**分支惩罚 1 拍**，见下） |
 | ① RV32I 基础整数指令集 | ✅ **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
 | ③ 集成基础外设（UART/GPIO） | ✅ 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
 
@@ -33,13 +33,13 @@
 - **CoreMark**：2026-09-15 已在远程平台实测通过（旧取指路径，ITER=700，
   `Total ticks 294,065,438` → 10.89 秒，`Correct operation validated`，
   四个 CRC 与仿真逐位一致 → **CPU 真机算得对**）。
-  2026-09-21 取指重定向改造后，仿真每迭代降到 **382,972** 周期 → **2.611 CoreMark/MHz**。
+  2026-09-23 两轮分支优化后，仿真每迭代降到 **358,846** 周期 → **2.787 CoreMark/MHz**。
   > ⚠️ **改了流水线就必须重算 ITER，否则 CoreMark 判 invalid。**
-  > 旧设计 420,094 周期/迭代时 ITER=700 正好 10.89s；新设计 382,972 时
-  > **ITER=700 只剩 9.93s**，**必须提到 770**（10.92s，余量 9.2%）。
-  > 上板流程：`run_coremark.ps1 -Iter 770 -SkipSim` → `sync_firmware.ps1` → PDS 重新综合。
+  > 420,094 周期/迭代时 ITER=700 = 10.89s（已上板实测）；382,972 时 ITER=770 = 10.92s；
+  > **当前 358,846，ITER=770 只剩 10.23s（余量仅 2.3%，太险）→ 取 820**（10.90s，余量 9.0%）。
+  > 上板流程：`run_coremark.ps1 -Iter 820 -SkipSim` → `sync_firmware.ps1` → PDS 重新综合。
   > 新设计的板上时长**尚未复测**（旧设计板/仿真偏差仅 0.0057%，可作参考）。
-  > ⚠️ **别用 ITER=1 的测试台总周期（当前 1,488,333）去推算迭代成本**。那是仿真
+  > ⚠️ **别用 ITER=1 的测试台总周期（当前 1,462,898）去推算迭代成本**。那是仿真
   > 测试台的总周期，含约 108 万周期的一次性串口打印开销；而 CoreMark 自己的
   > `Total ticks` 计时在打印**之前**就停了，不含打印。两个口径不同，混用会把迭代
   > 成本算错，进而把 ITER 估得偏小（本项目据此写成"ITER≈200 约 10s"，
@@ -58,20 +58,28 @@
   > 判据：看 `pds\RV32I_1\pds.log` 里的 `Loading memory data from file ... mem.hex`，
   > 再核对 `mem.hex` 的字数与 ELF 的 `.text` 规模是否相当（CoreMark = 4209 字）。
   > **上板前的固定动作：`run_coremark.ps1 -Iter 770 -SkipSim` → `sync_firmware.ps1` → PDS 综合。**
-- **流水线效率基线（2026-09-21 取指重定向后实测，改动流水线后用来对比）**：CoreMark
-  计时区间 **382,972** 拍 / 提交 288,056 条指令 → **CPI 1.3295**；损失构成：
-  **分支冲刷 19.4%（37,098 次 × 2 拍）** + load-use 停顿 5.4%。实测方法见
+- **流水线效率基线（2026-09-23 两轮分支优化后实测，改动流水线后用来对比）**：CoreMark
+  计时区间 **358,846** 拍 / 提交 288,056 条指令 → **CPI 1.2458**；损失构成：
+  **分支惩罚 14.0%（50,070 拍）** + load-use 停顿 5.8%。实测方法见
   `doc/ila_analysis.md`，测试台已内置 `+PROF` / `+TRACE_*`（默认关闭，不影响回归）。
-  > 改造前是 420,070 拍 / CPI 1.4583，分支冲刷占 26.5%。取指重定向把惩罚从 3 拍压到
-  > 2 拍，省下的拍数 `420,070 − 382,972 = 37,098` **恰好等于冲刷次数**（每次省 1 拍），
-  > 计时区间提速 **8.83%**。优化记录见 `doc/reports/2026-09-21_branch_opt_verify.md`。
+  > 三轮演进：**420,070**（基线，惩罚 3 拍，冲刷占 26.5%）→ **382,972**（取指重定向，
+  > 2 拍）→ **358,846**（ID 级静态后向预测 + jal，1 拍）。CoreMark/MHz 2.380 → 2.611 → **2.787**。
+  > 气泡分解精确闭合：`288,056（提交）+ 20,720（load-use）+ 50,070（分支）= 358,846`。
+  > 优化记录见 `doc/reports/2026-09-21_branch_opt_verify.md`。
+- **高阶任务②（完整异常/中断）已实现**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret`
+  + 六类同步异常（非法指令/EBREAK/未对齐 load+store/ECALL/写只读 CSR）+ 定时器中断（CLINT）。
+  自写汇编测试在 `sim/tests/`，一键 `scriptsun_own_tests.ps1`。
+  > 未做：BTB（实测剩余空间仅约 2.3%）、外部中断 MEIP（通路具备但无测试）。
+  > 关键取舍见 `doc/spec.md` §6：只支持 M 模式（MPP 硬连线）；未实现的 CSR 读 0、写忽略、
+  > 不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
 
 **回归纪律（重要）**：改动 RTL 后，riscv-tests 的 **49/1/0** 与 CoreMark 的
-**计时区间 382,972 拍**（测试台总周期 1,488,333）必须同时保持不变
+**计时区间 358,846 拍**（测试台总周期 1,462,898）必须同时保持不变
 （除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
 
 ## 仓库结构（以此为准，勿再新建顶层目录）
-- `rtl/core/`    CPU 核：`core.v`(5 级流水线/冒险/分支) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
+- `rtl/core/`    CPU 核：`core.v`(5 级流水线/冒险/分支/trap) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
+                 `csr_file.v`(**CSR 寄存器组 + trap/mret 副作用**，只支持 M 模式)
 - `rtl/mem/`     `unified_mem.v` —— **统一存储器**（指令+数据共用一块双端口 BRAM：A 口取指 / B 口访存）。
                  行为级、仅 PDS 综合用，`$readmemh` 读 PDS 工程目录下的 `mem.hex`
 - `rtl/bus/`     `addr_map.vh`(地址映射单点定义) `mem_bus.v`(**唯一的地址译码处** + 读数据 mux)
@@ -80,12 +88,18 @@
 - `rtl/top.v`    早期 LED 点灯练习工程顶层（保留）
 - `sim/`         `mem_model.vh`(存储器行为模型，被各 tb `include)
                  `tb_riscv.v` `tb_coremark.v` `tb_demo.v`（集成）+ `tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v`（单元）
+                 `sim/tests/` **自写汇编测试**（`exceptions.S` `timer_irq.S` + `test_macros.h`）
+                 `sim/tools/tb_debug_trap.v` 逐拍调试台（需 -WithCore；放在 tools/ 以免被 run_sim 的通配捞走）
                  `sim/programs/` 为生成的 hex/ELF（**不入库**）
 - `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归) `run_demo.ps1` `sync_firmware.ps1`
-                 `elf2mem.py`(出 imem/dmem/mem 三种 hex) `trace2svg.py`(逐拍 trace → 流水线波形 SVG) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
+                 `run_own_tests.ps1`(**自写测试**：汇编 → 跑 → 汇总) `elf2mem.py`(出 imem/dmem/mem 三种 hex)
+                 `trace2svg.py`(逐拍 trace → 流水线波形 SVG) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
 - `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
 - `pds/riscv_cpu/` 早期 LED 练习工程
 - `third_party/coremark/`  官方 CoreMark 源码（含 LICENSE）
+- `third_party/riscv-tests-elf/`    50 个**预编译基线 ELF**（回归金标准）
+- `third_party/riscv-tests-env/`    上游 riscv-tests 的 **env 头文件**（encoding.h / riscv_test.h），
+                                    自写汇编测试要用；从队友原件抢救入库，详见其 README
 - `doc/`          `plan.md`(计划) `spec.md`(架构) `base_task_status.md`(基础任务核对) `RV32I指令集参考.md` `setup_env.md`(环境搭建) `test_report_riscv-tests.md` `resource_efficiency.md`(赛题三条性能指标成文) `ila_analysis.md`(流水线效率+ILA方案) `figures/`(波形图) `patches/`(给队友的兼容补丁)
 - `.vscode/`      `tasks.json`(一键仿真) `settings.json`(Verilog lint 已改用 iverilog)
 - `riscv32-FPGA-pds/`  队友交接的**原件**（已 gitignore，仅作回归对照，验证完可删）
@@ -121,6 +135,21 @@
 10. 交流与输出默认使用**简体中文**。
 11. 提交按里程碑拆分、信息写清改动；**不自动 push**。
 12. PDS 是紫光同创的工具（Vivado 是 Xilinx/AMD 的），注意区分。
+13. **测试台里悬空的输入端口会变成 Z，不是 0**。`tb_riscv.v` 一度漏接了
+    `mem_bus` 的 `.irq_timer`，于是 core 里 `int_timer = mie.MTIE & Z` 是不定态，
+    中断行为完全随机。**症状极具迷惑性：同一份 RTL、同一份 hex，调试台跑出
+    "正常停在 PASS 自旋"，tb_riscv 跑出 pc 跑飞**。两个测试台结果不一致时，
+    先怀疑接线不一致，别怀疑 RTL。
+14. **C 预处理器会把 `.text.init` 拆成 `.` `text` `.` `init`** —— `init` 是独立
+    token。`sim/tests/test_macros.h` 里补 riscv-tests 的 `init` 宏时若写成
+    `#define init nop`，段名就被静默改写成 `.text.nop`，链接脚本匹配不到、
+    内存布局整体错位（`_start` 从 0x0 跑到 0x1000）。
+    **上游用汇编宏（`.macro init / .endm`）正是为了避开这个。**
+15. **静态"全零字按气泡处理"是承重的**：取指是同步读、1 拍延迟，复位后第一拍
+    发出的地址、数据下一拍才回来，所以那一拍 IF/ID 锁存到的是存储器的复位值
+    `0x00000000`。`control.v` 的 `default` 必须对它例外（否则上电第一拍就 trap），
+    `core.v` 的 `if_id_valid` 也用它判"是不是真指令"（否则中断会拿气泡的
+    `id_ex_pc`=0 去写 mepc）。`tb_control` 里有回归锁。
 
 ## 待办
 - **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
@@ -139,5 +168,12 @@
   基线 ELF（`third_party/riscv-tests-elf/`，50 个 = rv32ui 42 + rv32um 8，已入库，约 650KB）。
   之所以把二进制入库：上游 riscv-tests 会变，重新 clone 未必复现同一批二进制，
   基线漂移会让人误以为是自己改坏了 CPU。详见该目录的 README。
-- **高阶任务**（详见 `doc/spec.md` §6）：2 路组相联 I/D Cache、BTB + 完整异常/中断、边缘 AI。
-  注意：加 I-Cache 后 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache"，否则 `fence_i` 会失败。
+- **高阶任务**（详见 `doc/spec.md` §6）：
+  - ✅ **完整异常/中断已做**：CSR 文件 + 6 条 CSR 指令 + mret + 六类同步异常
+    + 定时器中断（CLINT）。测试 `sim/tests/`，一键 `scriptsun_own_tests.ps1`
+  - ⬜ **BTB 动态分支预测**：实测剩余可优化空间只有约 **2.3%**（前向 taken + jalr），
+    见 `doc/ila_analysis.md` §6
+  - ⬜ **外部中断 MEIP**：通路已具备（cpu_top 接了 UART RX 非空），但**没有测试**，
+    不得当作已验证能力
+  - ⬜ 2 路组相联 I/D Cache：**负收益**（存储器是单周期 BRAM，访存恒 1 拍、无缺失惩罚）
+  - ⬜ 边缘 AI：32KB BRAM 是硬墙（无片外存储），当前硬件条件不可行

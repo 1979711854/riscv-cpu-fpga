@@ -149,8 +149,16 @@ else if (ex_flush) pc_r <= ex_target + 32'd4;
     0x00 W LED[7:0]     R {16'b0, key[7:0], led[7:0]}   GPIO
     0x08 W UART TX      R 0
     0x0C R UART RX      {valid[31], 23'b0, data[7:0]}   ★ 读操作会弹出 FIFO 头
-    0x10 R TIMER[31:0]  （与 0x7FF4 同一个计数器）
+    0x10 R TIMER[31:0]  （与 0x7FF4 同一个计数器，即 CLINT 的 mtime）
+    0x14 W/R MTIMECMP[31:0]  定时器比较值：mtime >= mtimecmp → MTIP 拉高
+                             ★ 只接受整字写（sw）；复位值全 1，上电不会误触发
+                             ★ 软件写新值后 MTIP 自动落下（纯电平比较，不锁存）
 ```
+
+> **CLINT / 定时器中断**：`mtime` 就是那个自由跑计数器（32 位，不是规范建议的
+> 64 位；27MHz 下约 159 秒回绕，本项目最长任务 CoreMark ≥10s 远小于它）。
+> 要产生中断还需 `mie.MTIE`(bit7) 与 `mstatus.MIE`(bit3)。完整用法见
+> `sim/tests/timer_irq.S`。
 
 - RAM 译码**显式排除 0x7FF0~0x7FFF**（否则 CoreMark 写 0x7FF8 会落进 RAM，`done` 永不拉高）
 - 栈顶必须 ≤ 0x7FF0（CoreMark 用 0x7000）
@@ -186,23 +194,50 @@ else if (ex_flush) pc_r <= ex_target + 32'd4;
 
 **限制**
 
-1. 未对齐 load/store 不保证支持 —— RISC-V 规范允许。`ma_data` 是唯一 FAIL
-   （testnum 1，确定性）。2026-09-21 曾据一次测量称"取指重定向后它转 PASS"，
-   **该结论经复核已撤回**（用改造前的 RTL 复测同样是 FAIL）。未对齐通路没有
-   专门测试覆盖，不把它算作已实现的功能
+1. **未对齐访存不提供正确结果，但会正确地陷入异常**（mcause 4/6）。
+   规范要求"要么支持、要么陷入异常"，本设计取后者。`ma_data` 因此仍是唯一 FAIL，
+   但失败形态已变：未对齐 `lh` 触发 mcause=4 → 测试自带的 handle_exception
+   置 `gp |= 1337` → tohost=1337 → 测试台报 `FAIL (testnum 668)`
+   （此前是 testnum 1）。**真正要支持未对齐访存需在 MEM 级加多拍访问**，未做
 2. 按键无硬件消抖（在软件里做）
-3. EBREAK 是软停机（不停 PC，需配合自旋循环）
-4. UART 无中断，收发皆轮询
-5. 取指窗口内的自修改代码仍有理论窗口（见 `doc/test_report_riscv-tests.md` §2）
+3. EBREAK 现在是 **mcause=3 的异常**（不再只是软停机钩子）。顶层的 `done` 灯
+   改从 trap 事件取（`ebreak = trap && trap_cause == 3`）
+4. **外部中断（MEIP）未实现**：`mip.MEIP`/`mie.MEIE` 的位与 `core` 的输入端口都在，
+   `cpu_top` 也接上了 UART RX 非空，但**没有针对它的测试**，不得当作已验证能力
+5. UART 发送无中断（收发皆轮询，除上面的 MEIP 通路）
+6. 取指窗口内的自修改代码仍有理论窗口（见 `doc/test_report_riscv-tests.md` §2）
+7. `minstret`/`minstreth` 读 0（未实现退休指令计数）
+
+**已实现的高阶能力（异常/中断）**
+
+- **CSR 文件**：`rtl/core/csr_file.v`。实现 mstatus / misa / mie / mtvec / mscratch /
+  mepc / mcause / mtval / mip / mcycle / mhartid 与三个只读 ID 寄存器。
+  6 条 CSR 指令（CSRRW/RS/RC + 立即数变体）在 **EX 级**提交（理由见该文件头注释）。
+- **同步异常**：非法指令(2) / EBREAK(3) / 未对齐 load(4) / 未对齐 store(6) /
+  ECALL from M(11) / 写只读 CSR(2)。统一在 **EX 级**检测。
+- **中断**：机器定时器中断（mcause = 0x8000_0007）。
+- **trap 通路**：`fetch_addr` 加一条最高优先级的重定向腿；`mret` 折进 `ex_flush`
+  通路（不为它再加腿，避免在 `pc_r` 临界路径上增加级数）。
+- 测试：`sim/tests/exceptions.S`、`sim/tests/timer_irq.S`，
+  一键跑 `scripts/run_own_tests.ps1`。
+
+> ⚠️ **只支持 M 模式**：`mstatus.MPP` 硬连线 2'b11，`mret` 永远回 M 模式。
+> 这不是偷懒 —— riscv-tests 的 init 会 `csrwi mstatus, 0` 把 MPP 清 0，
+> 如实实现会让 `mret` 降到 U 模式，与测试对 `mcause` 的假设不符。
+>
+> ⚠️ **未实现的 CSR 读 0、写忽略、不抛非法**（stvec/medeleg/satp/pmp* 等）。
+> init 段会访问它们，按规范抛异常会让 50 个基线 ELF 当场全挂。
+> 这是明知与规范有偏差的工程取舍。
 
 **高阶任务方向（尚未做）**
 
 - **2 路组相联 I/D Cache**：在统一存储器之上加两块 Cache。注意届时 `fence.i`
-  必须从 NOP 升级为"冲刷 I-Cache"，否则会退化回 `fence_i` 失败
-- **BTB / BHT 动态分支预测**：当前分支惩罚固定 **2 拍**、无任何预测，仍是单项最大的
-  效率损失（占改造后计时区间 **19.4%**）。BHT 可显著降低，详见 `doc/ila_analysis.md` §6
-- **完整异常/中断**：`EBREAK` 已留好 `ebreak` 钩子，CSR 与 trap 通路需要新增
-- **边缘 AI 加速**
+  必须从 NOP 升级为"冲刷 I-Cache"，否则会退化回 `fence_i` 失败。
+  **但先想清楚**：存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、
+  无结构冲突，Cache 只会引入缺失惩罚，是负收益（详见 `doc/resource_efficiency.md`）
+- **BTB / BHT 动态分支预测**：当前分支惩罚固定 **1 拍**（预测命中）或 2 拍（未命中）。
+  实测剩余可优化空间**只有约 2.3%**（前向 taken + jalr），详见 `doc/ila_analysis.md` §6
+- **边缘 AI 加速**：32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行
 
 **扩展注意**：RAM 容量写死在 3 处 —— `unified_mem` 的数组深度、`mem_bus` 的
 `mem_addr[14:2]`、`core` 的 `imem_addr[12:0]`。扩容必须三处同步改，否则高位被静默截断。
