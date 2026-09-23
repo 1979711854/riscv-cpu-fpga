@@ -22,15 +22,16 @@ module tb_debug_trap;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
 
-    // 注意：故意【不连】 irq_timer / irq_ext —— 这样同一份测试台既能编新版 core
-    //（端口悬空，因 MIE=0 而无害），也能编加中断端口之前的旧版 core，
-    // 便于做逐拍 diff 定位行为差异。
+    // 接真实的定时器中断（来自 mem_bus 的 CLINT）—— 测中断必须接。
+    // （早前为做新旧版本逐拍 diff 曾故意省略这两个端口，那个需求已完成。）
+    wire        irq_timer;
     core u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
-        .ebreak()
+        .ebreak(),
+        .irq_timer(irq_timer), .irq_ext(1'b0)
     );
 
     mem_bus u_bus (
@@ -40,7 +41,8 @@ module tb_debug_trap;
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
-        .done()
+        .done(),
+        .irq_timer(irq_timer)
     );
 
     initial clk = 1'b0;
@@ -56,6 +58,16 @@ module tb_debug_trap;
         resetn = 1'b1;
     end
 
+    // 一旦 pc 跑出 RAM 范围就报出前后若干拍并停下 —— 用于定位"跑飞"
+    reg pc_bad;
+    initial pc_bad = 1'b0;      // 不初始化会是 X，让下面的条件恒假
+    always @(posedge clk) begin
+        if (resetn && !pc_bad && (pc > 32'h8000)) begin
+            pc_bad <= 1'b1;
+            $display("\n*** pc 越界 at cyc=%0d pc=%h ***", cyc, pc);
+        end
+    end
+
     always @(posedge clk) begin
         if (resetn) begin
             cyc = cyc + 1;
@@ -67,12 +79,12 @@ module tb_debug_trap;
                 u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
                 u_core.trap, u_core.id_ex_mret,
                 u_core.alu_result, u_core.ex_target, u_core.csr_rdata);
-            $display("      exp=%b ill=%b iscsr=%b wril=%b wren=%b ec=%b eb=%b misL=%b misS=%b ifins=%h",
-                u_core.ex_exception, u_core.id_ex_illegal, u_core.id_ex_is_csr,
-                u_core.csr_wr_illegal, u_core.csr_wr_en_raw,
+            $display("      exp=%b ill=%b ec=%b eb=%b misL=%b misS=%b | irq=%b mtip=%b mieMTIE=%b mstatusMIE=%b int=%b | mtimecmp=%h mtime=%h",
+                u_core.ex_exception, u_core.id_ex_illegal,
                 u_core.id_ex_sys_ecall, u_core.id_ex_sys_ebreak,
                 u_core.load_misaligned, u_core.store_misaligned,
-                u_core.if_id_instr);
+                irq_timer, u_bus.mtip_r, u_core.csr_mie_mtie, u_core.csr_mstatus_mie,
+                u_core.int_take, u_bus.mtimecmp, u_bus.cyc);
             if (cyc >= maxcyc) $finish;
         end
     end

@@ -79,6 +79,12 @@ module core (
     reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
     reg        id_ex_pred_taken;   // 该指令在 ID 级是否【实际发生过】预测重定向
+    // ID/EX 里是否真的有一条指令（不是气泡）。
+    // ★ 中断受理必须看它：否则在"上一条指令刚重定向、ID/EX 已清空"的那一拍，
+    //   若此时 MIE 恰好为 1（例如 mret 刚把 MIE 从 MPIE 恢复），中断会被受理，
+    //   而 mepc 取的是 id_ex_pc —— 气泡的 id_ex_pc 是 0，于是 mepc 被写成 0，
+    //   随后的 mret 直接跳到地址 0。2026-09-23 实测踩到，现象是测试莫名重启。
+    reg        id_ex_valid;
     reg [4:0]  id_ex_alu_op;
     reg [1:0]  id_ex_wb_sel;
     reg [31:0] id_ex_pc, id_ex_rdata1, id_ex_rdata2, id_ex_imm;
@@ -172,6 +178,14 @@ module core (
     // ================= IF/ID =================
     reg [31:0] if_id_pc;
     reg [31:0] if_id_instr;
+
+    // IF/ID 里是否是一条【真指令】（而不是冲刷或取指填充期留下的气泡）。
+    // 判据 `|imem_rd` 与"全零字按气泡处理"的约定一致 —— 0x00000000 既不是
+    // 合法指令，也正是取指同步读的填充期会自然产生的值（见 control.v 的说明）。
+    //
+    // 它最终决定 id_ex_valid，而 id_ex_valid 决定"中断能不能在这一拍被受理"。
+    // 少了它，气泡的 id_ex_pc(=0) 会被写进 mepc，mret 之后直接跳到地址 0。
+    reg if_id_valid;
 
     // ================= ID =================
     wire [4:0] rs1 = if_id_instr[19:15];
@@ -393,10 +407,15 @@ module core (
     wire int_ext     = csr_mie_meie & irq_ext;
     wire int_pending = int_timer | int_ext;
     // 门控：
+    //   id_ex_valid —— ★ EX 里必须真的有指令。缺了它会在"上一条指令刚重定向、
+    //                  ID/EX 已清空"的那一拍误受理中断，而 mepc 取的是气泡的
+    //                  id_ex_pc(=0) → mret 跳到地址 0。2026-09-23 实测踩到。
     //   !div_stall  —— 护住多拍除法器，避免残留状态/陈旧结果
     //   !id_ex_mret —— 抑制"打断 mret"的嵌套角落
-    // 同步异常无需门控：肇事指令下一拍已被清成气泡，ex_exception 自然为 0。
-    assign int_take = csr_mstatus_mie && int_pending && !div_stall && !id_ex_mret;
+    // 同步异常无需门控：肇事指令下一拍已被清成气泡，ex_exception 自然为 0；
+    // 而气泡的 id_ex_illegal/ecall/ebreak/mem_read 全为 0，也判不出异常。
+    assign int_take = csr_mstatus_mie && int_pending && id_ex_valid &&
+                      !div_stall && !id_ex_mret;
 
     assign trap_cause  = ex_exception ? exc_cause :
                          int_timer    ? 32'h8000_0007 :   // Machine timer
@@ -528,6 +547,7 @@ module core (
         if (!resetn) begin
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
+            if_id_valid <= 1'b0;
         end else if (ex_flush || ex_mispred || id_redirect || trap) begin
             // 三条都只清【一拍】：重定向那一拍 fetch_addr 已经把新地址发出去了，
             // 目标指令的数据下一拍就回来，多清一拍反而会把它杀掉。
@@ -541,7 +561,9 @@ module core (
             // IF/ID 的组合译码结果采样的，清 IF/ID 与分支进 ID/EX 互不影响。
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
+            if_id_valid <= 1'b0;          // 冲刷插入的是气泡，不是真指令
         end else if (!stall && !div_stall) begin
+            if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
             if_id_instr <= imem_rd;
         end
@@ -579,6 +601,7 @@ module core (
             id_ex_illegal   <= 1'b0;
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
+            id_ex_valid     <= 1'b0;
         end else if (!div_stall) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
@@ -612,6 +635,9 @@ module core (
             id_ex_illegal   <= id_illegal;
             id_ex_sys_ecall <= sys_ecall;
             id_ex_mret      <= sys_mret;
+            // 跟随 IF/ID 的实际内容：冲刷/填充期的气泡不能算有效，
+            // 否则中断会拿气泡的 id_ex_pc(=0) 去写 mepc
+            id_ex_valid     <= if_id_valid;
         end
     end
 

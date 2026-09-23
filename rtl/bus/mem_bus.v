@@ -48,7 +48,11 @@ module mem_bus (
     input  wire [31:0] uart_rx_rdata,
 
     // ---- 兼容区状态 ----
-    output reg         done           // 0x7FF8 写 1 → 拉高（板级 LED / 结束标志）
+    output reg         done,          // 0x7FF8 写 1 → 拉高（板级 LED / 结束标志）
+
+    // ---- 中断 ----
+    // 定时器中断（mip.MTIP，bit7）。电平信号，直连 core.irq_timer。
+    output wire        irq_timer
 );
 
     // ------------------------------------------------------------------
@@ -60,6 +64,39 @@ module mem_bus (
         if (!resetn) cyc <= 32'd0;
         else         cyc <= cyc + 32'd1;
     end
+
+    // ------------------------------------------------------------------
+    // CLINT：mtime 就复用上面的 cyc（不另起一个计数器，避免两处漂移）；
+    //        mtimecmp 可写。
+    //
+    // ★ MTIP 必须是【纯电平比较器】，绝不做锁存或脉冲：
+    //   软件写新的 mtimecmp → 下一拍比较自然翻低 → MTIP 自动落下。
+    //   这正是"中断返回后能继续正常工作"的前提：`mret` 恢复 mstatus.MIE 后，
+    //   若 MTIP 还是高的，会立刻再次 trap，PC 被钉死在 mtvec。
+    //   做成"置位保持到软件清除"就会踩这个死循环。
+    //
+    // ★ mtimecmp 复位值必须是【全 1】，不能是 0：
+    //   复位为 0 会让 `mtime >= mtimecmp` 恒真 → 上电起 MTIP 就一直是 1。
+    //   虽然默认 mie.MTIE=0 与 mstatus.MIE=0 能挡住，但那是免费的第二道防线，
+    //   只要有一处 tie 写错就会从上电起反复 trap。
+    //
+    // 比较器单独打一拍（mtip_r）：把 32 位比较从 pc_r 的临界路径上切下来。
+    // 电平语义下多这 1 拍无害（mtimecmp 是极低频写的，mtime 单调递增）。
+    // ------------------------------------------------------------------
+    reg [31:0] mtimecmp;
+    reg        mtip_r;
+
+    wire mtime_ge_cmp = (cyc >= mtimecmp);
+
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn)              mtip_r <= 1'b0;
+        else                      mtip_r <= mtime_ge_cmp;
+    end
+
+    // （mtimecmp 的写逻辑在文件末尾 —— 它要用到下面才声明的 periph_hit/periph_off，
+    //   iverilog 14 严格要求先声明后使用。）
+
+    assign irq_timer = mtip_r;
 
     // ------------------------------------------------------------------
     // 地址译码（只在这里做一次）
@@ -107,9 +144,10 @@ module mem_bus (
     reg [31:0] periph_rdata_d;
 
     wire [31:0] periph_rmux =
-        (periph_off == `PERIPH_GPIO)    ? gpio_rdata    :
-        (periph_off == `PERIPH_UART_RX) ? uart_rx_rdata :
-        (periph_off == `PERIPH_TIMER)   ? cyc           : 32'd0;
+        (periph_off == `PERIPH_GPIO)     ? gpio_rdata    :
+        (periph_off == `PERIPH_UART_RX)  ? uart_rx_rdata :
+        (periph_off == `PERIPH_TIMER)    ? cyc           :   // = mtime
+        (periph_off == `PERIPH_MTIMECMP) ? mtimecmp      : 32'd0;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
@@ -144,6 +182,18 @@ module mem_bus (
         if (!resetn) done <= 1'b0;
         else if (mem_we && legacy_done && mem_byte_en[0] && (mem_wdata[7:0] == 8'd1))
             done <= 1'b1;
+    end
+
+    // ------------------------------------------------------------------
+    // CLINT：mtimecmp 写口
+    // 只接受【整字写】（sw），sb/sh 静默忽略 —— 规范里 mtimecmp 也是按字访问的。
+    // 复位值全 1 而不是 0，理由见上面 mtip_r 附近的注释。
+    // ------------------------------------------------------------------
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) mtimecmp <= 32'hFFFF_FFFF;
+        else if (periph_hit && mem_we && (periph_off == `PERIPH_MTIMECMP) &&
+                 (mem_byte_en == 4'b1111))
+            mtimecmp <= mem_wdata;
     end
 
 endmodule

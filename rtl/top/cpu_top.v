@@ -40,6 +40,9 @@ module cpu_top (
     wire [31:0] periph_wdata;
     wire [31:0] gpio_rdata, uart_rx_rdata;
 
+    // ---- 中断 ----
+    wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
+
     // ---- 程序结束标志 ----
     // 两个来源：CoreMark 的 0x7FF8 协议（start.S 里 main 返回后写），
     // 以及程序执行 EBREAK。
@@ -71,7 +74,8 @@ module cpu_top (
         .periph_wdata (periph_wdata),
         .gpio_rdata   (gpio_rdata),
         .uart_rx_rdata(uart_rx_rdata),
-        .done         (done_mmio)
+        .done         (done_mmio),
+        .irq_timer    (irq_timer)
     );
 
     core u_core (
@@ -89,8 +93,8 @@ module cpu_top (
         .ebreak      (ebreak),
         // ---- 中断 ----
         // 定时器中断：由 mem_bus 里的 CLINT（mtime/mtimecmp 比较器）驱动。
-        // 尚未接线时拉 0；默认 mie.MTIE=0 与 mstatus.MIE=0 也保证它不会被受理。
-        .irq_timer   (1'b0),
+        // 默认 mie.MTIE=0 与 mstatus.MIE=0 保证上电时不会被受理。
+        .irq_timer   (irq_timer),
         // 外部中断：UART 接收 FIFO 非空（rdata[31] 就是 valid 位）。
         // 电平信号 —— 读一次 0x8000_000C 弹出队头后自然落下。
         // ⚠️ 本轮只做到"接口具备"，未写针对它的中断测试（见 doc/spec.md 已知限制）。

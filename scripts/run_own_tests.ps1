@@ -1,0 +1,108 @@
+# ============================================================================
+# 自写汇编测试（sim/tests/*.S）的汇编 + 运行脚本
+# ----------------------------------------------------------------------------
+# 与 run_riscv_tests.ps1 的区别：
+#   * 那一份跑的是 riscv-tests 的官方测试（用随附的预编译基线 ELF）
+#   * 这一份跑的是我们自己写的定向测试，现场用工具链汇编
+#
+# 我们的测试需要 riscv-tests 的 env 头文件（trap_vector 约定、tohost 机制、
+# CSR 编号），那份 env 已入库在 third_party/riscv-tests-env/。
+#
+# 用法：
+#   scripts\run_own_tests.ps1                  # 跑 sim/tests 下全部 .S
+#   scripts\run_own_tests.ps1 -Name timer_irq  # 只跑一个
+#   scripts\run_own_tests.ps1 -KeepHex         # 保留中间 hex 以便手动 vvp
+# ============================================================================
+param(
+    [string]$Name = "",
+    [switch]$KeepHex
+)
+
+$ErrorActionPreference = "Stop"
+$repo = Split-Path -Parent $PSScriptRoot
+
+$gcc = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gcc.exe"
+if (-not (Test-Path $gcc)) { throw "找不到工具链：$gcc" }
+
+$envDir  = Join-Path $repo "third_party\riscv-tests-env"
+$testDir = Join-Path $repo "sim\tests"
+$ld      = Join-Path $repo "scripts\riscv_tests_link.ld"
+$sim     = Join-Path $repo "sim"
+$prog    = Join-Path $sim "programs"
+$build   = Join-Path $sim "tests\build"
+
+if (-not (Test-Path $envDir)) { throw "找不到 env 头文件：$envDir" }
+if (-not (Test-Path $testDir)) { throw "找不到测试目录：$testDir" }
+New-Item -ItemType Directory -Force -Path $build | Out-Null
+New-Item -ItemType Directory -Force -Path $prog  | Out-Null
+
+$srcs = @(Get-ChildItem $testDir -Filter "*.S" | Sort-Object Name)
+if ($Name -ne "") { $srcs = @($srcs | Where-Object { $_.BaseName -eq $Name }) }
+if ($srcs.Count -eq 0) { throw "没有找到匹配的 .S 测试" }
+
+# ---------------------------------------------------------------------------
+# [1/3] 汇编 + 链接
+# ---------------------------------------------------------------------------
+Write-Host "[1/3] 编译并链接 $($srcs.Count) 个测试 ..."
+foreach ($s in $srcs) {
+    $elf = Join-Path $build "$($s.BaseName).elf"
+    & $gcc -march=rv32i_zicsr_zifencei -mabi=ilp32 `
+        -nostdlib -nostartfiles -static -mcmodel=medany `
+        -I $envDir -I (Join-Path $envDir "p") -I $testDir `
+        -T $ld -o $elf $s.FullName
+    if ($LASTEXITCODE -ne 0) { throw "$($s.Name) 汇编/链接失败" }
+}
+
+# ---------------------------------------------------------------------------
+# [2/3] 编译测试台（只编 core/bus/periph，SoC 级顶层不参与）
+# ---------------------------------------------------------------------------
+Write-Host "[2/3] 编译测试台 ..."
+$vvp  = Join-Path $sim "tb_riscv.vvp"
+$rtl = @()
+foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
+    $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
+}
+& iverilog -g2012 `
+    -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
+    -I (Join-Path $repo "rtl\bus") -I $sim `
+    -o $vvp (Join-Path $sim "tb_riscv.v") @rtl
+if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
+
+# ---------------------------------------------------------------------------
+# [3/3] 逐个跑
+# ---------------------------------------------------------------------------
+Write-Host "[3/3] 运行 ..."
+$pass = 0; $fail = 0; $other = 0
+$results = @()
+foreach ($s in $srcs) {
+    $elf = Join-Path $build "$($s.BaseName).elf"
+    & python (Join-Path $repo "scripts\elf2mem.py") $elf $prog | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "$($s.Name) 转 hex 失败" }
+
+    Push-Location $sim
+    try {
+        $out = & vvp $vvp "+IMEM=programs/imem.hex" "+DMEM=programs/dmem.hex" `
+                      "+TOHOST=programs/tohost_addr.hex" 2>&1
+    } finally { Pop-Location }
+
+    $line = ($out | Where-Object { $_ -match "=== (PASS|FAIL|TIMEOUT|UNEXPECTED)" } |
+             Select-Object -First 1)
+    if     ($line -match "=== PASS")       { $pass++;  $tag = "PASS" }
+    elseif ($line -match "=== FAIL")       { $fail++;  $tag = ($line -replace '.*===\s*','').Trim() }
+    elseif ($line -match "=== TIMEOUT")    { $other++; $tag = "TIMEOUT" }
+    else                                   { $other++; $tag = "OTHER" }
+    $results += [pscustomobject]@{ Name = $s.BaseName; Result = $tag }
+    Write-Host ("  {0,-16} === {1} ===" -f $s.BaseName, $tag)
+}
+
+Write-Host ""
+Write-Host "======== 汇总 ========"
+Write-Host "PASS=$pass  FAIL=$fail  OTHER=$other"
+$results | Format-Table -AutoSize | Out-String | Write-Host
+
+if ($fail -gt 0 -or $other -gt 0) { exit 1 }
+
+# 默认清掉中间产物；-KeepHex 时保留，方便手动 vvp 复盘
+if (-not $KeepHex) {
+    Remove-Item -Recurse -Force $build -ErrorAction SilentlyContinue
+}

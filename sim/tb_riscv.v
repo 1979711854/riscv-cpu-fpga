@@ -23,6 +23,7 @@ module cpu_tb_riscv;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
+    wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
 
     core u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
@@ -30,9 +31,9 @@ module cpu_tb_riscv;
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .ebreak(),
-        // 本测试台只例化 core + mem_bus，没有中断源（定时器在 mem_bus 里，
-        // 阶段 C 才接；外部中断来自外设，本层没有）→ 恒定无中断
-        .irq_timer(1'b0),
+        // 定时器中断由 mem_bus 的 CLINT 直接驱动 —— 本测试台就能测中断。
+        // 外部中断（MEIP）来自外设，本层没有，恒 0。
+        .irq_timer(irq_timer),
         .irq_ext  (1'b0)
     );
 
@@ -44,7 +45,11 @@ module cpu_tb_riscv;
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
-        .done()            // 周期计数器已从 mem_bus 去掉（无使用者）
+        .done(),           // 本测试台不关心 done（判分靠 tohost）
+        // ★ 必须接！漏了它 irq_timer 悬空为 Z，core 里
+        //   `int_timer = mie.MTIE & Z` 会是不定态，中断行为随机 ——
+        //   表现为测试台与调试台跑出完全不同的结果（2026-09-23 实踩）。
+        .irq_timer(irq_timer)
     );
 
     initial clk = 1'b0;

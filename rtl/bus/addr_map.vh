@@ -36,6 +36,18 @@
 `define PERIPH_GPIO     4'h0               // 0x00  W LED[7:0] / R {key[7:0], led[7:0]}
 `define PERIPH_UART_TX  4'h2               // 0x08  W 发字符
 `define PERIPH_UART_RX  4'h3               // 0x0C  R {valid, 23'b0, data[7:0]}，读清 valid
-`define PERIPH_TIMER    4'h4               // 0x10  R 周期计数器 [31:0]
+`define PERIPH_TIMER    4'h4               // 0x10  R 周期计数器 [31:0] = mtime
+// ---------------------------------------------------------------------------
+// CLINT（机器模式定时器）—— 最小集，只有 mtime 比较
+//   mtime     = 0x8000_0010（与上面的 TIMER、以及兼容区 0x7FF4 是同一个计数器）
+//   mtimecmp  = 0x8000_0014，可写；复位值全 1
+//   mtime >= mtimecmp  →  MTIP 拉高（mip bit7），软件写新的 mtimecmp 后自动落下
+//
+// 注意：mtime/mtimecmp 都是【32 位】，不是规范建议的 64 位。
+//   27MHz 下 mtime 约 159 秒回绕一次；本项目最长的运行（CoreMark ≥10s）
+//   远小于这个量，且软件每次比较前都先写 mtimecmp，所以够用。
+//   真要跑长任务需扩到 64 位（mtimeh/mtimecmph）。
+// ---------------------------------------------------------------------------
+`define PERIPH_MTIMECMP 4'h5               // 0x14  W/R 定时器比较值 [31:0]
 
 `endif

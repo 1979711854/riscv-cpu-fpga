@@ -22,6 +22,7 @@ module coremark_tb;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
+    wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
 
     core u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
@@ -29,8 +30,9 @@ module coremark_tb;
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .ebreak(),
-        // CoreMark 全程不碰 CSR、中断关闭，这里恒定无中断即可
-        .irq_timer(1'b0),
+        // CoreMark 全程不碰 CSR、中断关闭（mstatus.MIE=0、mie=0），
+        // 接真实 MTIP 也不会被受理；接上是为了不让端口悬空成 Z。
+        .irq_timer(irq_timer),
         .irq_ext  (1'b0)
     );
 
@@ -43,7 +45,10 @@ module coremark_tb;
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
-        .done()            // 周期计数器已从 mem_bus 去掉（无使用者）
+        .done(),           // 周期计数器已从 mem_bus 去掉（无使用者）
+        // 接真实 MTIP：CoreMark 全程 MIE=0 且 mtimecmp 复位为全 1，
+        // 所以它恒为低、不影响结果；接上是为了不让端口悬空成 Z。
+        .irq_timer(irq_timer)
     );
 
     // ========================================================================
