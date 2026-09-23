@@ -49,14 +49,15 @@
   注：装异常之后程序仍应在 EBREAK 后跟自旋循环 —— riscv-tests 与 CoreMark 的
   start.S 本来就是这个写法。
 
-## 验证结果（2026-09-21）
+## 验证结果（2026-09-23 更新）
 
 | 项目 | 结果 |
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（板上实测，ITER=820，当前设计）** | `Total ticks 294,888,440` → **实际 10.92 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致 |
-| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；**ITER=820 已上板复测通过（10.92 秒，CRC 吻合）** |
+| **CoreMark v1.0（本地盘古板实测，ITER=820，当前设计）** | `Total ticks 294,262,913` → **实际 10.898 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致。<br>原始串口日志：`doc/board/uart_20260923_201540.txt`。**上板教程：`doc/board_bringup.md`** |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%** |
+| 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
@@ -103,6 +104,6 @@
    但**没有测试**，不得当作已验证能力。
 5. **只支持 M 模式** —— `mstatus.MPP` 硬连线 2'b11；未实现的 CSR 读 0、写忽略、
    不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
-5. **PDS 工程当前仍按远程 FPGA 平台约束** —— 新增的 `led`/`key`/`uart_rx`
-   引脚在 `RV32I_1.fdc` 里以注释形式预留（盘古 MES2L200HP 实测引脚已填好），
-   未指定 LOC 会导致 place & route 失败；compile / synthesize 不受影响。
+5. **PDS 工程已改为本地盘古板约束**（2026-09-23）—— `RV32I_1.fdc` 全部引脚
+   按《MES2L676-200HP硬件使用手册》填好并**在板上实测验证过**；上板 top module
+   是 `cpu_top_board`（不是 `cpu_top`）。详见 `doc/board_bringup.md`。
