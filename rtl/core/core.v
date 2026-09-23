@@ -23,9 +23,17 @@ module core (
     output wire        mem_re,
     input  wire [31:0] mem_rdata,
 
+    // ---- 中断源（电平，高有效）----
+    // 直接对应 mip 的两个位，内核把它们与 mie / mstatus.MIE 相与后裁决。
+    // 之所以是电平而不是脉冲：中断的采样点在 EX 级，且要求"软件清源后自动落下"
+    // （见 csr_file.v / mem_bus.v 的说明）。
+    input  wire        irq_timer,     // → mip.MTIP（bit7）  定时器
+    input  wire        irq_ext,       // → mip.MEIP（bit11） 外部
+
     // ---- 系统指令钩子 ----
-    // EBREAK 提交时给出一拍脉冲。阶段一顶层用它"停机"（点亮 done LED），
-    // 将来接完整异常机制时，这里就是 trap 的入口。
+    // EBREAK 提交时给出一拍脉冲。顶层用它"停机"（点亮 done LED）。
+    // 注意：EBREAK 现在【同时】是 mcause=3 的异常 —— 本输出只保留"停机钩子"这一
+    // 职责，供演示程序与 tb_demo.v 使用；异常路径由 csr_file 处理。
     output wire        ebreak
 );
 
@@ -51,6 +59,22 @@ module core (
     wire [31:0] id_target;      // ID 级算出的预测目标
     wire        ex_mispred;     // 预测 taken 但实际 not-taken
     wire [31:0] ex_mispred_target;
+
+    // ---- 异常 / 中断 ----
+    wire        trap;           // 本拍在 EX 级发生异常或中断（最高优先级重定向）
+    wire [31:0] trap_target;    // = mtvec 的 BASE
+    wire [31:0] trap_cause;     // 写进 mcause
+    wire [31:0] trap_tval;      // 写进 mtval
+    wire        ex_exception;   // 同步异常（不含中断）
+    wire        int_take;       // 中断被受理
+    wire        mret_commit;    // EX 级正在执行 mret（要跳 mepc）
+    // CSR 通路（csr_file 的输出）
+    wire [31:0] csr_rdata;
+    wire [31:0] csr_mtvec_base, csr_mepc;
+    wire        csr_mstatus_mie, csr_mie_mtie, csr_mie_meie;
+    wire        csr_wr_illegal;
+    wire [31:0] csr_wdata;
+    wire        csr_wr_en;
     // ID/EX
     reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
@@ -61,6 +85,11 @@ module core (
     reg [4:0]  id_ex_rd, id_ex_rs1, id_ex_rs2;
     reg [2:0]  id_ex_funct3;
     reg        id_ex_sys_ebreak;
+    // CSR / 系统指令（随指令带进 EX）
+    reg        id_ex_is_csr, id_ex_illegal, id_ex_sys_ecall, id_ex_mret;
+    reg [11:0] id_ex_csr_addr;
+    reg [1:0]  id_ex_csr_cmd;
+    reg        id_ex_csr_imm;
     // EX/MEM
     reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
     reg [1:0]  ex_mem_wb_sel;
@@ -83,7 +112,12 @@ module core (
     assign mem_we   = ex_mem_mem_write;
     assign mem_re   = ex_mem_mem_read;
     assign mem_addr = ex_mem_alu_result;
-    assign ebreak   = ex_mem_sys_ebreak;
+    // EBREAK 现在走异常路径（mcause=3），指令在 EX 就被杀掉、永远到不了 EX/MEM，
+    // 所以顶层停机钩子改从 trap 事件上取。板级 done LED 的语义因此从
+    // "EBREAK 提交了"变成"发生了 EBREAK 断点"，更贴切。
+    // （实测不破坏任何东西：demo.c 是死循环，走不到 start.S 里的 ebreak；
+    //   tb_demo.v 的检查项恰恰是"done 未被拉起"。）
+    assign ebreak   = trap && (trap_cause == 32'd3);
 
     // 指令存储器已移出到 mem_bus（与数据共用一块双端口 BRAM 的 A 口）。
     // 注意：这里送出的 imem_addr 必须是下面 mux 【之后】的值，不是 pc_r ——
@@ -113,15 +147,26 @@ module core (
     // 互斥性说明：ex_flush 来自 EX 是分支/跳转、div_stall 来自 EX 是除法
     // （id_ex_is_div）、stall 来自 EX 是 load（id_ex_mem_read）—— 三者在 EX 级由
     // 同一条指令的性质决定，互斥。
-    wire [31:0] fetch_addr = ex_flush            ? ex_target :
+    //   trap 优先级最高：异常/中断时 EX 级那条指令必须被丢弃，
+    //   它比任何分支重定向都优先。（mret 不在这里 —— 它折进了 ex_flush，见 EX 段。）
+    wire [31:0] fetch_addr = trap                ? trap_target :
+                             ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              id_redirect         ? id_target :
                              (stall || div_stall) ? if_addr_d :
                                                     pc_r;
 
+    // 更新【无门控】：fetch_addr 在 stall/div_stall 时就等于 if_addr_d 自身，
+    // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !div_stall)` 门控。
+    //
+    // ⚠️ 原来那个门控必须去掉，因为 `trap && stall` 是**可达的**
+    //（EX 里是未对齐的 load 时，ex_exception 与 load-use stall 同拍成立）。
+    // 那时 fetch_addr = trap_target 而门控会拦住更新 → if_addr_d 停在旧值
+    // → 下一拍的 if_id_pc 与指令对不上。这个坑基线测试碰不到，只有自写的
+    // trap handler 会炸，属于"静默错位"那一类。
     always @(posedge clk or negedge resetn) begin
         if (!resetn) if_addr_d <= 32'd0;
-        else if (!stall && !div_stall) if_addr_d <= fetch_addr;
+        else if_addr_d <= fetch_addr;
     end
 
     // ================= IF/ID =================
@@ -137,6 +182,9 @@ module core (
     wire [4:0]  alu_op;
     wire [1:0]  wb_sel;
     wire        sys_ebreak;
+    wire        is_csr, csr_imm, sys_ecall, sys_mret, id_illegal;
+    wire [11:0] csr_addr;
+    wire [1:0]  csr_cmd;
     control u_ctrl (
         .instr      (if_id_instr),
         .reg_write  (reg_write),
@@ -149,7 +197,14 @@ module core (
         .jump       (jump),
         .jump_reg   (jump_reg),
         .wb_sel     (wb_sel),
-        .sys_ebreak (sys_ebreak)
+        .sys_ebreak (sys_ebreak),
+        .is_csr     (is_csr),
+        .csr_addr   (csr_addr),
+        .csr_cmd    (csr_cmd),
+        .csr_imm    (csr_imm),
+        .sys_ecall  (sys_ecall),
+        .sys_mret   (sys_mret),
+        .illegal    (id_illegal)
     );
 
     wire [31:0] rdata1, rdata2;
@@ -233,7 +288,16 @@ module core (
         .busy(div_busy),
         .done(div_done)
     );
-    wire [31:0] alu_result = id_ex_is_div ? div_result : alu_raw;
+    // ------------------------------------------------------------------
+    // EX 结果三选一：CSR 读 > 多拍除法 > ALU
+    //   * CSR 读值【骑在这里】才能白拿前递与写回通路 —— 对下游而言它就是
+    //     "EX 算出来的结果"，不需要任何额外旁路。
+    //   * ⚠️ 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
+    //     `id_ex_is_div`，误触发除法停顿 → div_stall 永不释放 → 死锁。
+    //     所以 CSR 用**独立的** id_ex_is_csr 标志，alu_op 保持 0。
+    // ------------------------------------------------------------------
+    wire [31:0] alu_result = id_ex_is_csr ? csr_rdata :
+                             id_ex_is_div ? div_result : alu_raw;
     assign      div_stall  = id_ex_is_div && !div_done;
 
     wire equal         = (rs1_val == rs2_val);
@@ -254,17 +318,118 @@ module core (
 
     wire [31:0] branch_target = id_ex_pc + id_ex_imm;
     wire [31:0] jalr_target   = (rs1_val + id_ex_imm) & 32'hFFFF_FFFE;
-    assign      ex_target     = id_ex_jump_reg ? jalr_target : branch_target;
+    // MRET 本质就是"目标为 mepc 的无条件跳转"，所以【折进 ex_flush 通路】，
+    // 不为它在 fetch_addr 上再加一条腿 —— 那条路径在 pc_r 的临界路径上，
+    // 直接关系到 Fmax 与 CoreMark/LUTs 两项评分。
+    assign      mret_commit   = id_ex_mret && !trap;
+    assign      ex_target     = id_ex_mret   ? csr_mepc :
+                                id_ex_jump_reg ? jalr_target : branch_target;
 
     // ---- EX 级：验证 ID 级的预测（预测器本身在 ID 级，EX 只做裁决） ----
     // 实际是否跳转。注意这与"是否冲刷"是两回事：预测正确时这里为 1 但不冲刷。
     wire ex_resolve_taken = (id_ex_branch && branch_taken) ||
-                            id_ex_jump || id_ex_jump_reg;
+                            id_ex_jump || id_ex_jump_reg || mret_commit;
     // 预测 not-taken 但实际 taken  → 原有冲刷路径（含 jalr，它从不被预测）
     assign ex_flush   = ex_resolve_taken && !id_ex_pred_taken;
     // 预测 taken 但实际 not-taken  → 误判恢复：回到 fall-through
     assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken;
     assign ex_mispred_target = id_ex_pc + 32'd4;
+
+    // ================= EX 级：异常与中断 =================
+    // 统一在【EX 级】产生（PC、前递后的值、访存地址此刻全部齐备）。
+    //
+    // 为什么必须落在 EX：EX 里的指令是【最老的未提交指令】。trap 时
+    // mepc = id_ex_pc，该指令被杀死并在 mret 后重放 —— 它此刻还没写任何状态
+    //（store 到 MEM 才写、CSR 写从 EX 提交、rd 写从 WB）。
+    // 若采在 MEM/WB，那条指令已经写出去了而 mepc 又指向它 → 提交一次再执行一次
+    //（复制执行）；或 mepc 指向下一条 → 漏执行一条。
+
+    // ---- 未对齐访存的判据 ----
+    // LB/LBU 任意地址合法；LH/LHU 要求 addr[0]==0；LW 要求 addr[1:0]==0。
+    // funct3[1:0]：00=字节 01=半字 10=字（load 与 store 同一套编码）
+    wire [1:0] mem_addr_low = alu_result[1:0];
+    wire mem_unaligned = (id_ex_funct3[1:0] == 2'b01) ? mem_addr_low[0] :
+                         (id_ex_funct3[1:0] == 2'b10) ? |mem_addr_low : 1'b0;
+    wire load_misaligned  = id_ex_mem_read  && mem_unaligned;
+    wire store_misaligned = id_ex_mem_write && mem_unaligned;
+
+    // ---- CSR 写数据与写使能 ----
+    // 立即数形式的源在 instr[19:15]（零扩展），它已随指令带到 id_ex_rs1。
+    wire [31:0] csr_src = id_ex_csr_imm ? {27'd0, id_ex_rs1} : rs1_val;
+    wire [31:0] csr_new = (id_ex_csr_cmd == 2'b01) ? csr_src :                // CSRRW
+                          (id_ex_csr_cmd == 2'b10) ? (csr_rdata |  csr_src) : // CSRRS
+                                                     (csr_rdata & ~csr_src);  // CSRRC
+    // CSRRS/CSRRC 的源为 x0 时【不写】（规范要求：不产生副作用）；CSRRW 无条件写
+    wire csr_wr_en_raw = id_ex_is_csr &&
+                         ((id_ex_csr_cmd == 2'b01) || (id_ex_rs1 != 5'd0));
+    assign csr_wdata = csr_new;
+    // 被 trap 杀掉的指令不得写 CSR
+    assign csr_wr_en = csr_wr_en_raw && !trap;
+
+    // ---- 同步异常 ----
+    // 判据之间天然互斥（非法指令的 mem_read/mem_write 必为 0，ecall/ebreak 同理），
+    // 所以下面的优先级只为把编码写清楚，不承担正确性。
+    // ⚠️ 必须用 csr_wr_en_raw（"这条指令真的在写吗"），不能用 csr_wr_illegal 单独判断。
+    //    csr_wr_illegal 只看地址是不是只读区，而【只读 CSR 是可以读的】——
+    //    `csrr a0, mhartid` 是 RS 且 rs1=x0，根本不写，却被判成非法指令，
+    //    导致 riscv-tests 的 init 段每轮都 trap → 重启 → 50 个测试全 TIMEOUT。
+    //    也不能用 csr_wr_en（它含 !trap），否则 trap ← ex_exception ← csr_wr_en ← trap 成环。
+    wire exc_illegal = id_ex_illegal || (csr_wr_en_raw && csr_wr_illegal);
+    assign ex_exception = exc_illegal || id_ex_sys_ecall || id_ex_sys_ebreak ||
+                          load_misaligned || store_misaligned;
+    wire [31:0] exc_cause = exc_illegal      ? 32'd2  :   // Illegal instruction
+                            id_ex_sys_ecall  ? 32'd11 :   // Environment call from M
+                            id_ex_sys_ebreak ? 32'd3  :   // Breakpoint
+                            load_misaligned  ? 32'd4  :   // Load addr misaligned
+                            store_misaligned ? 32'd6  :   // Store addr misaligned
+                                               32'd0;
+    // mtval：未对齐给出错地址；非法指令给 0 —— 规范允许 0 或指令本身，
+    // 本设计取 0 以免把整条指令再多带一级流水线寄存器。其余为 0。
+    wire [31:0] exc_tval = (load_misaligned || store_misaligned) ? alu_result : 32'd0;
+
+    // ---- 中断 ----
+    // mip 的两个位直接由外部电平驱动（只读），与 mie / mstatus.MIE 相与
+    wire int_timer   = csr_mie_mtie & irq_timer;
+    wire int_ext     = csr_mie_meie & irq_ext;
+    wire int_pending = int_timer | int_ext;
+    // 门控：
+    //   !div_stall  —— 护住多拍除法器，避免残留状态/陈旧结果
+    //   !id_ex_mret —— 抑制"打断 mret"的嵌套角落
+    // 同步异常无需门控：肇事指令下一拍已被清成气泡，ex_exception 自然为 0。
+    assign int_take = csr_mstatus_mie && int_pending && !div_stall && !id_ex_mret;
+
+    assign trap_cause  = ex_exception ? exc_cause :
+                         int_timer    ? 32'h8000_0007 :   // Machine timer
+                                        32'h8000_000B;    // Machine external
+    assign trap_tval   = ex_exception ? exc_tval : 32'd0;
+    assign trap        = ex_exception || int_take;
+    assign trap_target = csr_mtvec_base;
+
+    // ---- CSR 文件 ----
+    // 注意本模块的端口只有 trap/wr_en 进到它的时序块，rd_data 是纯组合的
+    //（只依赖寄存器与 irq_*），所以 trap ← alu_result ← csr_rdata 这条链
+    // 【不构成组合环】。
+    csr_file u_csr (
+        .clk(clk), .resetn(resetn),
+        .rd_addr    (id_ex_csr_addr),
+        .rd_data    (csr_rdata),
+        .wr_en      (csr_wr_en),
+        .wr_addr    (id_ex_csr_addr),
+        .wr_data    (csr_wdata),
+        .wr_illegal (csr_wr_illegal),
+        .trap       (trap),
+        .trap_pc    (id_ex_pc),
+        .trap_cause (trap_cause),
+        .trap_tval  (trap_tval),
+        .mret       (mret_commit),
+        .irq_timer  (irq_timer),
+        .irq_ext    (irq_ext),
+        .mtvec_base (csr_mtvec_base),
+        .mepc_out   (csr_mepc),
+        .mstatus_mie(csr_mstatus_mie),
+        .mie_mtie   (csr_mie_mtie),
+        .mie_meie   (csr_mie_meie)
+    );
 
     // ================= EX/MEM =================
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
@@ -346,6 +511,8 @@ module core (
     always @(posedge clk or negedge resetn) begin
         if (!resetn)
             pc_r <= 32'd0;
+        else if (trap)
+            pc_r <= trap_target + 32'd4;
         else if (ex_flush)
             pc_r <= ex_target + 32'd4;
         else if (ex_mispred)
@@ -361,7 +528,7 @@ module core (
         if (!resetn) begin
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
-        end else if (ex_flush || ex_mispred || id_redirect) begin
+        end else if (ex_flush || ex_mispred || id_redirect || trap) begin
             // 三条都只清【一拍】：重定向那一拍 fetch_addr 已经把新地址发出去了，
             // 目标指令的数据下一拍就回来，多清一拍反而会把它杀掉。
             // （原 ex_flush_d 的第二拍冲刷已随地址旁路一并移除。）
@@ -382,7 +549,7 @@ module core (
 
     // ================= ID/EX 寄存器 =================
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || ex_flush || ex_mispred || stall) begin
+        if (!resetn || ex_flush || ex_mispred || stall || trap) begin
             id_ex_reg_write <= 1'b0;
             id_ex_alu_a_sel <= 1'b0;
             id_ex_alu_b_sel <= 1'b0;
@@ -403,6 +570,15 @@ module core (
             id_ex_rs2       <= 5'd0;
             id_ex_funct3    <= 3'd0;
             id_ex_sys_ebreak <= 1'b0;
+            // ⚠️ 下面这几个新增标志【一个都不能漏】：冲刷后残留旧标志
+            //    会让气泡被当成非法指令或 CSR 指令 → 假异常。且是静默的。
+            id_ex_is_csr    <= 1'b0;
+            id_ex_csr_addr  <= 12'd0;
+            id_ex_csr_cmd   <= 2'b00;
+            id_ex_csr_imm   <= 1'b0;
+            id_ex_illegal   <= 1'b0;
+            id_ex_sys_ecall <= 1'b0;
+            id_ex_mret      <= 1'b0;
         end else if (!div_stall) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
@@ -429,6 +605,13 @@ module core (
             id_ex_rs2       <= rs2;
             id_ex_funct3    <= if_id_instr[14:12];
             id_ex_sys_ebreak <= sys_ebreak;
+            id_ex_is_csr    <= is_csr;
+            id_ex_csr_addr  <= csr_addr;
+            id_ex_csr_cmd   <= csr_cmd;
+            id_ex_csr_imm   <= csr_imm;
+            id_ex_illegal   <= id_illegal;
+            id_ex_sys_ecall <= sys_ecall;
+            id_ex_mret      <= sys_mret;
         end
     end
 

@@ -1,0 +1,195 @@
+`timescale 1ns/1ps
+// ============================================================================
+// CSR 文件（机器模式最小集）
+// ----------------------------------------------------------------------------
+// 本模块只提供"寄存器组 + 读写译码 + trap/mret 的副作用"，不含任何流水线逻辑。
+// 混在 core.v 里会让那个文件难以维护，独立出来也更便于单测。
+//
+// ============================ 三处关键设计取舍 ============================
+//
+// 1) 只支持 M 模式 —— `mstatus.MPP` 硬连线 2'b11，`mret` 永远回 M 模式。
+//    这不是偷懒。riscv-tests 的 reset_vector 会执行 `csrwi mstatus, 0` 把 MPP 清 0；
+//    若如实实现，`mret` 会把特权级降到 U 模式，随后 `mcause` 里
+//    ecall-from-U(8) / from-S(9) / from-M(11) 的区分就与测试的假设不符。
+//    本设计没有特权级隔离，如实实现反而引入不一致。
+//
+// 2) CSR 写【在 EX 级提交】（本模块的 csr_we 由 core 在 EX 级给出，一拍脉冲）。
+//    原因见 core.v：riscv-tests 里 `csrw mepc, t0` 与 `mret` 之间只隔 1 条指令，
+//    若像寄存器堆那样从 WB 提交，`mret` 会读到复位值 0 → 跳回 _start → 无限重启。
+//
+// 3) 未实现的 CSR（`stvec`/`medeleg`/`mideleg`/`satp`/`pmp*`/`mnstatus` 等）
+//    → 读 0、写忽略、【不抛非法指令】。
+//    riscv-tests 的 init 段会访问上述全部；按规范对未知 CSR 抛非法指令
+//    会让 50 个基线 ELF 当场全挂。**这是明知与规范有偏差的工程取舍**，
+//    已在 doc/spec.md 的"已知限制"里记录。
+//
+// 唯一会抛非法指令的 CSR 情形：**写只读 CSR**（csr[11:10] == 2'b11），
+// 例如 `unimp`（= `csrrw x0, cycle, x0`，写 0xC00）—— 这正是规范定义的语义。
+// ============================================================================
+module csr_file (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // ---- 读口（组合，EX 级；core 把它骑在 alu_result 上以白拿前递）----
+    input  wire [11:0] rd_addr,
+    output reg  [31:0] rd_data,
+
+    // ---- 写口（EX 级提交，一拍脉冲；core 已用 !trap 门控过）----
+    input  wire        wr_en,
+    input  wire [11:0] wr_addr,
+    input  wire [31:0] wr_data,
+    output wire        wr_illegal,    // 写只读 CSR → 非法指令
+
+    // ---- trap 副作用（一拍脉冲；与 mret 互斥）----
+    input  wire        trap,
+    input  wire [31:0] trap_pc,       // = id_ex_pc（肇事指令自己的 PC）
+    input  wire [31:0] trap_cause,
+    input  wire [31:0] trap_tval,
+
+    // ---- mret 副作用（一拍脉冲）----
+    input  wire        mret,
+
+    // ---- 中断源（电平）----
+    input  wire        irq_timer,     // → mip.MTIP
+    input  wire        irq_ext,       // → mip.MEIP
+
+    // ---- 给流水线用 ----
+    output wire [31:0] mtvec_base,    // trap 入口地址
+    output wire [31:0] mepc_out,      // mret 的跳转目标
+    output wire        mstatus_mie,   // 全局中断使能
+    output wire        mie_mtie,      // 定时器中断使能
+    output wire        mie_meie       // 外部中断使能
+);
+
+    // ---- CSR 地址常量 ----
+    localparam [11:0] CSR_MSTATUS  = 12'h300,
+                      CSR_MISA     = 12'h301,
+                      CSR_MIE      = 12'h304,
+                      CSR_MTVEC    = 12'h305,
+                      CSR_MSCRATCH = 12'h340,
+                      CSR_MEPC     = 12'h341,
+                      CSR_MCAUSE   = 12'h342,
+                      CSR_MTVAL    = 12'h343,
+                      CSR_MIP      = 12'h344,
+                      CSR_MCYCLE   = 12'hB00,
+                      CSR_MCYCLEH  = 12'hB80,
+                      CSR_MINSTRET = 12'hB02,
+                      CSR_MINSTRETH= 12'hB82,
+                      CSR_MVENDORID= 12'hF11,
+                      CSR_MARCHID  = 12'hF12,
+                      CSR_MIMPID   = 12'hF13,
+                      CSR_MHARTID  = 12'hF14;
+
+    // ---- 寄存器 ----
+    // mstatus 只实现 MIE(3) / MPIE(7)；MPP(12:11) 恒为 2'b11（只支持 M 模式）
+    reg mstatus_mie_r, mstatus_mpie_r;
+    reg [31:0] mtvec_r, mscratch_r, mepc_r, mcause_r, mtval_r;
+
+    // mie 只实现 MTIE(7) / MEIE(11)
+    reg mie_mtie_r, mie_meie_r;
+
+    // mcycle：64 位自由跑计数器（面积可忽略，且是"读得到真实周期数"的常规做法）
+    reg [63:0] mcycle_r;
+
+    // mip 的 MTIP/MEIP 是【只读】的硬件输入，绝不接受软件写
+    // （若允许软件写，会和硬件比较器抢同一位，把中断"写没"）
+    wire mip_mtip = irq_timer;
+    wire mip_meip = irq_ext;
+
+    // ---- 读译码 ----
+    always @(*) begin
+        case (rd_addr)
+            // 位布局（自 LSB）：[2:0]0 [3]MIE [6:4]0 [7]MPIE [10:8]0 [12:11]MPP=11 [31:13]0
+            CSR_MSTATUS  : rd_data = {19'b0, 2'b11, 3'b0, mstatus_mpie_r,
+                                      3'b0, mstatus_mie_r, 3'b0};
+            CSR_MISA     : rd_data = 32'h4000_1100;   // MXL=RV32, 扩展 I + M
+            // 位布局：MTIE/MTIP 在 bit7，MEIE/MEIP 在 bit11
+            CSR_MIE      : rd_data = {20'b0, mie_meie_r, 3'b0, mie_mtie_r, 7'b0};
+            CSR_MTVEC    : rd_data = mtvec_r;
+            CSR_MSCRATCH : rd_data = mscratch_r;
+            CSR_MEPC     : rd_data = mepc_r;
+            CSR_MCAUSE   : rd_data = mcause_r;
+            CSR_MTVAL    : rd_data = mtval_r;
+            CSR_MIP      : rd_data = {20'b0, mip_meip, 3'b0, mip_mtip, 7'b0};
+            CSR_MCYCLE   : rd_data = mcycle_r[31:0];
+            CSR_MCYCLEH  : rd_data = mcycle_r[63:32];
+            // minstret 未实现退休计数 —— **只读 0**，属已知限制（见 doc/spec.md）
+            CSR_MINSTRET : rd_data = 32'd0;
+            CSR_MINSTRETH: rd_data = 32'd0;
+            // 以下四个只读 ID 寄存器恒 0。
+            // mhartid 必须是 0：riscv-tests 的 RISCV_MULTICORE_DISABLE 里有
+            // `csrr a0, mhartid; bnez a0, 1b`，返回非 0 会原地自旋到超时。
+            CSR_MVENDORID, CSR_MARCHID, CSR_MIMPID, CSR_MHARTID: rd_data = 32'd0;
+            // 未实现（含 stvec/medeleg/mideleg/satp/pmp*/mnstatus 等）
+            // → 读 0、不抛异常（理由见文件头第 3 条）
+            default      : rd_data = 32'd0;
+        endcase
+    end
+
+    // 只读 CSR：csr[11:10] == 2'b11（0xC00 起的计数器区 与 0xF11 起的 ID 区）
+    assign wr_illegal = (wr_addr[11:10] == 2'b11);
+
+    // ---- 写 / trap / mret ----
+    // 三者互斥由 core 保证：wr_en 已被 !trap 门控；trap 与 mret 天然互斥
+    // （int_take 被 !id_ex_mret 门控，同步异常与 mret 不可能同拍）。
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            mstatus_mie_r  <= 1'b0;    // ★ 复位必须为 0
+            mstatus_mpie_r <= 1'b0;
+            mie_mtie_r     <= 1'b0;    // ★ 复位必须为 0
+            mie_meie_r     <= 1'b0;
+            mtvec_r        <= 32'd0;   // ★ 复位取 0
+            mscratch_r     <= 32'd0;
+            mepc_r         <= 32'd0;
+            mcause_r       <= 32'd0;
+            mtval_r        <= 32'd0;
+            mcycle_r       <= 64'd0;
+        end else begin
+            mcycle_r <= mcycle_r + 64'd1;
+
+            if (trap) begin
+                // 同步异常 / 中断的入口副作用。
+                // ★ mstatus.MIE ← 0 是【必须】的：它让 int_take 在下一拍自动消掉。
+                //   漏掉的话中断会每拍重新触发，PC 被钉死在 mtvec（handler 的
+                //   第一条指令永远进不了 EX），表现是 PC 不动、周期数暴涨。
+                mepc_r         <= trap_pc;
+                mcause_r       <= trap_cause;
+                mtval_r        <= trap_tval;
+                mstatus_mpie_r <= mstatus_mie_r;
+                mstatus_mie_r  <= 1'b0;
+            end else if (mret) begin
+                mstatus_mie_r  <= mstatus_mpie_r;
+                mstatus_mpie_r <= 1'b1;
+            end else if (wr_en) begin
+                // 写只读 CSR 不生效（wr_illegal 会同时让 core 抛非法指令）
+                case (wr_addr)
+                    CSR_MSTATUS  : begin
+                        mstatus_mie_r  <= wr_data[3];
+                        mstatus_mpie_r <= wr_data[7];
+                        // MPP 写入被忽略：恒为 M 模式（见文件头第 1 条）
+                    end
+                    CSR_MIE      : begin
+                        mie_mtie_r <= wr_data[7];
+                        mie_meie_r <= wr_data[11];
+                    end
+                    CSR_MTVEC    : mtvec_r    <= {wr_data[31:2], 2'b00}; // 只支持 direct
+                    CSR_MSCRATCH : mscratch_r <= wr_data;
+                    CSR_MEPC     : mepc_r     <= {wr_data[31:1], 1'b0};  // 指令对齐
+                    CSR_MCAUSE   : mcause_r   <= wr_data;
+                    CSR_MTVAL    : mtval_r    <= wr_data;
+                    // mip 只读；mcycle 只读（其低位可写，本项目不支持 —— 见已知限制）；
+                    // 未实现地址一律忽略
+                    default      : ;
+                endcase
+            end
+        end
+    end
+
+    // 只支持 direct 模式：trap 目标 = mtvec 的 BASE（低 2 位 MODE 被忽略）
+    assign mtvec_base  = {mtvec_r[31:2], 2'b00};
+    assign mepc_out    = mepc_r;
+    assign mstatus_mie = mstatus_mie_r;
+    assign mie_mtie    = mie_mtie_r;
+    assign mie_meie    = mie_meie_r;
+
+endmodule

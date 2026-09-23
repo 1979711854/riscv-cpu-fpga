@@ -28,7 +28,10 @@ module coremark_tb;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
-        .ebreak()
+        .ebreak(),
+        // CoreMark 全程不碰 CSR、中断关闭，这里恒定无中断即可
+        .irq_timer(1'b0),
+        .irq_ext  (1'b0)
     );
 
     // mem_bus 自带周期计数器（0x7FF4 的读回源），与 tb 的 cycle_count 同时复位、

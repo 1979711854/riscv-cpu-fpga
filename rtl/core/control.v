@@ -11,7 +11,17 @@ module control (
     output reg         jump,
     output reg         jump_reg,
     output reg  [1:0]  wb_sel,      // 0 = alu, 1 = mem, 2 = pc+4, 3 = imm(lui)
-    output reg         sys_ebreak   // EBREAK：置 1（阶段一作为"停机"钩子）
+    output reg         sys_ebreak,  // EBREAK：置 1（既作停机钩子，也产生 mcause=3）
+    // ---- CSR 指令（Zicsr）----
+    output reg         is_csr,      // 本拍是 CSR 指令
+    output reg  [11:0] csr_addr,    // CSR 编号
+    output reg  [1:0]  csr_cmd,     // 01=读写(RW) 10=置位(RS) 11=清位(RC)
+    output reg         csr_imm,     // 1 = 立即数形式（源在 instr[19:15]，零扩展）
+    // ---- 系统指令 ----
+    output reg         sys_ecall,   // ECALL  → mcause=11
+    output reg         sys_mret,    // MRET   → 跳 mepc，恢复 mstatus.MIE
+    // ---- 非法指令 ----
+    output reg         illegal      // 未定义 opcode，或 SYSTEM 下的未定义子编码
 );
     wire [6:0] opcode = instr[6:0];
     wire [2:0] funct3 = instr[14:12];
@@ -29,6 +39,13 @@ module control (
         jump_reg   = 1'b0;
         wb_sel     = 2'b00;
         sys_ebreak = 1'b0;
+        is_csr     = 1'b0;
+        csr_addr   = 12'd0;
+        csr_cmd    = 2'b00;
+        csr_imm    = 1'b0;
+        sys_ecall  = 1'b0;
+        sys_mret   = 1'b0;
+        illegal    = 1'b0;
 
         case (opcode)
             7'b0110011: begin  // OP_REG
@@ -126,18 +143,50 @@ module control (
                 // 所有控制信号保持初值 0 -> 该指令流过流水线但不提交任何状态。
             end
 
-            7'b1110011: begin  // SYSTEM: ECALL / EBREAK
-                // funct3=000 时由 imm[11:0] 区分：0x000=ECALL，0x001=EBREAK。
-                //   ECALL  阶段一实现为 NOP。严格语义要跳 mtvec、写 mepc/mcause，
-                //          属高阶任务的完整异常机制。
-                //   EBREAK 作为【停机】钩子：置 sys_ebreak，由顶层停住/点亮 LED。
-                //          既方便演示程序收尾，也为将来接异常机制留出接口。
-                if (funct3 == 3'b000 && instr[31:20] == 12'h001)
-                    sys_ebreak = 1'b1;
+            7'b1110011: begin  // SYSTEM
+                // ------------------------------------------------------------------
+                // funct3 = 000 → 特权指令，由 imm[11:0] 区分
+                //   ECALL(0x000) / EBREAK(0x001) / MRET(0x302)；其余为非法
+                // funct3 = 001/010/011 → CSRRW / CSRRS / CSRRC      （寄存器形式）
+                // funct3 = 101/110/111 → CSRW I / CSRRSI / CSRRCI   （立即数形式）
+                // funct3 = 100         → 保留，非法
+                // ------------------------------------------------------------------
+                if (funct3 == 3'b000) begin
+                    case (instr[31:20])
+                        12'h000: sys_ecall  = 1'b1;   // → mcause = 11（M 模式 ECALL）
+                        12'h001: sys_ebreak = 1'b1;   // → mcause = 3
+                        12'h302: sys_mret   = 1'b1;   // → 跳 mepc
+                        default: illegal    = 1'b1;
+                    endcase
+                end else if (funct3 == 3'b100) begin
+                    illegal = 1'b1;
+                end else begin
+                    // CSR 指令：rd 拿旧值走正常写回，所以 reg_write = 1
+                    // （rd = x0 时寄存器堆本身不写，无需在此特判）
+                    is_csr    = 1'b1;
+                    reg_write = 1'b1;
+                    csr_addr  = instr[31:20];
+                    csr_cmd   = funct3[1:0];   // 01=RW, 10=RS, 11=RC
+                    csr_imm   = funct3[2];     // 1 = 立即数（zimm 在 instr[19:15]）
+                end
             end
 
             default: begin
-                // 非法指令 -> no-op
+                // 未定义的 opcode → 非法指令。
+                //
+                // ⚠️ 例外：**全零字按气泡处理，不报非法**。
+                //   原因（2026-09-23 实测踩到）：取指是同步读、1 拍延迟，
+                //   复位后【第一拍发出的地址，数据要下一拍才回来】，所以那一拍
+                //   IF/ID 锁存到的是存储器的复位值 0x00000000。若把 0 判为非法
+                //   指令，**上电第一拍就会 trap**（pc 被拉到 mtvec），程序直接跑飞。
+                //   现象极具迷惑性：riscv-tests 的 add/beq/jal 全部 TIMEOUT 且
+                //   pc 停在启动早期，看起来像流水线坏了。
+                //
+                //   规范上 0x00000000 确实不是合法指令，但本设计的流水线填充期
+                //   会自然产生它（旧设计 default 是 no-op，所以从没暴露）。
+                //   改动取指时序风险更高（CLAUDE.md 明言那段承重），故用这条最小
+                //   偏离换取稳定：**真正的非法 opcode（非 0）仍然照常报 illegal**。
+                if (instr != 32'd0) illegal = 1'b1;
             end
         endcase
     end

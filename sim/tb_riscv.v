@@ -29,7 +29,11 @@ module cpu_tb_riscv;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
-        .ebreak()
+        .ebreak(),
+        // 本测试台只例化 core + mem_bus，没有中断源（定时器在 mem_bus 里，
+        // 阶段 C 才接；外部中断来自外设，本层没有）→ 恒定无中断
+        .irq_timer(1'b0),
+        .irq_ext  (1'b0)
     );
 
     // 统一存储器（指令+数据）的行为模型由本 tb 提供（sim/mem_model.vh）
