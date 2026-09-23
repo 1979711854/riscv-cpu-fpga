@@ -99,3 +99,7 @@ $RECYCLE.BIN/
 
 # ---- 一次性调试产物（研究完即可删）----
 *.keepbak
+
+# 新增：gen_bit_stream 流程会生成这两个目录
+/pds/**/generate_netlist/
+/pds/**/report_power/
