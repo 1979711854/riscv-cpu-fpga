@@ -58,6 +58,13 @@ module tb_debug_trap;
         resetn = 1'b1;
     end
 
+    // 打印对靶子地址（0x7F00 附近）的每一次写入 —— 用于验证"异常指令没产生副作用"
+    always @(posedge clk) begin
+        if (resetn && mem_we && (mem_addr[31:16] == 16'd0) && (mem_addr[15:8] == 8'h7F))
+            $display("  >>> WRITE cyc=%0d addr=%h data=%h be=%b",
+                     cyc, mem_addr, mem_wdata, mem_byte_en);
+    end
+
     // 一旦 pc 跑出 RAM 范围就报出前后若干拍并停下 —— 用于定位"跑飞"
     reg pc_bad;
     initial pc_bad = 1'b0;      // 不初始化会是 X，让下面的条件恒假

@@ -88,7 +88,8 @@ foreach ($s in $srcs) {
     $line = ($out | Where-Object { $_ -match "=== (PASS|FAIL|TIMEOUT|UNEXPECTED)" } |
              Select-Object -First 1)
     if     ($line -match "=== PASS")       { $pass++;  $tag = "PASS" }
-    elseif ($line -match "=== FAIL")       { $fail++;  $tag = ($line -replace '.*===\s*','').Trim() }
+    # 注意用非贪婪的 [^=]* —— `.*===` 会贪婪地吃到【最后一个】"==="，把 tag 吃空
+    elseif ($line -match "=== FAIL")       { $fail++;  $tag = ($line -replace '^[^=]*=== ','') -replace ' ===$','' }
     elseif ($line -match "=== TIMEOUT")    { $other++; $tag = "TIMEOUT" }
     else                                   { $other++; $tag = "OTHER" }
     $results += [pscustomobject]@{ Name = $s.BaseName; Result = $tag }

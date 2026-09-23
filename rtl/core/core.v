@@ -642,8 +642,16 @@ module core (
     end
 
     // ================= EX/MEM 寄存器 =================
+    // ★ trap 必须清 EX/MEM，只清 ID/EX 是不够的（2026-09-23 实测踩到）：
+    //   `EX/MEM <= ID/EX` 是在【同一个时钟沿】发生的。trap 那拍肇事指令正躺在
+    //   ID/EX 里，清 ID/EX 只能保证【下一拍】的 EX/MEM 是气泡，而【这一拍】
+    //   EX/MEM 照样把它收下 —— 于是下拍访存口就真的把它写出去了。
+    //   实测现象：未对齐 sw 既正确陷入了 mcause=6 异常，内存却也被改了。
+    //
+    //   清它不会丢数据：此时 EX/MEM 里那条【更老】的指令已经在这个沿推进到
+    //   MEM/WB 了（MEM/WB 与 EX/MEM 是同一个沿更新的），写回不受影响。
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || div_stall) begin
+        if (!resetn || div_stall || trap) begin
             ex_mem_reg_write  <= 1'b0;
             ex_mem_mem_read   <= 1'b0;
             ex_mem_mem_write  <= 1'b0;
