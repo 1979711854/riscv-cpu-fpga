@@ -12,9 +12,12 @@
 | `setup_env.md` | 环境搭建（工具链、iverilog、PDS） |
 | `resource_efficiency.md` | **赛题三条性能指标成文**（CoreMark/MHz、Fmax、CoreMark/LUTs） |
 | `ila_analysis.md` | **流水线效率分析**（CPI/停顿/冲刷占比）+ ILA 抓取方案 + 优化建议 |
+| `board_bringup.md` | **上板教程** —— 接线（两根 USB 线）、引脚表、烧录两个流程、串口抓取、排障速查 |
+| `board/` | **板上实测证据** —— 串口原始日志 + 索引（CoreMark ITER=820 板上 10.898 s） |
 | `figures/` | 流水线时序波形图（`pipeline_*.svg` / `.png`） |
-| `reports/` | 单次改动的验证记录（如 2026-09-21 取指重定向改造） |
+| `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`） |
 | `paper/` | 论文撰写思路与获奖策略 |
+| `待修改清单.md` | 队友写的口径差异清单（已逐节处理，保留作"当时判断依据"的记录） |
 | `patches/` | 给队友的兼容补丁（历史记录） |
 
 ## 两份最重要的"别踩坑"文档
