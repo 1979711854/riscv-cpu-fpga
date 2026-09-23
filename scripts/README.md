@@ -15,12 +15,12 @@
 ```powershell
 # 例：完整回归（改完 RTL 后必跑）
 scripts\run_riscv_tests.ps1                 # 期望 49 PASS / 1 FAIL
-scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 382,972 拍（测试台总周期 1,488,333）
+scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 358,846 拍（测试台总周期 1,462,898）
 scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
 ```
 
-> ⚠️ **上板前记得换回 ITER=770 并同步**：跑过 `-Iter 1` 之后
+> ⚠️ **上板前记得换回 ITER=820 并同步**：跑过 `-Iter 1` 之后
 > `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有 0.014 秒、CoreMark 判 invalid。
 > ```powershell
 > scripts\run_coremark.ps1 -Iter 770 -SkipSim

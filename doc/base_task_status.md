@@ -42,12 +42,12 @@
 - **FENCE / FENCE.I 作 NOP 的正当性**：本设计没有 I/D Cache，也就没有需要"刷"的
   写缓冲；且存储器已统一（`rtl/mem/unified_mem.v`），store 对后续取指天然可见，
   FENCE.I 的语义已由硬件结构本身保证。RISC-V 规范允许无 Cache 的实现视其为 NOP。
-- **ECALL**：严格语义要跳 `mtvec`、写 `mepc`/`mcause`，属高阶任务的完整异常机制，
-  阶段一实现为 NOP。
-- **EBREAK**：置 `sys_ebreak`，经 ID/EX → EX/MEM 送到核外，顶层锁存为停机标志并点亮
-  `done`。这是【软停机】——只置标志、不停 PC，程序应在 EBREAK 后跟自旋循环
-  （riscv-tests 与 CoreMark 的 start.S 本来就是这个写法）。将来接异常机制时，
-  这里就是 trap 的入口。
+- **ECALL**：**已实现为 mcause=11 的同步异常**（2026-09-23），跳 `mtvec`、
+  写 `mepc`/`mcause`。
+- **EBREAK**：**已实现为 mcause=3 的同步异常**。顶层的 `done` 停机钩子改从 trap
+  事件取（`ebreak = trap && trap_cause == 3`）。
+  注：装异常之后程序仍应在 EBREAK 后跟自旋循环 —— riscv-tests 与 CoreMark 的
+  start.S 本来就是这个写法。
 
 ## 验证结果（2026-09-21）
 
@@ -55,8 +55,8 @@
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（板上实测，ITER=770，当前设计）** | `Total ticks 294,888,440` → **实际 10.92 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致 |
-| **CoreMark 效率（当前设计，仿真）** | 每迭代 **382,972** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.611 CoreMark/MHz**；**ITER=770 已上板复测通过（10.92 秒，CRC 吻合）** |
+| **CoreMark v1.0（板上实测，ITER=820，当前设计）** | `Total ticks 294,888,440` → **实际 10.92 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致 |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；**ITER=820 已上板复测通过（10.92 秒，CRC 吻合）** |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
@@ -77,23 +77,32 @@
 
 单点定义在 `rtl/bus/addr_map.vh`；软件侧对应 `scripts/demo/addr_map.h`。
 
-## 高阶任务（尚未做，记录备查）
+## 高阶任务进展
 
-2 路组相联 I/D Cache · BTB 动态分支预测 + 完整异常/中断 · 边缘 AI 加速
+| 方向 | 状态 |
+|---|---|
+| **完整异常/中断** | ✅ **已完成**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret` + 六类同步异常（非法指令 / EBREAK / 未对齐 load+store / ECALL / 写只读 CSR）+ 定时器中断（CLINT）。自写汇编测试在 `sim/tests/`，一键 `scriptsun_own_tests.ps1` |
+| BTB 动态分支预测 | ⬜ 未做。已实现的是 **ID 级静态后向预测 + jal**（零状态）。实测前向 taken + jalr 的剩余空间只有约 **2.3%**，见 `doc/ila_analysis.md` §6 |
+| 外部中断 MEIP | ⚠️ 只做了接口（`cpu_top` 接了 UART RX 非空），**没有测试**，不得当作已验证能力 |
+| 2 路组相联 I/D Cache | ⬜ 未做。**且经分析是负收益** —— 存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、无结构冲突，Cache 只会引入缺失惩罚 |
+| 边缘 AI 加速 | ⬜ 未做。32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行 |
 
 > 统一存储器已为 I/D Cache 备好后端：将来两块 Cache 共用这份 backing store，
 > `fence.i` 需要相应升级为"冲刷 I-Cache"而不是当前的 NOP。
 
 ## 已知限制（诚实记录，避免答辩被问倒）
 
-1. **未对齐 load/store 不保证支持** —— RISC-V 规范允许。`ma_data` 是当前唯一的 FAIL
-   （testnum 1，确定性复现），属架构取舍；未对齐通路没有专门测试覆盖。
-   注意：曾有一版文档称该 FAIL 在取指重定向后转 PASS，**该结论无法复现、已撤回**
-   （见 `doc/reports/2026-09-21_branch_opt_verify.md` §2.1）。
+1. **未对齐访存不提供正确结果，但会正确地陷入异常**（mcause 4/6，2026-09-23 起）。
+   规范要求"要么支持、要么陷入异常"，本设计取后者。`ma_data` 因此仍是唯一 FAIL，
+   但失败形态已变：`FAIL (testnum 668)`（此前是 testnum 1）。
+   真正要支持未对齐访存需在 MEM 级加多拍访问，未做。
 2. **按键无硬件消抖** —— `gpio.v` 只做 2 级同步；去抖放在演示程序里
    （采样—延时 10ms—再采样），这样更容易验证。
-3. **EBREAK 是软停机** —— 不停 PC，需软件配合自旋循环。
-4. **UART 无中断** —— 收发都是轮询；中断属高阶任务的异常机制。
+3. **EBREAK 现在是 mcause=3 的异常** —— 顶层的 `done` 灯改从 trap 事件取。
+4. **外部中断（MEIP）未实现** —— 通路与端口都在、`cpu_top` 也接了 UART RX 非空，
+   但**没有测试**，不得当作已验证能力。
+5. **只支持 M 模式** —— `mstatus.MPP` 硬连线 2'b11；未实现的 CSR 读 0、写忽略、
+   不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
 5. **PDS 工程当前仍按远程 FPGA 平台约束** —— 新增的 `led`/`key`/`uart_rx`
    引脚在 `RV32I_1.fdc` 里以注释形式预留（盘古 MES2L200HP 实测引脚已填好），
    未指定 LOC 会导致 place & route 失败；compile / synthesize 不受影响。

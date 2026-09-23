@@ -11,7 +11,7 @@
 |---|---|
 | riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
 | CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`（旧取指路径 / ITER=700） |
-| CoreMark 效率 | **2.611 CoreMark/MHz**（当前设计，仿真每迭代 382,972 周期）；改造前 2.380 |
+| CoreMark 效率 | **2.787 CoreMark/MHz**（当前设计，仿真每迭代 358,846 周期）；优化前 2.380 |
 | 时序（27MHz，新设计） | Estimated **47.8126 MHz**，Setup +16.122ns / Hold +0.147ns，**失败端点 0** |
 | 资源（新设计） | LUT **2,316**（1.45%）、FF 1,913、DRM 16、APM 11 |
 
@@ -83,9 +83,9 @@ scripts\sync_firmware.ps1
 > `-SkipSim` = 只生成固件、不跑仿真。**上板流程只需要 `mem.hex`**，加上这个开关
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
 >
-> **ITER 必须跟着"每迭代周期"走。** 当前设计每迭代 382,972 周期，27MHz 下
-> ITER=770 → 10.92 秒。改造前是 420,094 周期/迭代（ITER=700 → 10.89 秒）；
-> **现在还用 700 只剩 9.93 秒，CoreMark 会判 invalid。**
+> **ITER 必须跟着"每迭代周期"走。** 当前设计每迭代 358,846 周期，27MHz 下
+> **ITER=820 → 10.90 秒**（余量 9.0%）。用 770 只剩 10.23 秒（余量 2.3%，太险），
+> 用 700 只剩 9.30 秒 —— **CoreMark 要求 ≥10 秒，会判 invalid。**
 
 > **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
 > `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** —— 但 BRAM 是空的，
@@ -158,7 +158,7 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 **回归纪律**：改动 RTL 后，下面两条必须同时保持不变（除非本次改动就是要改变某一项）：
 
 1. riscv-tests 的 **49/1/0**
-2. CoreMark 计时区间 **382,972 拍**（测试台总周期 1,488,333）← "没碰坏流水线"最灵敏的探针
+2. CoreMark 计时区间 **358,846 拍**（测试台总周期 1,462,898）← "没碰坏流水线"最灵敏的探针
 
 工具链（scoop 安装）：`scoop install iverilog gtkwave`
 
