@@ -1,0 +1,429 @@
+# 下一步优化任务书 —— 交给前端（RTL）队友
+
+> 编写：2026-09-25　分支：`main`（已含 45 MHz 迁移）　基线提交：`e15d63b`
+> **本文是自包含的** —— 不需要先读别的文档就能开工。需要细节时再按文中索引跳转。
+> 仓库：`https://github.com/1979711854/riscv-cpu-fpga.git`
+
+---
+
+## 0. 一页速览
+
+| 任务 | 优先级 | 收益 | 为什么要做 |
+|---|---|---|---|
+| **① 动态分支预测（BTB + BHT）** | **P0** | +2~3% | ⭐ **比赛文档点名"完成动态分支预测（如 BTB）"** —— 这是**评分项**，不是纯性能优化 |
+| **② 主频 45 → 49.89 MHz** | **P0** | **+10.9%** | PDS 已实测证明可跑 **51.52 MHz**，现在白留 14.5%；已确认**比赛用本地板**，PLL 提频有效 |
+| ③ 消除 load-use 停顿 | P2 | +5.8% | 收益大但改动风险高，有余力再做 |
+
+**两个 P0 建议分两步做**（各自独立综合 + 验证），不要把变量混在一起。
+
+---
+
+## 1. 开工前必须知道的现状
+
+### 1.1 设计概览
+
+```
+RV32I + M 扩展 · 5 级流水线（IF/ID/EX/MEM/WB）
+前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法器
+统一存储器（指令+数据共用一块双端口 BRAM，A 口取指 / B 口访存）
+完整异常/中断（CSR + mret + 六类同步异常 + CLINT 定时器中断，仅 M 模式）
+集成 UART（收发）/ GPIO / 存储总线
+上板：盘古 MES2L676-200HP，板载 27MHz 经 PLL 倍频到 45MHz
+```
+
+### 1.2 当前性能基线（**这些数字是回归基准**）
+
+| 指标 | 值 | 来源 |
+|---|---|---|
+| 每迭代周期（仿真） | **358,846** | `+PROF` |
+| 测试台总周期（ITER=1） | **1,462,898** | 同上 |
+| 提交指令数 | **288,056** | 影子流水线 |
+| **CPI** | **1.2458** | 358,846 / 288,056 |
+| CoreMark/MHz | **2.787** | 10⁶ / 358,846 |
+| riscv-tests | **49 PASS / 1 FAIL / 0 TIMEOUT** | rv32ui 42 + rv32um 8 |
+| 板上（45MHz，ITER=1500） | `Total ticks 538,285,445` → **11.9619 s** / **125.40 CoreMark** | 串口日志 |
+| LUT / FF / DRM / APM | 3,030 / 2,185 / 16 / 11 | Device Map |
+| 时序 | 约束 45.0005 MHz，可达 **51.5198**，slack **+2.812 ns** | `report_timing/cpu_top_board.rtr` |
+
+**损失构成**（精确闭合，用来判断优化效果）：
+
+```
+288,056（提交）+ 20,720（load-use 停顿）+ 50,070（分支）= 358,846
+                                                  ↑ 其中命中 28,860×1 + 误判 2,367×2 + 未预测 8,238×2
+```
+
+### 1.3 ⚠️ 三套时钟口径 —— **千万别混**
+
+| 场景 | 时钟 | `EE_TICKS_PER_SEC` / `CPU_HZ` | `UART_DIV` | ITER 分子 |
+|---|---|---|---|---|
+| **仿真**（测试台例化 `cpu_top`，不过 PLL） | **27 MHz** | 27e6 | 234（默认，不传参数）| 270,000,000 |
+| **本地板**（`cpu_top_board`，过 PLL） | **45 MHz** | 45e6 | 390 | **450,000,000** |
+| 远程 FPGA 平台（无 PLL） | 27 MHz | 27e6 | 234 | 270,000,000 |
+
+**判 CoreMark valid 的分子是"你往哪儿烧"的那个频率。** 用错得到错误的秒数，而 CoreMark **不会报错**。
+
+### 1.4 回归纪律（**硬要求**）
+
+改动 RTL 后：
+
+| 判据 | 必须 |
+|---|---|
+| riscv-tests | **49 PASS / 1 FAIL / 0 TIMEOUT**（组合不变）|
+| CoreMark 每迭代周期 | **358,846**（除非本次改动的目的就是改它）|
+| `run_own_tests` | `exceptions` + `timer_irq` 都 PASS |
+
+> ⚠️ 那个 FAIL 是 `ma_data`，**属架构取舍**（不支持未对齐访存，会正确陷入异常），
+> 不是 bug。**判回归只认 49/1/0 这个组合，别去对 testnum**（实测是 668，历史文档写过 1，是错的）。
+
+### 1.5 ITER 速算式（改完必须重算）
+
+```
+ITER = 板上时钟频率 × 10s ÷ 每迭代周期数     ← 分子是【板上】那个频率
+例：45 MHz → 450,000,000 / 358,846 ≈ 1254 → 取 1500（11.96 s，余量 19.6%）
+```
+
+---
+
+## 2. 任务①【P0】动态分支预测（BTB + BHT）
+
+### 2.1 为什么必做
+
+比赛文档明确列了「**完成动态分支预测（如 BTB）**」。
+**注意「动态」二字** —— 我们现在是**静态**规则（`imm[31]` 判后向），不算动态预测。
+所以这是**评分项**，不能因为收益只有 2% 就跳过。
+
+### 2.2 现状：ID 级静态预测
+
+`rtl/core/core.v` 约 234~255 行：
+
+```verilog
+wire        id_pred_taken = (branch && imm[31]) || jump;   // 静态：后向分支 + jal
+assign      id_target     = if_id_pc + imm;
+assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !div_stall;
+```
+
+- `id_target` **已经在了** —— 分支和 `jal` 的目标都是 PC 相对，ID 级就能算
+- `jalr` 的目标依赖 `rs1`，ID 级没有前递通路 → **现在不预测**
+- EX 级裁决：`ex_flush`（预测 not-taken 但实际 taken）、`ex_mispred`（预测 taken 但实际 not-taken）
+
+### 2.3 目标设计：64 项融合式 BTB + BHT
+
+**用一个结构同时做方向预测与目标预测**（融合式，比分开两张表省面积也更好写）：
+
+```
+索引 idx = PC[7:2]                       // 6 位 → 64 项，直接映射
+
+每项：
+  valid   1 bit
+  tag     PC[31:8]    24 bit
+  target  32 bit
+  ctr     2 bit 饱和计数器
+  小计 59 bit/项  ×  64 项 = 3,776 bit
+```
+
+**ID 级预测**：
+
+```verilog
+wire        btb_hit    = btb_valid[idx] && (btb_tag[idx] == if_id_pc[31:8]);
+wire        btb_taken  = btb_ctr[idx][1];            // 高位=1 → 预测跳转
+wire        btb_target = btb_target_arr[idx];
+
+// 命中 → 用 BTB 的方向与目标（目标能覆盖 jalr）
+// 未命中 → 退回现有静态规则（行为与现在完全一致，保证渐进可用）
+wire        id_pred_taken = btb_hit ? btb_taken
+                                    : ((branch && imm[31]) || jump);
+wire [31:0] pred_target   = (btb_hit && btb_taken) ? btb_target : id_target;
+```
+
+**EX 级写入**（在已有的 `ex_resolve_taken` 附近）：
+
+```verilog
+// idx_w = id_ex_pc[7:2]  ← 与 ID 级读的 if_id_pc[7:2] 是同一条指令的同一个 PC
+if (id_ex_is_branch_or_jump) begin
+    if (btb_hit_w) begin
+        // 已有项：更新方向计数器
+        if (ex_resolve_taken) btb_ctr[idx_w] <= (ctr_w==2'b11) ? ctr_w : ctr_w+1;
+        else                  btb_ctr[idx_w] <= (ctr_w==2'b00) ? ctr_w : ctr_w-1;
+    end else if (ex_resolve_taken) begin
+        // 只在【实际跳转】时分配新项，避免被大量 not-taken 分支污染
+        btb_valid[idx_w]  <= 1'b1;
+        btb_tag[idx_w]    <= id_ex_pc[31:8];
+        btb_target_arr[idx_w] <= ex_real_target;   // EX 算出的真实目标
+        btb_ctr[idx_w]    <= 2'b10;                // weakly taken
+    end
+end
+```
+
+### 2.4 ⚠️ 最关键的正确性点 —— 别在这里翻车
+
+**现在只有两种冲刷情形，加 BTB 后必须变成三种：**
+
+| 情形 | 现在 | 加 BTB 后 |
+|---|---|---|
+| 预测 not-taken，实际 taken | `ex_flush` ✅ | 同 |
+| 预测 taken，实际 not-taken | `ex_mispred` ✅ | 同 |
+| **预测 taken、实际也 taken，但目标不对** | 不存在 | ⚠️ **新增，必须冲刷！** |
+
+第三种情形**只可能由 `jalr` 引起**（BTB 里存的 target 是上次执行时的，`rs1` 变了就不同）。
+**必须把预测时的 target 一起带到 EX 级比对**：
+
+```verilog
+reg [31:0] id_ex_pred_target;        // 新增流水线寄存器
+// EX 级：
+wire ex_target_wrong = id_ex_pred_taken && ex_resolve_taken
+                       && (id_ex_pred_target != ex_real_target);
+```
+
+少了这一条 → **跑飞，而且只在特定 rs1 值下才复现**，极难查。
+
+> 另一个更保守的选择：**BTB 只用于分支/jal，不用于 jalr**（jalr 继续走 EX 冲刷）。
+> 代价是少 0.6% 收益，但**完全绕开第三种情形**，风险大幅下降。
+> **如果时间紧，建议先用这个保守版**，稳妥拿到"动态预测"这个评分点。
+
+### 2.5 面积预算
+
+- 融合式 BTB：3,776 bit。用 LUT6 作 64×1 分布式 RAM → 约 **60 LUT** 存表
+  加 tag 比较、mux、写逻辑，**总共约 150~250 LUT**
+- 也可以直接例化 **1 块 DRM**（36k 双口 BRAM，我们只用了 16/415）
+- **资源完全不紧张**：现在 LUT 3,030 / 159,800（用了 1.90%），DRM 16/415
+
+### 2.6 验收判据
+
+| # | 判据 | 期望 |
+|---|---|---|
+| 1 | `riscv-tests` | **49 / 1 / 0 —— 必须一字不变** ⭐ 预测错**不该**影响正确性（冲刷会兜住）。**变了就是有 bug，回退** |
+| 2 | `run_own_tests` | `exceptions` + `timer_irq` PASS |
+| 3 | CoreMark 每迭代周期 | **会下降**（这是目的）。预期约 **348,000~351,000**（省 2~3%）|
+| 4 | ITER | **必须重算** |
+| 5 | PDS 综合 | `All Constraints Met`，slack 仍 > 0 |
+
+### 2.7 预期收益（用实测事件数算的，不是估的）
+
+| 事件 | 次数 | 现在代价 | 能否被救 |
+|---|---|---|---|
+| 后向 taken（静态规则已预测对） | 23,297 | 1 拍 | — |
+| 后向 **not**-taken（误判） | 2,367 | 2 拍 | ✅ BHT |
+| 前向 **taken**（静态规则未预测） | 6,101 | 2 拍 | ✅ BHT |
+| `jal`（预测对） | 5,563 | 1 拍 | — |
+| `jalr`（未预测） | 2,137 | 2 拍 | ✅ **只有 BTB** |
+
+```
+BHT 能救 = 2,367 + 6,101 = 8,468  →  理论上限 2.36%
+BTB 能救 =              2,137  →  理论上限 0.60%
+合计上限 2.96%（现实约 2.0~2.5%，2 位计数器不会 100% 命中）
+```
+
+---
+
+## 3. 任务②【P0】主频 45 → 49.89 MHz
+
+### 3.1 为什么必做 —— 白留了 14.5%
+
+```
+约束 45.0005 MHz   ← 现在用的
+可达 51.5198 MHz   ← PDS 实测说这块设计能跑这么快
+```
+
+**已确认比赛用本地盘古板 → PLL 提频完全有效。**
+
+### 3.2 PLL 怎么改：**只动一个参数**
+
+从 `pds/RV32I_1/ipcore/pll/pll.v` 反推出的结构：
+
+```
+VCO = 27MHz ÷ RATIOI(1) × RATIOM(2) × RATIOF(21.25) = 1147.5 MHz
+CLKOUT0 = VCO ÷ RATIO0
+```
+
+当前 `STATIC_RATIO0 = 25.5` → `1147.5 / 25.5 = 45.0 MHz` ✓（PDS 报 45.0005，吻合）
+
+**PLL 反馈取自 CLKOUTF，与 RATIO0 无关** → 改 RATIO0 不影响环路稳定。
+
+| `STATIC_RATIO0` | 输出 | 得分 | vs 现在 | `UART_DIV` | 时序风险 |
+|---|---|---|---|---|---|
+| 25.5 | 45.00 | 125.41 | — | 391 | 现状 slack +2.812 |
+| 24 | 47.81 | 133.25 | +6.3% | 415 | 低 |
+| 23.5 | 48.83 | 136.09 | +8.5% | 424 | 低 |
+| **23** | **49.89** | **139.05** | **+10.9%** | **433** | 中（预计 slack ≈ +0.8 ns）|
+| 22.5 | 51.00 | 142.14 | +13.3% | 443 | ⚠️ 高（可达 51.52，几乎无余量）|
+
+**建议先试 `RATIO0 = 23`（49.89 MHz）** —— 收敛概率高，且保留 45 MHz 那份作对照。
+
+改法二选一：
+1. **IP Compiler GUI**：改 `CLKOUT0_REQ_FREQ` 为 49.89，重新生成（推荐，`.v` 与 `.idf` 一起更新）
+2. 手工改：`pll.v` 的 `localparam real STATIC_RATIO0 = 23;` + `pll.idf` 里对应的 `CLKOUT0_REQ_FREQ_basicPage` / `STATIC_RATIO0`
+
+### 3.3 连带改动清单（**漏一个就出错**）
+
+| # | 文件 | 改什么 | 45 MHz | → 49.89 MHz |
+|---|---|---|---|---|
+| 1 | `pds/RV32I_1/ipcore/pll/pll.v` + `pll.idf` | `RATIO0` / `REQ_FREQ` | 25.5 / 45.0 | **23 / 49.89** |
+| 2 | `rtl/top/cpu_top_board.v` | `.UART_DIV(10'd390)` | 390 | **433** |
+| 3 | `scripts/coremark_port/core_portme.c` | `EE_TICKS_PER_SEC` | 45000000 | **见下注** |
+| 4 | `scripts/demo/addr_map.h` | `CPU_HZ` | 45000000u | **见下注** |
+| 5 | 固件 | ITER | 1500 | **1663**（= 11.96s 对应）|
+
+> ⚠️ **第 3、4 项要填 PDS 报告的【实际】输出频率，不是标称值。**
+> PLL 的频率是由分频比合成的，`27 × 2 × 21.25 ÷ 23 = 49.8913 MHz` 是标称值，
+> 但 PDS 会算出它自己的实际值 —— 现在这一版**标称 45.0，PDS 报的是 45.0005**。
+> **正确做法**：综合后打开 `pds/RV32I_1/report_timing/cpu_top_board.rtr`，
+> 看 `Requested Frequency` 那一列，**用那个数**（取整到 Hz）。
+> 填错不会报错，但 CoreMark 会算出错误的秒数 —— **判 valid 时按这个值卡**。
+
+> `UART_DIV` 校验：`49891300 / 433 = 115,222` vs 115200 → 误差 **+0.02%** ✅ 不会乱码
+> ITER 下限（10s）= `49.8913e6 × 10 / 358846 = 1390`；取 1663 是留 19.6% 余量，与现在一致
+
+### 3.4 验收判据
+
+| # | 判据 | 期望 |
+|---|---|---|
+| 1 | PDS 时序 | `All Constraints Met`，**slack > 0**，报告显示新频率 |
+| 2 | riscv-tests | 49 / 1 / 0（不变）|
+| 3 | CoreMark 每迭代周期 | **358,846（不变）** —— 提频不该改周期数 |
+| 4 | 上板串口 | **不乱码**（验证 UART 分频对上了）|
+| 5 | 板上 `Total ticks` | ÷ **新频率** ≈ 11.96 s，`Iterations 1500`→1663 |
+| 6 | 四个子 CRC | `seedcrc 0xe9f5` / `crclist 0xe714` / `crcmatrix 0x1fd7` / `crcstate 0x8e3a` —— **与现在逐位相同** |
+
+> ⚠️ **`crcfinal` 不要比** —— 它是 CoreMark `iterate()` 里的**跨迭代累加器**，必然随 ITER 变
+> （实测 ITER=1→`0xe714`、820→`0xbd59`、1500→`0x25b5`，**三个都对**）。
+> 依据：`third_party/coremark/core_main.c` 里 `res->crc = crcu16(crc, res->crc)` 在循环内，
+> 而 `if (i == 0) res->crclist = res->crc;` 只在第 0 轮快照。
+
+---
+
+## 4. 任务③【P2，可选】消除 load-use 停顿
+
+现在是 **20,720 拍（5.8%）**，是第二大损失来源。
+
+思路：把 load 结果从 MEM 级旁路回 EX 级（而不是等它写回 WB），或靠编译器调度插空。
+**改动风险较高**（要加 MEM→EX 前递通路与配套的停顿条件重写），收益中等。
+**两个 P0 做完并且还稳，再考虑这个。**
+
+---
+
+## 5. 改完必须跑的验证（6 项）
+
+```powershell
+cd d:\riscv-cpu-fpga
+
+# 1) riscv-tests 全量回归 —— 判据 49 PASS / 1 FAIL / 0 TIMEOUT
+scripts\run_riscv_tests.ps1
+
+# 2) CoreMark 每迭代周期 + 测试台总周期（读 Total ticks / total cycles）
+scripts\run_coremark.ps1 -Iter 1
+
+# 3) 单元测试（6 个测试台）
+scripts\run_sim.ps1 -NoWave
+
+# 4) 自写汇编测试（异常 / 定时器中断）
+scripts\run_own_tests.ps1
+
+# 5) PDS 综合布线（一条命令走完，约 5 分钟；会打印 md5）
+scripts\build_bitstream.ps1 coremark
+
+# 6) 上板：烧 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit，抓串口
+powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
+```
+
+> ⚠️ **第 5 步会改 `pds\RV32I_1\mem.hex`。** PDS 读的是**工程目录下**那份，
+> 而且**从不检查时间戳** —— 跑过 `run_riscv_tests.ps1` 或 `-Iter 1` 之后再综合，
+> 板上就跑的是回归程序的镜像，**全程零报错**。`build_bitstream.ps1` 里有字数校验挡这个。
+
+---
+
+## 6. 踩过的坑（**精华版，别重犯**）
+
+### 6.1 环境与语法
+
+1. **iverilog 14 严格要求"先声明后使用"** —— 信号声明必须在使用之前
+2. **仿真不要编译 `rtl/mem/`** —— 测试台用 `` `include "mem_model.vh" `` 自带行为模型，重复定义会冲突
+3. **Verilog 字符串里没有 `\r`** —— 换行只能用 `16'h0D0A` 拼
+
+### 6.2 会静默出错的（最危险）
+
+4. **测试台悬空输入是 Z 不是 0** —— 曾经漏接 `.irq_timer`，导致中断行为完全随机。
+   **症状极具迷惑性：同一份 RTL，调试台跑正常、`tb_riscv` 跑飞。两个测试台结果不一致时，先怀疑接线不一致，别怀疑 RTL。**
+5. **全零字必须当气泡处理** —— 取指是同步读、1 拍延迟，复位后第一拍锁到的是存储器复位值 `0x00000000`。
+   `control.v` 的 `default` 必须对它例外（否则上电第一拍就 trap），`if_id_valid` 也用它判"是不是真指令"
+6. **CSR 写必须从 EX 级提交**（不是 WB）—— riscv-tests 里 `csrw mepc, t0` 与 `mret` 只隔 1 条指令，
+   从 WB 提交会让 `mret` 读到复位值 0 → 跳回 `_start` → 50 个 TIMEOUT
+7. **trap 必须同时清 EX/MEM，只清 ID/EX 不够** —— `EX/MEM <= ID/EX` 是同一个沿发生的。
+   实测现象：未对齐 `sw` 既正确陷入了 `mcause=6`，内存却也被改了
+8. **`csr_wr_illegal` 只看地址，必须与"这条指令真的在写吗"相与** ——
+   `csrr a0, mhartid` 是 RS 且 rs1=x0、根本不写，却被判成非法 → init 每轮 trap
+
+### 6.3 流水线承重逻辑（改分支预测时尤其相关）
+
+9. **取指补偿是承重的**：stall 时是 `imem_addr` 退回 `if_addr_d`，**不是 `pc_r` 后退**。搞反会复现"指令被复制执行"
+10. **必须寄存"实际生效的重定向"（`id_redirect`），不是预测意图（`id_pred_taken`）** ——
+    两者在 stall / `ex_flush` / `div_stall` 时会分叉。寄存错了会出现"记着预测过、但 `pc_r` 根本没重定向"，
+    EX 级据此判定预测正确而不冲刷 → **流水线沿错误路径一路跑下去**。（`core.v` 有注释，改预测时必读）
+
+### 6.4 板上
+
+11. **上板 top module 是 `cpu_top_board`，不是 `cpu_top`**（前者把 `pc[31:0]`/`done` 挡在板外，
+    因为 PDS 会把未约束输出自动布到 BANKR5 的真实引脚上）。**仿真仍用 `cpu_top`**
+12. **板上 Jtag 与 USB UART 是两个独立接口，两根 USB 线都要插** —— 只插 Jtag，串口永远没输出
+13. **PLL IP 必须以"IP 源文件"形式加进 `.pds`**（`wgt_my_ips_src` 下的 `pll.idf` + `pll.v`），
+    只把 `pll.v` 当普通源文件加，综合会报 `pll` 是黑盒
+14. **`.fdc` 里只有 27MHz 输入晶振的约束，看不见 45MHz** —— PLL 输出的时钟约束由 PDS **从 IP 自动推导**，
+    只在时序报告里显示。**别以为约束没生效，也别手动去改那句 `create_clock`**
+
+---
+
+## 7. 环境与入口
+
+| 项 | 值 |
+|---|---|
+| 工具链 | iverilog 14 + GTKWave；`riscv-none-elf-gcc 15.2.0`（`D:\riscv-toolchain\...`）|
+| PDS | `D:\pango\PDS_2022.2-SP6.4`（紫光同创，**不是 Vivado**）|
+| 上板唯一入口 | `scripts\build_bitstream.ps1 coremark` / `demo` |
+| 串口 | **COM4**（CP2102）；COM12/13 是 FTDI 的 JTAG 通道，**别读** |
+
+**文档索引**：
+
+| 文档 | 内容 |
+|---|---|
+| `CLAUDE.md` | 项目总览 + **29 条关键约定**（踩坑大全，建议通读）|
+| `doc/spec.md` | 架构规格（含异常/中断、CSR 清单）|
+| `doc/resource_efficiency.md` | 三条性能指标成文 + 演进对照 |
+| `doc/ila_analysis.md` | 流水线效率分析（**改分支预测前必读 §2.2/§2.4**）|
+| `doc/board_bringup.md` | 上板教程 |
+| `doc/reports/2026-09-25_45mhz_migration.md` | 45 MHz 迁移全过程 |
+
+---
+
+## 8. 建议的推进顺序
+
+```
+第 1 步：动态分支预测（BTB + BHT），保持 45 MHz
+          └→ 综合 → 6 项验证 → 确认 riscv-tests 仍 49/1/0
+          └→ 只有【一个变量】，出问题好定位
+
+第 2 步：主频提到 49.89 MHz（RATIO0 = 23）
+          └→ 重生成 PLL → 改 5 处连带项 → 重算 ITER=1663
+          └→ 综合看时序是否收敛 → 6 项验证 → 上板实测
+
+第 3 步（可选）：load-use 停顿消除
+
+第 4 步：RTL 冻结后，抓 ILA 波形（比赛评分项）
+          ⚠️ ILA 的 .fic 与 .sbit 必须来自【同一次】综合布线
+          ⚠️ 加 ILA 探针本身要改 RTL（syn_keep 属性）→ 必须放在最后
+```
+
+**做完第 1、2 步的预期收益**：
+
+| | 现在 | 做完 |
+|---|---|---|
+| 每迭代周期 | 358,846 | ~350,000 |
+| CoreMark/MHz | 2.787 | ~2.86 |
+| 板上频率 | 45 MHz | **49.89 MHz** |
+| **实际得分** | **125.40** | **~143**（**+14%**）|
+
+---
+
+## 9. 有问题怎么找我
+
+- 优先看 `CLAUDE.md` 的 29 条关键约定 —— 大部分坑都记在里面了
+- 改分支预测遇到"预测对了方向但跑飞"，**先看 §2.4 的第三种冲刷情形**和 §6.3 第 10 条
+- 上板串口没输出，**先确认两根 USB 线都插了**（最容易卡住的一步）
