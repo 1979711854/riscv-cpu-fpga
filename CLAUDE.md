@@ -35,7 +35,7 @@
   > 未对齐通路仍无专门测试覆盖，不把它当作已实现的功能对外承诺。
 - **CoreMark**：2026-09-15 已在远程平台实测通过（旧取指路径，ITER=700，
   `Total ticks 294,065,438` → 10.89 秒，`Correct operation validated`，
-  四个 CRC 与仿真逐位一致 → **CPU 真机算得对**）。
+  `seedcrc/crclist/crcmatrix/crcstate` 与仿真逐位一致 → **CPU 真机算得对**）。
   2026-09-23 两轮分支优化后，仿真每迭代降到 **358,846** 周期 → **2.787 CoreMark/MHz**。
   > ⚠️ **改了流水线就必须重算 ITER，否则 CoreMark 判 invalid。**
   > **速算式：`ITER = 时钟频率 × 10s ÷ 每迭代周期数`** —— **分子是哪个频率，取决于你往哪儿烧**：
@@ -49,11 +49,22 @@
   > 382,972 时 ITER=770 = 10.92s；358,846 时 ITER=820 = **10.898 s**（本地板实测）。
   > ✅ **2026-09-23 本地盘古板实测（27 MHz，ITER=820）**：`Total ticks 294,262,913` →
   > **10.898 s**，358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**；
-  > `Correct operation validated`，四个 CRC 与仿真逐位一致。
+  > `Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 与仿真逐位一致
+  > （**`crcfinal` 不比** —— 见本节末尾 CRC 判据说明）。
   > 原始日志 `doc/board/uart_20260923_201540.txt`。
-  > ⬜ **45 MHz 版的板上实测尚未做**（2026-09-25 迁移完成时只跑到综合）——
-  > 烧 `coremark_iter1500_pll45mhz_localboard.sbit`，期望 `Total ticks ≈ 538,270,000`
-  > → ÷45e6 = **11.96 s**。**别再用 ÷27e6。**
+  > ✅ **2026-09-25 45 MHz 版板上实测通过**：`Total ticks 538,285,445` → ÷45e6 =
+  > **11.9619 s**，`Iterations 1500`，`Correct operation validated`，
+  > **358,857 拍/迭代 —— 与 27 MHz 板上实测逐位相同**（周期数与时钟无关的直接证据）。
+  > 得分 **125.40 CoreMark**，较 27 MHz 板的 75.24 **+66.7%**（= 纯时钟比 45.0005/27）。
+  > 日志 `doc/board/uart_20260925_005201.txt`。
+  > **别再用 ÷27e6** —— 那是仿真/远程平台口径。
+  >
+  > ⚠️ **CRC 判据要修正**（2026-09-25 读 CoreMark 源码后确认）：
+  > **只有 `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 四个能跨 ITER、跨时钟比对**，
+  > 它们必须逐位相同。**`crcfinal` 不能比** —— 它是 `iterate()` 里
+  > `res->crc = crcu16(crc, res->crc)` 的**跨迭代累加器**，必然随 ITER 变
+  > （实测 ITER=1→0xe714、ITER=820→0xbd59、ITER=1500→0x25b5，三个都对）。
+  > 此前"四个 CRC 与仿真逐位一致"的措辞不严，已更正。
   > ⚠️ CoreMark 打印的 `Total time (secs)` / `Iterations/Sec` 是**整数截断**
   > （`HAS_FLOAT=0`），显示 10 / 82，真实值 10.898 / 75.24 —— 一律用
   > `Total ticks ÷ 27,000,000` 自己算。
@@ -253,8 +264,9 @@
   slack 2.812、All Constraints Met、LUT 3030/FF 2185/DRM 16/APM 11**；
   仿真侧 49/1/0 与 358,846 拍**逐位不变**。分析见
   `doc/reports/2026-09-24_teammate_45mhz.md`。
-  ⬜ **仅剩板上实测未做**：烧 `coremark_iter1500_pll45mhz_localboard.sbit`，
-  期望 `Total ticks ≈ 538,270,000` ÷ 45e6 = **11.96 s** + `Correct operation validated`。
+  ✅ **板上实测已完成（2026-09-25）**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
+  `Iterations 1500`、`Correct operation validated`、358,857 拍/迭代（与 27MHz 板上逐位相同）、
+  得分 **125.40 CoreMark**。日志 `doc/board/uart_20260925_005201.txt`。
   > 顺带：队友那份里 `ipcore/unified_mem/` + `mem_init.hex` 是**未被工程引用的半成品**
   （他打算替换行为级存储器？），迁移时**故意没带**。要问清楚动向。
   > 注意那是**负收益方向** —— 单周期 BRAM 无缺失惩罚，换 IP 核不提升性能。

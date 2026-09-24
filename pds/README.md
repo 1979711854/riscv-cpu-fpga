@@ -24,15 +24,15 @@
 ## 二、交付状态（一句话）
 
 **基础任务三条全部达标，赛题硬指标（CoreMark ≥10s）已在远程平台与本地盘古板实测通过。**
-（2026-09-25 起本地板时钟迁到 45 MHz：**仿真与综合已验证，板上级待复测**，见下表。）
+（2026-09-25 起本地板时钟迁到 45 MHz：**仿真、综合与板上实测均已通过**，见下表。）
 
 | 赛题要求 | 状态 | 证据 |
 |---|---|---|
 | ① 支持 RV32I 基础整数指令集 | ✅ 全覆盖 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（含 M 扩展 8 项；唯一 FAIL 是未对齐访存，规范允许） |
 | ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ | 5 级流水线；2026-09-21 做取指重定向，分支惩罚 3 拍 → **2 拍** |
 | ③ 集成 UART / GPIO 用于系统控制与结果输出 | ✅ | 总线 + GPIO + UART 收发；演示程序仿真端到端 7/7 PASS |
-| 测评：CoreMark 运行 ≥10s | ✅ 27 MHz 版板上实测通过（ITER=820，**历史记录**）<br>⚠️ **45 MHz 版（ITER=1500）尚未上板实测** | 27 MHz 实测：`Total ticks 294,888,440` → **10.92 秒**，`Correct operation validated`，四个 CRC 与仿真逐位一致<br>⚠️ 这个 `Total ticks` 与 `doc/base_task_status.md` 记的 **294,262,913 对不上**：按 `770 × 382,972` 反算恰等于本值，推测它其实是 **382,972 时代的 ITER=770** 实测（标题里的 ITER=820 待核）<br>45 MHz 版推算 `1500 × 358,846 = 538,269,000` 拍 ÷ 45e6 = **11.96 秒**（余量 19.6%，见 `doc/resource_efficiency.md` §2） |
-| 测评：CoreMark/MHz | ✅ | **2.787**（当前设计，仿真：每迭代 358,846 周期）<br>优化前：2.380（真机 420,094 vs 仿真 420,070，差 0.0057%）<br>实际得分：27 MHz **75.25** → 45 MHz **125.42 CoreMark（+66.7%）** |
+| 测评：CoreMark 运行 ≥10s | ✅ **45 MHz 版（ITER=1500）板上实测通过**（2026-09-25）；27 MHz 版（ITER=820）亦已实测（历史记录） | 45 MHz 实测：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 秒** → **125.40 CoreMark**，`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致（日志 `doc/board/uart_20260925_005201.txt`）<br>27 MHz 历史实测：`Total ticks 294,888,440` → **10.92 秒**<br>⚠️ 这个 `Total ticks` 与 `doc/base_task_status.md` 记的 **294,262,913 对不上**：按 `770 × 382,972` 反算恰等于本值，推测它其实是 **382,972 时代的 ITER=770** 实测（标题里的 ITER=820 待核） |
+| 测评：CoreMark/MHz | ✅ | **2.787**（当前设计，每迭代 358,846 周期，仿真；板上 358,857）<br>优化前：2.380（真机 420,094 vs 仿真 420,070，差 0.0057%）<br>实际得分：27 MHz **75.25**（板上 75.24）→ 45 MHz **125.40 CoreMark（板上实测，+66.7%）** |
 
 > **2026-09-25：系统时钟已由 27 MHz 迁到 45 MHz。** 做法是用 Pango **PLL IP** 把板载
 > 27 MHz 晶振倍频；上板顶层相应改为 **`cpu_top_board`**。`.fdc` 里约束的仍是 27 MHz
@@ -46,12 +46,12 @@
 > | Setup slack | +16.122 ns | **+2.812 ns**（余量 77% → **14.5%**） |
 > | LUT / FF | 2,316 / 1,913 | **3,030 / 2,185** |
 > | 资源效率 | 1.127 | **0.920 CoreMark/MHz 每千 LUT** |
-> | 实际得分 | 75.25 CoreMark | **125.42 CoreMark（+66.7%）** |
+> | 实际得分 | 75.25 CoreMark（板上 75.24） | **125.40 CoreMark（板上实测，+66.7%）** |
 > | 时序报告 | `report_timing/cpu_top.rtr` | **`report_timing/cpu_top_board.rtr`** |
 >
 > **每迭代周期 358,846 与迁移前逐位不变**（与时钟无关），所以 **2.787 CoreMark/MHz
 > 不变** —— 得分提升**全部**来自频率的线性提升。
-> **`+66.7%` 的口径**：`125.42 / 75.25 = 45.0005 / 27 = 1.667`，即"**同一设计只提频**"
+> **`+66.7%` 的口径**：`125.40 / 75.24 ≈ 45.0005 / 27 = 1.667`，即"**同一设计只提频**"
 > 的收益（分子 2.787 没变）。**不要把提频收益与"第三轮优化的效率收益"乘成一个数** ——
 > 那是两个独立口径。
 > **资源效率 1.127 → 0.920 不是退步**：分子没变、分母因 PLL 与 `addr_result` 优化而变大，
@@ -60,7 +60,8 @@
 > ② 同批改了 `core.v` 关键路径：新增 `addr_result` 加法器，把 32×32 乘法器从
 > "未对齐判据→异常→pc_r"这条假路径上切下来）。**没做"只改约束不改 RTL"的对照综合**，
 > 所以别把增益归给其中任何单一改动。
-> ⚠️ **45 MHz 版尚未上板实测**（期望 `Total ticks ≈ 538,270,000`，四个 CRC 不变）。
+> ✅ **45 MHz 版已上板实测通过**（2026-09-25）：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**
+> → **125.40 CoreMark**，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致（`crcfinal` 随 ITER 变，不比）。
 > 详见 `doc/resource_efficiency.md` §0（结论）、§2（得分/ITER）、§3（时序）、§10（迁移记录）。
 
 ---
@@ -204,18 +205,27 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 - rv32um 的 8 项（mul/mulh/mulhsu/mulhu/div/divu/rem/remu）**一次全过**，
   给 M 扩展补上了官方测试背书（此前只有手写单测）
 
+**CoreMark（当前设计，45 MHz 板上实测，2026-09-25）**
+```
+Total ticks      : 538285445     → 实际 11.9619 秒（÷ 45,000,000）→ 125.40 CoreMark
+Iterations       : 1500
+seedcrc/crclist/crcmatrix/crcstate 逐位一致（crcfinal 随 ITER 变，不比）
+Correct operation validated.
+```
+原始日志：`doc/board/uart_20260925_005201.txt`。
+
 **CoreMark（27 MHz 时代的远程平台实测 —— 历史记录，不是当前设计的判据）**
 ```
 Total ticks      : 294888440     → 实际 10.92 秒
 Iterations       : 770
-seedcrc/crclist/crcmatrix/crcstate 四个 CRC 与仿真逐位一致
+seedcrc/crclist/crcmatrix/crcstate 与仿真逐位一致
 Correct operation validated.
 ```
 
 > 这块日志属于**取指重定向之后、第三轮优化之前（382,972）** 的镜像：`Total ticks`
 > 与 `Iterations: 770` 自洽（`770 × 382,972 = 294,888,440`），**标题里的 ITER=820 疑为笔误，待核**。
-> 当前设计（358,846）的 27 MHz 板上实测（ITER=820）记在 `doc/base_task_status.md`；
-> **45 MHz 版（ITER=1500）尚未上板实测**。
+> 当前设计（358,857 拍/迭代）的 27 MHz 板上实测（ITER=820，10.898 s / 75.24 CoreMark）
+> 记在 `doc/base_task_status.md`；**45 MHz 版（ITER=1500）已上板实测，见上**。
 
 **时序（当前：45 MHz 约束 + `addr_result` 关键路径优化，2026-09-25）**
 ```
@@ -271,7 +281,7 @@ Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 | `ma_data` 未对齐访问 | **唯一的 FAIL**（testnum 1，确定性）。规范允许实现不支持未对齐访存，属架构取舍。未对齐通路仍无专门测试覆盖（见 `doc/base_task_status.md` §已知限制） |
 | **演示程序上板** | 目前**只在仿真里验证过**。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得换本地盘古板 |
 | **GPIO 引脚未分配** | `cpu_top` 的 `led[7:0]` / `key[7:0]` / `uart_rx` 共 17 个端口**没有位置约束**（`.fdc` 里被注释掉了）。跑 CoreMark 无影响，但 P&R 只做时序告警就放过去了 |
-| **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：当前设计（45 MHz）LUT **3,030**，**CoreMark/LUTs = 0.920**（主口径：归一化性能/千 LUT）。<br>比 27 MHz 版的 2,316 / 1.127 **低，但不是退步** —— 分子（2.787 CoreMark/MHz）没变、分母因 PLL 与 `addr_result` 优化变大，本质是"**用面积换频率**"，换来完整得分 **+66.7%**（75.25 → 125.42 CoreMark，恰为时钟比 45.0005/27） |
+| **资源效率** | 已测并成文，见 `doc/resource_efficiency.md`：当前设计（45 MHz）LUT **3,030**，**CoreMark/LUTs = 0.920**（主口径：归一化性能/千 LUT）。<br>比 27 MHz 版的 2,316 / 1.127 **低，但不是退步** —— 分子（2.787 CoreMark/MHz）没变、分母因 PLL 与 `addr_result` 优化变大，本质是"**用面积换频率**"，换来完整得分 **+66.7%**（75.25 → 125.40 CoreMark 板上实测，恰为时钟比 45.0005/27） |
 
 ### 中优先级
 

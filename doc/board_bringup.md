@@ -177,7 +177,7 @@ D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe -project RV32I_1.pds -run gen_bit_st
 ### 烧完立刻开串口
 
 ```powershell
-# CoreMark 一轮约 11 秒，慢一拍就错过了，所以要带时长
+# CoreMark 一轮约 12 秒（实测 11.9619 s），慢一拍就错过了，所以要带时长
 powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
 
 # 演示程序可以一直挂着，Ctrl+C 停
@@ -211,32 +211,39 @@ KEY=0x00 LED=0x00
 
 ### CoreMark 版
 
-约 12 秒后打印：
+**约 12 秒后**打印。下面是 2026-09-25 板上实测的**原始输出**
+（日志 `doc/board/uart_20260925_005201.txt`）：
 
 ```
 CoreMark Size    : 666
-Total ticks      : <约 538270000>
+Total ticks      : 538285445
 Total time (secs): 11
+Iterations/Sec   : 136
 Iterations       : 1500
 Compiler flags   : -O2 -march=rv32im -mabi=ilp32
 seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
+crcfinal         : 0x25b5
 Correct operation validated.
 ```
 
-⚠️ **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`），
-显示 11 而不是 11.96。**真实时长要自己算：**
+实测：538,285,445 ÷ 45,000,000 = **11.9619 s** → **125.40 CoreMark**（满足赛题 ≥10 s）。
+
+⚠️ **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
+显示 `11`（实际 11.9619）、`136`（= 1500 ÷ 11 的截断值，**真实 125.40**）。
+**真实时长要自己算：**
 
 ```
 板上时长 = Total ticks ÷ 45,000,000      ← 板上是 45 MHz
 ```
 
-1500 × 358,846 = 538,269,000 拍 → **11.96 s**（余量 19.6%，满足 ≥10 s）。
-
 > **别再用 `÷27e6`** —— 那是 27 MHz 时代（仿真 / 远程平台）的口径。
 > 本文档里 `294,262,913 ÷ 27e6 = 10.898 s` 一类数字是**历史记录**，不是现在的判据。
 
-四个 CRC（`0xe714 / 0x1fd7 / 0x8e3a / 0xe714`）与仿真逐位一致 —— 这是
-"CPU 真机算得对"的判据，**换时钟不该改变它们**。
+`seedcrc / crclist / crcmatrix / crcstate`（`0xe9f5 / 0xe714 / 0x1fd7 / 0x8e3a`）
+与仿真逐位一致 —— 这是"CPU 真机算得对"的判据，**换时钟不该改变它们**。
+
+⚠️ **`crcfinal` 不能拿来比对** —— 它跨迭代累加、**随 ITER 变**：
+ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`，**三个都正确**。
 
 ---
 
@@ -250,6 +257,7 @@ Correct operation validated.
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[1:0]` 被 `pll_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
+| **`Iterations/Sec` 显示 136** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（1500 ÷ 11 ≈ 136）。**真实得分是 125.40 CoreMark**（= 1500 ÷ 11.9619）。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。

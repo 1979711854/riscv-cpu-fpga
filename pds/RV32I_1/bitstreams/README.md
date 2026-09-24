@@ -34,7 +34,7 @@ scripts\build_bitstream.ps1 demo        # 演示程序版
 
 | 文件 | 固件 / 时钟 | 用途 |
 |---|---|---|
-| `coremark_iter1500_pll45mhz_localboard.sbit` | CoreMark v1.0，ITER=1500，**45 MHz**（PLL） | **当前跑分版**。md5 `36d2687d…`，综合 2026-09-25，slack +2.812 ns |
+| `coremark_iter1500_pll45mhz_localboard.sbit` | CoreMark v1.0，ITER=1500，**45 MHz**（PLL） | **当前跑分版**。md5 `36d2687d…`，综合 2026-09-25，slack +2.812 ns。**已板上实测通过：`Total ticks 538,285,445` ÷ 45e6 = 11.9619 s / 125.40 CoreMark**（日志 `doc/board/uart_20260925_005201.txt`） |
 | `coremark_iter820_localboard.sbit` | CoreMark v1.0，ITER=820，27 MHz | 跑分（板上 10.898 s，见 `doc/board/uart_20260923_201540.txt`）。**旧时钟口径，留着做对照** |
 | `demo_led_remap_localboard.sbit` | 演示程序（LED 已按开关位置重排），27 MHz | 现场演示、录像。**注意也是 27 MHz 版** |
 

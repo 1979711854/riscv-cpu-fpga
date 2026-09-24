@@ -152,7 +152,30 @@ Correct operation validated. See README.md for run and reporting rules.
 - **实际时长 = 294,065,438 ÷ 27MHz = 10.89 秒** ✅ 满足赛题 ≥10s
   （`Total time (secs): 10` 是整数截断；`Iterations/Sec: 70` = 700 ÷ 10 也是按截断后的 10 算的）
 - **`Correct operation validated`** = CoreMark 自己判定 CRC 全部通过
-- 四个中间 CRC 与仿真**逐位一致** → **CPU 在真实硬件上算得对的最强证据**
+- `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 与仿真**逐位一致** → **CPU 在真实硬件上算得对的最强证据**
+  （⚠️ **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`）
+
+### 板上实测结果（本地盘古板，45 MHz，ITER=1500）—— **当前设计**（2026-09-25）
+
+```
+CoreMark Size    : 666
+Total ticks      : 538285445
+Total time (secs): 11            ← 整数截断，实际 11.9619 s
+Iterations/Sec   : 136           ← 废数（= 1500/11），实际 125.40
+Iterations       : 1500
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0x25b5        （随 ITER 变，不比）
+Correct operation validated. See README.md for run and reporting rules.
+```
+
+- **538,285,445 ÷ 45 MHz = 11.9619 秒** ✅ 满足赛题 ≥10s → **125.40 CoreMark**（= 1500 ÷ 11.9619）
+- 每迭代 **358,857** 周期（538,285,445 ÷ 1500）—— **与 27 MHz 板上实测逐位相同**
+  （时钟翻倍而周期数不变 → 证明周期数与时钟无关，仿真的 358,846 也可外推到板上）
+- `seedcrc / crclist / crcmatrix / crcstate` 与仿真**逐位一致**
+- 原始日志：`doc/board/uart_20260925_005201.txt`（30 秒内跑了 2 轮，`Total ticks` 逐位相同）
 
 ### 每迭代周期数怎么算（别踩这个坑）
 
@@ -192,6 +215,7 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 
 ```
 本地盘古板（45 MHz）: 450,000,000 / 358,846 ≈ 1254  → 取 ITER=1500（11.96s，余量 19.6%）
+                                                     → **已板上实测 11.9619 s / 125.40 CoreMark**
 仿真 / 远程平台(27MHz): 270,000,000 / 358,846 ≈  752  → 取 ITER=820 （10.90s，余量 9.0%）
 ```
 

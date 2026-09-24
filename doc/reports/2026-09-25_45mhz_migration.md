@@ -8,7 +8,7 @@
 
 ## 0. 结论
 
-**迁移完成，§5 的 6 项验证过了 5 项，第 6 项（板上实测）待做。**
+**迁移完成，§5 的 6 项验证全部通过（含第 6 项板上实测）。**
 
 | # | 验证项 | 结果 |
 |---|---|---|
@@ -17,7 +17,7 @@
 | 3 | `run_sim.ps1 -NoWave` | ✅ 6 个测试台全过（exit 0）|
 | 4 | `run_own_tests.ps1` | ✅ `exceptions` PASS、`timer_irq` PASS |
 | 5 | PDS 综合布线 | ✅ **45.0005 MHz / 可达 51.5198 MHz / slack +2.812 / All Constraints Met** |
-| 6 | 板上实测 | ⬜ **待做** —— 见 §4 |
+| 6 | 板上实测 | ✅ **`Total ticks 538,285,445` → 11.9619 s / 125.40 CoreMark**；`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致 —— 见 §4.1 |
 
 **第 2 项是本次迁移最重要的证据**：`addr_result` 属于纯组合旁路，
 周期数与迁移前**逐位相同**，所以 `doc/resource_efficiency.md` 里那套
@@ -93,7 +93,7 @@ scripts\run_coremark.ps1 -Iter 1500 -SkipSim
 
 ## 4. 待办
 
-### 4.1 ⬜ 板上实测（唯一的未完成验证）
+### 4.1 ✅ 板上实测（2026-09-25 已完成）
 
 ```powershell
 # 烧 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit
@@ -101,23 +101,56 @@ scripts\run_coremark.ps1 -Iter 1500 -SkipSim
 powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
 ```
 
-**判据（与 27 MHz 时代不同，别搞错）**：
+**实测结果**（原始日志 `doc/board/uart_20260925_005201.txt`，30 秒内跑了 2 轮、
+`Total ticks` 两轮**逐位相同**）：
 
-| | 27 MHz（已完成） | **45 MHz（待测）** |
+```
+Total ticks      : 538285445
+Total time (secs): 11            ← 整数截断，实际 11.9619 s
+Iterations/Sec   : 136           ← 废数（= 1500/11），实际 125.40
+Iterations       : 1500
+seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
+crcfinal         : 0x25b5
+Correct operation validated.
+```
+
+| 指标 | 值 |
+|---|---|
+| 板上时长 | 538,285,445 ÷ **45,000,000** = **11.9619 s**（满足赛题 ≥10s）|
+| 每迭代周期 | 538,285,445 ÷ 1500 = **358,857** |
+| 板上得分 | 1500 ÷ 11.9619 = **125.40 CoreMark** |
+| CoreMark/MHz | **2.787**（与仿真一致）|
+| 对比 27 MHz 板上实测（ITER=820，`294262913`，75.24 CoreMark）| **+66.7%** |
+
+**判据对照（与 27 MHz 时代不同，别搞错）**：
+
+| | 27 MHz（已实测） | **45 MHz（已实测）** |
 |---|---|---|
 | ITER | 820 | **1500** |
-| 期望 `Total ticks` | 294,262,913 | **≈ 538,270,000**（= 1500 × 358,846）|
-| 时长算法 | ÷ 27e6 = 10.898 s | **÷ 45e6 = 11.96 s** |
-| 四个 CRC | `e714 / 1fd7 / 8e3a / e714` | **必须完全相同** |
+| 期望 `Total ticks` | 294,262,913 | 期望 ≈ 538,270,000，**实测 538,285,445** |
+| 时长算法 | ÷ 27e6 = 10.898 s | **÷ 45e6 = 11.9619 s** |
+| 四个子 CRC | `e9f5 / e714 / 1fd7 / 8e3a` | **完全相同** ✅ |
 
 **CRC 不变是本项的核心判据** —— 时钟变了、ITER 变了，程序算的还是同一件事。
 若 CRC 对不上，说明 45 MHz 下某处出了问题（而不是"时钟没生效"）。
 
-**另外两个辅助判据**：
-* `led[0]`（`pll_locked`）应**常亮**。不亮 = PLL 没锁 = CPU 被一直复位。
-* 串口**不乱码** = 45 MHz 分频（390）对上了。乱码优先怀疑固件是 27 MHz 那版。
+> ⚠️ **CRC 判据口径更正（此前措辞不严）**：判据是
+> **`seedcrc` / `crclist` / `crcmatrix` / `crcstate` 四个逐位一致** —— 它们跨 ITER、跨时钟不变。
+> **`crcfinal` 不能拿来比对** ❌。读 CoreMark 源码（`third_party/coremark/core_main.c` 的
+> `iterate()`）可确认：`res->crc = crcu16(crc, res->crc)` 是**跨迭代累加**的
+> （子 CRC 只在第 0 轮快照），所以它**随 ITER 变** ——
+> **ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`，三个都正确**。
 
-跑完把日志落盘到 `doc/board/`，并更新 `doc/board/README.md` 的"待补"标记。
+**另外两个辅助判据也都通过**：
+* `led[0]`（`pll_locked`）**常亮** —— PLL 已锁定（否则 CPU 被一直复位）。
+* 串口**不乱码** —— 45 MHz 分频（390）对上了（否则优先怀疑固件是 27 MHz 那版）。
+
+日志已落盘到 `doc/board/uart_20260925_005201.txt`，`doc/board/README.md` 的"待补"标记已更新。
+
+> ⭐ **最重要的新事实**：每迭代周期在两个时钟下**逐位相同** ——
+> 27 MHz 板上 358,857、45 MHz 板上 358,857，仿真 358,846。
+> **时钟翻倍而周期数不变**，直接证明了"周期数与时钟无关"，
+> 也是"仿真数据可外推到板上"的依据。
 
 ### 4.2 问队友：`ipcore/unified_mem` 是要做什么
 
@@ -155,7 +188,8 @@ powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -
    而 2.611 是**第二轮优化后、第三轮之前**的效率，与 2.787 不是同一版设计。
    同一处原文的 `2.787 × 47.8126 ≈ 124.84` 犯了同样的错（124.84 = 2.611 × 47.81）。
    > **本次迁移一度把这个错抄进了多处文档**（写成"实际得分 70.50 → 125.42，+77.9%"）。
-   > 已全部更正为 **75.25 → 125.42 = +66.7%**，恰好等于纯时钟比 `45.0005 / 27`。
+   > 已全部更正为 **75.25 → 125.42（推算）= +66.7%**，恰好等于纯时钟比 `45.0005 / 27`
+   > （板上实测得分 **125.40**，见 §4.1 —— 与推算值差 0.02%）。
    > **教训**：同一段里给"CoreMark/MHz"和"×频率"两个数时，**乘一遍再落笔** ——
    > 这个错从 2026-09-21 就在文档里躺着，靠"看起来合理"是发现不了的。
    > 本次是子代理在做别的改动时顺手验算才抓到的。

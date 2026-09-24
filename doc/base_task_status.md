@@ -56,12 +56,12 @@
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（本地盘古板实测，27 MHz 时代，ITER=820）** | `Total ticks 294,262,913` → **实际 10.898 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致。<br>原始串口日志：`doc/board/uart_20260923_201540.txt`。**上板教程：`doc/board_bringup.md`**<br>⚠️ 这是**系统时钟迁到 45 MHz 之前**（板载 27 MHz）的实测记录；**45 MHz 版（ITER=1500，推算 11.96 秒）尚未上板实测** |
+| **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` ✅ 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
 | **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%**。<br>迁到 45 MHz 后每迭代周期**逐位不变**（与时钟无关），所以 2.787 CoreMark/MHz 也不变 |
-| **CoreMark 实际得分**（= 2.787 × 系统时钟） | 27 MHz 版 **75.25 CoreMark** → 45 MHz 版 **125.42 CoreMark（+66.7%，恰为时钟比 45.0005/27，即"同一设计只提频"的收益）**（口径见 `doc/resource_efficiency.md` §2/§3） |
+| **CoreMark 实际得分**（= 2.787 × 系统时钟） | 27 MHz 版 **75.25 CoreMark**（板上实测 75.24，ITER=820）→ 45 MHz 版 **125.40 CoreMark（板上实测，+66.7%，恰为时钟比 45.0005/27，即"同一设计只提频"的收益）**（口径见 `doc/resource_efficiency.md` §2/§3） |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
-| 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
+| 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **逐位一致**（**`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`） |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
 | 单元测试 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` `tb_control` `tb_gpio` `tb_uart_rx` 全部 PASS |
 
