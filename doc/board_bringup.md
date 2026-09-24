@@ -66,53 +66,63 @@ powershell -NoProfile -Command "Get-CimInstance Win32_PnPEntity | Where-Object {
 
 ---
 
-## 3. 流程 A：烧现成比特流（最常用）
+## 3. 生成要烧的比特流：**一条命令**
 
-已经归档好的比特流在 `pds/RV32I_1/bitstreams/`：
+⚠️ **仓库里没有任何 `.sbit` 文件**（被 `.gitignore` 排除，每个 9 MB）。
+**队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
-| 文件 | 固件 | 用途 |
-|---|---|---|
-| `demo_led_remap_localboard.sbit` | 演示程序（读按键→写 LED→串口打印） | 现场演示、录像 |
-| `coremark_iter820_localboard.sbit` | CoreMark v1.0，ITER=820 | 跑分 |
+```powershell
+scripts\build_bitstream.ps1 coremark    # 跑分版（CoreMark ITER=820，板上约 10.9 s）
+scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
+```
 
-> `.sbit` 被 `.gitignore` 排除（每个 9 MB），**不进仓库**；同目录 `README.md` 写了怎么重新生成。
+脚本做三件事：生成固件 → 同步进 PDS 工程并**校验 `mem.hex` 字数** → 综合布线出比特流。
+约 5 分钟，产物固定是：
 
-烧录：
+```
+pds\RV32I_1\generate_bitstream\cpu_top_board.sbit
+```
+
+然后烧它：
 
 ```
 PDS → TOOL → Programmer（下载）
   器件：PG2L200H
-  配置文件：pds\RV32I_1\generate_bitstream\cpu_top_board.sbit
+  配置文件：<上面那个路径>
 ```
 
-⚠️ **文件名是 `cpu_top_board.sbit`**（不是 `cpu_top.sbit`），别误选 `generate_bitstream/bak/` 里的旧文件。
+### ⚠️ 为什么必须用脚本，而不是"直接烧 generate_bitstream 里现成的"
 
-烧完立刻看串口（CoreMark 一轮约 11 秒，慢一拍就错过了）：
+**那个文件名看不出里面是哪个固件** —— 它只代表「最后一次综合的那版」。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
-```
+> **2026-09-23 实踩**：想烧 CoreMark 跑分版，在 Programmer 里**只点了 Program、
+> 没重新浏览文件**（它沿用了上次的路径 `generate_bitstream\cpu_top_board.sbit`），
+> 而那份是上一版的**演示程序**。现象：烧完按按键有反应，串口打印 `KEY=0x.. LED=0x..`，
+> 完全没有跑分输出。文件名叫 `cpu_top_board` 看着像"当前设计"，**完全看不出来是哪个固件**。
 
----
+还有一个更隐蔽的：**PDS 不检查 `mem.hex` 的时间戳**。固件没同步过去（或同步的是别的程序），
+它照样综合出一个"能烧、但板上跑的是旧程序"的比特流，全程零报错。
+`build_bitstream.ps1` 里那道 `mem.hex` 字数校验就是挡这个的。
 
-## 4. 流程 B：从零重新生成比特流
-
-**什么时候必须走这一步**：改了 `rtl/**`、改了 `RV32I_1.fdc`、或者换了固件（CoreMark ↔ 演示程序）。
+### 想自己一步步来？
 
 ```powershell
 # ① 生成固件（二选一）
 scripts\run_coremark.ps1 -Iter 820 -SkipSim      # 跑分版
 scripts\run_demo.ps1 -SkipSim                    # 演示程序版
 
-# ② 把固件同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
+# ② 同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
 scripts\sync_firmware.ps1
+# 校验：CoreMark = 8418 行（4209 字）；演示程序 = 326 行（163 字）
 
-# ③ 命令行综合布线出比特流（约 5 分钟）
+# ③ 综合布线出比特流（约 5 分钟）
 cd pds\RV32I_1
 D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe -project RV32I_1.pds -run gen_bit_stream
 ```
 
 也可以在 PDS GUI 里逐个点 Compile / Synthesize / Device Map / Place & Route / Generate Bitstream。
+
+**什么时候必须重新生成**：改了 `rtl/**`、改了 `RV32I_1.fdc`、或者换了固件（跑分 ↔ 演示）。
 
 **几个关于 PDS 命令行的实测事实**：
 
@@ -122,11 +132,25 @@ D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe -project RV32I_1.pds -run gen_bit_st
   约 5 分钟，不是 1 分钟。
 * `-file <tcl>` 与 `-project` **不能同时用**（会报 `Only one of '-file' or '-project' can be specified`）。
 * **PDS 每次 `gen_bit_stream` 都会先清空 `generate_bitstream/`**，上一版被挪进 `bak/`。
-  所以重要的比特流要及时归档到 `bitstreams/`。
 
 ---
 
-## 5. 上电后该看到什么
+### 烧完立刻开串口
+
+```powershell
+# CoreMark 一轮约 11 秒，慢一拍就错过了，所以要带时长
+powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
+
+# 演示程序可以一直挂着，Ctrl+C 停
+powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4
+```
+
+> **提交比赛作品时**：`.sbit` 走 git 进不了仓库（被 gitignore），要作为**离线交付物**
+> 单独打包 —— 用 `build_bitstream.ps1` 生成一份干净的、记下它的 md5。
+
+---
+
+## 4. 上电后该看到什么
 
 ### 演示程序版
 
@@ -165,7 +189,7 @@ Correct operation validated.
 
 ---
 
-## 6. 排障速查
+## 5. 排障速查
 
 | 现象 | 最可能原因 |
 |---|---|
@@ -181,21 +205,21 @@ Correct operation validated.
 
 ---
 
-## 7. 已知的坑（都踩过）
+## 6. 已知的坑（都踩过）
 
 1. **PDS 不检查 `mem.hex` 的时间戳**。跑过 `run_riscv_tests.ps1` 或 `run_demo.ps1` 之后再
    `sync_firmware.ps1`，工程里就留下别的程序的镜像；此后无论怎么改 RTL、重新综合，
    **板上跑的都还是那个旧程序，而 PDS 全程零报错**。
    判据：核对 `pds\RV32I_1\mem.hex` 的字数与预期是否相当（CoreMark = 4209 字，演示程序 = 163 字）。
 2. **上板的 top module 是 `cpu_top_board`，不是 `cpu_top`** —— 前者把 `pc[31:0]` / `done`
-   挡在外面。原因见 §8。
+   挡在外面。原因见 §7。
 3. **`.fic` 与 `.sbit` 必须来自同一次综合布线**（做 ILA 时）。RTL 一变，旧 `.fic` 就作废。
 4. **未在 `.fdc` 里指定 LOC 的输出端口会被 PDS 自动布到 BANKR5 的任意引脚**上
    （实测 `pc[0]→M2`）。BANKR5 接的是 SFP/HSST，所以上板顶层不引出这类端口。
 
 ---
 
-## 8. 为什么有 `cpu_top_board` 这一层
+## 7. 为什么有 `cpu_top_board` 这一层
 
 `rtl/top/cpu_top_board.v` 只做一件事：**包住 `cpu_top`，不引出 `pc[31:0]` 和 `done`**，
 并把 `key[7:4]` 恒定接 1。
@@ -204,6 +228,6 @@ Correct operation validated.
   `tb_coremark` 的 `+TRACE`/`+PROF` 逐拍 dump 和各测试台的 TIMEOUT 诊断
   （`$display("TIMEOUT (pc=0x%h)", pc)`）都依赖它。删掉会废掉
   `doc/ila_analysis.md` 里那套分析方法。
-* **为什么要挡在外层**：见 §7 第 4 条。
+* **为什么要挡在外层**：见 §6 第 4 条。
 
 所以：**仿真继续用 `cpu_top`，上板用 `cpu_top_board`**。两者行为完全一致，只是端口裁剪不同。

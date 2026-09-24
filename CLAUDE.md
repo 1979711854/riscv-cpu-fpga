@@ -114,6 +114,7 @@
 - `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归) `run_demo.ps1` `sync_firmware.ps1`
                  `run_own_tests.ps1`(**自写测试**：汇编 → 跑 → 汇总) `elf2mem.py`(出 imem/dmem/mem 三种 hex)
                  `trace2svg.py`(逐拍 trace → 流水线波形 SVG) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
+                 `build_bitstream.ps1`(**上板唯一入口**：固件→同步→综合出 `.sbit`，一条命令)
                  `serial_monitor.ps1`(**串口抓取**，零依赖；默认落盘 `doc/board/uart_<时间戳>.txt`)
 - `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
                  `bitstreams/` 归档的 `.sbit`（`.sbit` 被 gitignore，只入库 README）
@@ -136,6 +137,10 @@
   - `scripts\run_demo.ps1 -SkipSim` —— 演示程序固件，同上
   - `scripts\run_riscv_tests.ps1` —— rv32ui 全量回归 + 汇总（**需 riscv-tests 源码**，见待办）
   - `scripts\sync_firmware.ps1` —— 把 `sim/programs/*.hex` 同步到 PDS 工程供 BRAM 初始化
+  - **`scripts\build_bitstream.ps1 coremark|demo`** —— **上板唯一入口**：
+    生成固件 → 同步到 PDS 工程（并校验 `mem.hex` 字数）→ 综合布线出 `.sbit`。
+    **`generate_bitstream\cpu_top_board.sbit` 这个名字看不出里面是哪个固件**，
+    别猜，用这条命令确定。详见 `doc/board_bringup.md` §3
 
 ## 关键约定（都是踩过的坑）
 1. **iverilog 14 严格要求"先声明后使用"**：信号声明必须出现在使用之前，否则报 `Unable to bind ... declaration after use`（队友原始代码踩过，补丁见 `doc/patches/`）。改 RTL 时务必注意。
@@ -197,6 +202,12 @@
     只隔 1 条指令，从 WB 提交会让 `mret` 读到复位值 0 → 跳回 `_start` → 50 个 TIMEOUT。
 22. **`csr_wr_illegal` 只看地址，必须与"这条指令真的在写吗"相与** ——
     `csrr a0, mhartid` 是 RS 且 rs1=x0、根本不写，却被判成非法 → init 每轮 trap。
+23. **`.sbit` 不进仓库，且 `generate_bitstream/cpu_top_board.sbit` 看不出是哪个固件**。
+    `.sbit` 被 gitignore（9 MB/个），**队友 clone 下来一个比特流都没有**，必须自己生成；
+    而那个固定文件名只代表"最后一次综合的那版"。PDS 的 Programmer 会记住上次的路径，
+    所以"只点 Program 不重新浏览"极易烧成上一版 —— **2026-09-23 实踩：想烧跑分版
+    结果烧成了演示程序版**（现象：按键有反应、串口是 `KEY=0x..`）。
+    判据：`scripts\build_bitstream.ps1 coremark|demo` 会打印 md5，**别靠文件名猜**。
 
 ## 待办
 - **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
