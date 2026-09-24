@@ -304,7 +304,7 @@ CLKOUT0 = VCO ÷ RATIO0
 
 ---
 
-## 4. 其他高阶任务（需要先决策）
+## 4. 其他高阶任务的现状与决策记录
 
 ### 4.1 高阶任务② 的完成度 —— **只差本任务书的 §2**
 
@@ -443,13 +443,13 @@ powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -
 
 ## 7. 踩过的坑（**精华版，别重犯**）
 
-### 6.1 环境与语法
+### 7.1 环境与语法
 
 1. **iverilog 14 严格要求"先声明后使用"** —— 信号声明必须在使用之前
 2. **仿真不要编译 `rtl/mem/`** —— 测试台用 `` `include "mem_model.vh" `` 自带行为模型，重复定义会冲突
 3. **Verilog 字符串里没有 `\r`** —— 换行只能用 `16'h0D0A` 拼
 
-### 6.2 会静默出错的（最危险）
+### 7.2 会静默出错的（最危险）
 
 4. **测试台悬空输入是 Z 不是 0** —— 曾经漏接 `.irq_timer`，导致中断行为完全随机。
    **症状极具迷惑性：同一份 RTL，调试台跑正常、`tb_riscv` 跑飞。两个测试台结果不一致时，先怀疑接线不一致，别怀疑 RTL。**
@@ -462,14 +462,14 @@ powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -
 8. **`csr_wr_illegal` 只看地址，必须与"这条指令真的在写吗"相与** ——
    `csrr a0, mhartid` 是 RS 且 rs1=x0、根本不写，却被判成非法 → init 每轮 trap
 
-### 6.3 流水线承重逻辑（改分支预测时尤其相关）
+### 7.3 流水线承重逻辑（改分支预测时尤其相关）
 
 9. **取指补偿是承重的**：stall 时是 `imem_addr` 退回 `if_addr_d`，**不是 `pc_r` 后退**。搞反会复现"指令被复制执行"
 10. **必须寄存"实际生效的重定向"（`id_redirect`），不是预测意图（`id_pred_taken`）** ——
     两者在 stall / `ex_flush` / `div_stall` 时会分叉。寄存错了会出现"记着预测过、但 `pc_r` 根本没重定向"，
     EX 级据此判定预测正确而不冲刷 → **流水线沿错误路径一路跑下去**。（`core.v` 有注释，改预测时必读）
 
-### 6.4 板上
+### 7.4 板上
 
 11. **上板 top module 是 `cpu_top_board`，不是 `cpu_top`**（前者把 `pc[31:0]`/`done` 挡在板外，
     因为 PDS 会把未约束输出自动布到 BANKR5 的真实引脚上）。**仿真仍用 `cpu_top`**
