@@ -41,7 +41,7 @@
 `rv32um` 那 8 个由队友用同样方式编译（原件在
 `riscv32-FPGA-pds/riscv-tests-run/build_um/`，编译参数未单独记录）。
 
-> ⚠️ **上游的确切 commit 未知**（源码目录 `D:\riscv-tests` 已不在本机）。
+> [!] **上游的确切 commit 未知**（源码目录 `D:\riscv-tests` 已不在本机）。
 > 这也正是这批二进制要入库的原因 —— 它们就是被钉住的那一版。
 
 ## 用法
