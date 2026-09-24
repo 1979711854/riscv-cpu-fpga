@@ -15,7 +15,7 @@
 | `board_bringup.md` | **上板教程** —— 接线（两根 USB 线）、引脚表、烧录两个流程、串口抓取、排障速查 |
 | `board/` | **板上实测证据** —— 串口原始日志 + 索引（CoreMark ITER=820 板上 10.898 s） |
 | `figures/` | 流水线时序波形图（`pipeline_*.svg` / `.png`） |
-| `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`） |
+| `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`、**`2026-09-24_teammate_45mhz.md`（待迁移）**） |
 | `paper/` | 论文撰写思路与获奖策略 |
 | `待修改清单.md` | 队友写的口径差异清单（已逐节处理，保留作"当时判断依据"的记录） |
 | `patches/` | 给队友的兼容补丁（历史记录） |

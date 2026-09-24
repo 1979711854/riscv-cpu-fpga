@@ -210,6 +210,12 @@
     判据：`scripts\build_bitstream.ps1 coremark|demo` 会打印 md5，**别靠文件名猜**。
 
 ## 待办
+- ⬜ **【高】迁移队友的 45 MHz 改动** —— 队友把系统时钟从 27 MHz 提到 **45 MHz**
+  （PLL 倍频），并加了一处关键路径优化（`core.v` 里 `addr_result` 把 32×32 乘法器
+  从"未对齐判据→异常→pc_r"假路径上切下来）。他那边综合结果：**约束 45.0005 MHz、
+  可达 51.52 MHz、All Constraints Met、LUT 3030/FF 2185**，CoreMark ITER 已重算为 1500。
+  **完整分析 + 迁移方案见 `doc/reports/2026-09-24_teammate_45mhz.md`**（走分支迁移，
+  别直接覆盖）。来源目录：`C:\Users\zjn\Desktop\RV32I\RV2_1\riscv-cpu-fpga`。
 - **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
   **远程平台出 JTAG 通道与波形界面，`.fic` 探针描述文件要本地 PDS 用 Fabric Inserter 生成**。
   流程：加防优化属性（`/* synthesis syn_keep=1 */`）→ Compile/Synthesize → TOOL → Inserter
