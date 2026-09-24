@@ -256,6 +256,21 @@
 27. **板上跑完 CoreMark 的时长 = `Total ticks ÷ 45,000,000`**（不再是 ÷27e6）。
     27e6 只对**仿真和远程平台**成立。文档里旧的 `294,262,913 ÷ 27e6 = 10.898s`
     是 27MHz 时代的历史记录，别拿来当现在的判据。
+28. ⛔ **`unified_mem` 这个名字指两样完全不同的东西，删之前必须看清路径**：
+    * **`rtl/mem/unified_mem.v`（我们仓库）= 统一存储器本体，承重，删了 CPU 就没存储器**
+      （`.pds` 正引用它；`sim/mem_model.vh` 是它的仿真版）。**永远不要删。**
+    * `pds/.../ipcore/unified_mem/`（**只在队友桌面那份导出目录里**）= 队友用 IP Compiler
+      生成 Pango 双口 BRAM 的**失败尝试**，`.pds` 从未引用。**这个才是可删的**
+      （含 `mem_init.hex`、`ip_backup/`，约 2 MB）。
+    2026-09-25 队友确认过它"是添加 IP 核失败的产物，可删"。
+    ⚠️ 这句话**只针对后者** —— 因为名字一样，转述时极易被理解成"把 unified_mem 删掉"，
+    那会把存储器干掉。**转述给别人时务必带上路径。**
+29. **判 CoreMark 的 CRC 只看 `seedcrc`/`crclist`/`crcmatrix`/`crcstate` 四个，
+    `crcfinal` 不能比** —— 它是 CoreMark `iterate()` 里的**跨迭代累加器**，
+    必然随 ITER 变（实测 ITER=1→`0xe714`、820→`0xbd59`、1500→`0x25b5`，**三个都对**）。
+    依据见 `third_party/coremark/core_main.c`：`res->crc = crcu16(crc, res->crc)` 在循环里，
+    而 `if (i == 0) res->crclist = res->crc;` 只在第 0 轮快照。
+    不知道这条的话，看到 `crcfinal` 变了会误判成回归。
 
 ## 待办
 - ✅ **队友的 45 MHz 改动已迁移**（2026-09-25，分支 `feat/pll-45mhz`）——
@@ -267,9 +282,10 @@
   ✅ **板上实测已完成（2026-09-25）**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
   `Iterations 1500`、`Correct operation validated`、358,857 拍/迭代（与 27MHz 板上逐位相同）、
   得分 **125.40 CoreMark**。日志 `doc/board/uart_20260925_005201.txt`。
-  > 顺带：队友那份里 `ipcore/unified_mem/` + `mem_init.hex` 是**未被工程引用的半成品**
-  （他打算替换行为级存储器？），迁移时**故意没带**。要问清楚动向。
-  > 注意那是**负收益方向** —— 单周期 BRAM 无缺失惩罚，换 IP 核不提升性能。
+  > 顺带：队友那份里 `ipcore/unified_mem/`（+ `mem_init.hex`、`ip_backup/`）**已确认是
+  > "加 IP 核失败"的产物，可删**（队友 2026-09-25 确认）。迁移时**故意没带**，
+  > 所以我们仓库里本来就没有。**别把它和 `rtl/mem/unified_mem.v` 搞混 —— 见关键约定 28。**
+  > 另外那本来就是**负收益方向**（单周期 BRAM 无缺失惩罚，换 IP 核不提升性能）。
 - **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
   **远程平台出 JTAG 通道与波形界面，`.fic` 探针描述文件要本地 PDS 用 Fabric Inserter 生成**。
   流程：加防优化属性（`/* synthesis syn_keep=1 */`）→ Compile/Synthesize → TOOL → Inserter
