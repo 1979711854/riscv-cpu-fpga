@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
-// UART TX：8N1，波特率 115200 @ 27MHz（分频 234，误差 0.16%）
+// UART TX：8N1，115200 波特。DIV = f_clk/115200，由上层传入
+// （27MHz→234，误差 0.16%；45MHz→390）：见 rtl/top/cpu_top.v 的 UART_DIV。
 // 带 1024 字节发送 FIFO：tx_start 把字符写入 FIFO，发送机空闲时自动取下一个。
 // 深度覆盖 CoreMark 连续 report 输出（约 440 字节），避免 busy 丢字符 / FIFO 溢出。
 // 标准 2^N FIFO：指针 11 位（2^10 深 + 1 位区分空满），索引取低 10 位，无越界。
@@ -11,7 +12,7 @@ module uart_tx (
     output reg         tx,
     output reg         busy        // FIFO 满
 );
-    localparam [9:0] DIV = 10'd234;   // 27e6 / 115200 ≈ 234.375
+    parameter [9:0] DIV = 10'd234;    // f_clk / 115200：27MHz→234，45MHz→390
 
     // ---- 发送 FIFO：1024 深 × 8 bit ----
     reg [7:0] fifo [0:1023];

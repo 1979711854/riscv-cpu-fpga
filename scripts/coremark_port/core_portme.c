@@ -19,7 +19,7 @@ volatile ee_s32 seed3_volatile = 0x8;
 volatile ee_s32 seed4_volatile = ITERATIONS;
 volatile ee_s32 seed5_volatile = 0;
 
-/* 读 MMIO 周期计数器（0x7FF4，27MHz 自由跑） */
+/* 读 MMIO 周期计数器（0x7FF4，跟上系统时钟自由跑） */
 CORETIMETYPE
 barebones_clock(void)
 {
@@ -30,7 +30,11 @@ barebones_clock(void)
 #define MYTIMEDIFF(fin, ini)       ((fin) - (ini))
 #define TIMER_RES_DIVIDER          1
 #define SAMPLE_TIME_IMPLEMENTATION 1
-#define EE_TICKS_PER_SEC           27000000
+/* 时钟频率 = 本固件要跑的那个平台的系统时钟。
+ * ★ 上板（本地盘古板）：PLL 27MHz→45MHz，见 rtl/top/cpu_top_board.v；
+ * ★ 仿真 / 远程 FPGA 平台：固定 27MHz。
+ * 填错不会报错，但 CoreMark 会算出错误的秒数 —— 判 valid 时按这个值卡。 */
+#define EE_TICKS_PER_SEC           45000000
 
 static CORETIMETYPE start_time_val, stop_time_val;
 

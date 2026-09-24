@@ -10,14 +10,21 @@
 | 项目 | 结果 |
 |---|---|
 | riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
-| CoreMark v1.0 **板上实测** | **10.89 秒**，`Correct operation validated`（旧取指路径 / ITER=700） |
-| CoreMark 效率 | **2.787 CoreMark/MHz**（当前设计，仿真每迭代 358,846 周期）；优化前 2.380 |
-| 时序（27MHz，新设计） | Estimated **47.8126 MHz**，Setup +16.122ns / Hold +0.147ns，**失败端点 0** |
-| 资源（新设计） | LUT **2,316**（1.45%）、FF 1,913、DRM 16、APM 11 |
+| CoreMark v1.0 **板上实测** | **10.898 秒**，`Correct operation validated`（27 MHz / ITER=820，已完成）<br>⬜ **45 MHz / ITER=1500：11.96 秒，已推算未实测**（见下注） |
+| CoreMark 效率 | **2.787 CoreMark/MHz**（每迭代 358,846 周期，与时钟无关） |
+| 时序（45 MHz，PLL 倍频） | 约束 **45.0005 MHz** / Estimated **51.5198 MHz**，Setup +2.812ns，**失败端点 0** |
+| 资源（新设计） | LUT **3,030**（1.90%）、FF 2,185、DRM 16、APM 11 |
+| 实际得分 | **125.42 CoreMark** @45 MHz（板上待实测）。同为当前设计的 27 MHz 口径是 75.25，**+66.7%**（即纯时钟比 45/27）|
+
+> ⬜ **45 MHz 版的板上实测尚未做。** 表中 11.96 秒是按仿真周期数推算
+> （1500 × 358,846 ÷ 45e6），**综合与时序已验证，板上待补**。
+> 27 MHz 时代的板上实测是 **10.898 秒**（ITER=820，日志 `doc/board/uart_20260923_201540.txt`）。
+> 板上验证流程见 `doc/board_bringup.md`。
 
 > 唯一 FAIL 是 `ma_data`（未对齐访存）。2026-09-21 曾据一次测量认为"取指重定向后
 > 它自动转为 PASS、说明是冲刷路径的潜在 bug"，**该结论已复核并撤回**：用改造
-> 【之前】的 RTL 复测同样是 FAIL (testnum 1)，前后行为完全一致。
+> 【之前】的 RTL 复测同样是 FAIL，前后行为完全一致（2026-09-25 再次复核，
+> 迁移前后都是 `testnum 668`）。
 > 真实归因是未对齐访存不做特殊处理（**RISC-V 规范允许**，属架构取舍）。
 > 未对齐通路没有专门的测试覆盖，**不把它当作已实现的功能对外承诺**。
 
@@ -41,11 +48,16 @@ PDS → File > Open Project →  pds/RV32I_1/RV32I_1.pds
 compile → synthesize → device map → place & route → generate bitstream
 ```
 
-产物：`pds/RV32I_1/generate_bitstream/cpu_top.sbit`
+产物：`pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`
+
+> ⚠️ **这个文件名看不出里面是哪个固件**（跑分版的还是演示版的）。它只代表
+> "最后一次综合的那版"，而 PDS Programmer 会记住上次的路径 —— 只点 Program
+> 不重新浏览文件，很容易烧成上一版。**要烧哪一版就用 `build_bitstream.ps1` 生成哪一版**，
+> 它会打印 md5。别靠文件名猜。
 
 ### 第 3 步：烧录
 
-> ⚠️ 同目录的 `cpu_top.smsk` 是掩码文件，**大小和文件头与 `.sbit` 一模一样**，别点错。
+> ⚠️ 同目录的 `cpu_top_board.smsk` 是掩码文件，**大小和文件头与 `.sbit` 一模一样**，别点错。
 
 **已知无害告警**（可以忽略）：
 - `C: Bitstream-2001: SCBV has not been set` —— 配置 bank 电压提醒，不影响上板
@@ -70,12 +82,17 @@ Python 3:    用于把 ELF 拆成 hex
 ### 两条命令（几秒钟）
 
 ```powershell
-# 1) 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 770 -SkipSim   # 跑分用：板上约 10.9 秒，满足 ≥10s
-scripts\run_demo.ps1 -SkipSim                 # 演示用：读按键 → 写 LED → 串口打印
+# 上板唯一入口（一条命令：生成固件 → 同步并校验 → 综合出 .sbit，约 5 分钟）
+scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=1500，板上约 12.0 秒）
+scripts\build_bitstream.ps1 demo        # 演示版（读按键 → 写 LED → 串口打印）
+```
 
-# 2) 同步到 PDS 工程目录
-scripts\sync_firmware.ps1
+想分步走也可以（**但别漏第 2 步**）：
+
+```powershell
+scripts\run_coremark.ps1 -Iter 1500 -SkipSim  # 跑分用：45MHz 下约 12.0 秒，满足 ≥10s
+scripts\run_demo.ps1 -SkipSim                 # 演示用
+scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目录
 ```
 
 然后回 PDS 重新 compile → … → bitstream。
@@ -83,9 +100,13 @@ scripts\sync_firmware.ps1
 > `-SkipSim` = 只生成固件、不跑仿真。**上板流程只需要 `mem.hex`**，加上这个开关
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
 >
-> **ITER 必须跟着"每迭代周期"走。** 当前设计每迭代 358,846 周期，27MHz 下
-> **ITER=820 → 10.90 秒**（余量 9.0%）。用 770 只剩 10.23 秒（余量 2.3%，太险），
-> 用 700 只剩 9.30 秒 —— **CoreMark 要求 ≥10 秒，会判 invalid。**
+> **ITER 的分子是你往哪儿烧的那个时钟，改流水线或换平台都要重算。**
+> 当前设计每迭代 **358,846** 周期（与时钟无关）：
+> * **板上 45 MHz：ITER=1500 → 11.96 秒**（余量 19.6%）
+> * 仿真 / 远程平台 27 MHz：ITER=820 → 10.90 秒（余量 9.0%）
+>
+> **用错分子的后果**：ITER=820 在 45 MHz 板上只有 6.54 秒 ——
+> **CoreMark 要求 ≥10 秒，会判 invalid。**
 
 > **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
 > `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** —— 但 BRAM 是空的，
@@ -110,11 +131,13 @@ riscv-cpu-fpga/
 │   ├── mem/                 unified_mem.v  统一存储器（仅 PDS 综合用）
 │   ├── bus/                 addr_map.vh + mem_bus.v（唯一的地址译码处）
 │   ├── periph/              uart_tx / uart_rx / gpio
-│   └── top/cpu_top.v        SoC 顶层
+│   ├── top/cpu_top.v        SoC 顶层（仿真用）
+│   └── top/cpu_top_board.v  ★ 上板顶层（PDS 的 top）：PLL 27→45MHz + 裁剪调试端口
 │
 ├── pds/RV32I_1/             ★ PDS 工程（源文件指向 ../../rtl/**）
 │   ├── RV32I_1.pds          工程文件
-│   ├── RV32I_1.fdc          引脚/时钟约束
+│   ├── RV32I_1.fdc          引脚/时钟约束（只有 27MHz 输入晶振；45MHz 由 PLL IP 推导）
+│   ├── ipcore/pll/          Pango PLL IP（27MHz→45MHz），必须以 IP 源形式引用
 │   ├── mem.hex              固件快照（BRAM 初值）
 │   └── README.md            工程交接说明（含 7 条踩过的坑，建议先读）
 │

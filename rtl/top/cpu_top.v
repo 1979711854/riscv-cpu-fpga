@@ -26,6 +26,11 @@ module cpu_top (
     // ---- 程序结束标志 ----
     output wire        done
 );
+    // UART 波特率分频 = f_clk / 115200。
+    //   * 仿真测试台例化 cpu_top 时【不传参数】→ 取 27MHz 的 234，仿真语义不变。
+    //   * 上板顶层 cpu_top_board 传 390（45MHz），见该文件头的 PLL 说明。
+    parameter [9:0] UART_DIV = 10'd234;   // 27MHz→234（误差 0.16%），45MHz→390
+
     // ---- core ↔ mem_bus：取指口 ----
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
@@ -106,7 +111,7 @@ module cpu_top (
     // ------------------------------------------------------------------
     // UART 发送：兼容区 0x7FFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
     // uart_tx 内含 1024 深 FIFO，短时间连续写不会丢字符。
-    uart_tx u_uart_tx (
+    uart_tx #(.DIV(UART_DIV)) u_uart_tx (
         .clk     (clk),
         .resetn  (resetn),
         .tx_data (periph_wdata[7:0]),
@@ -116,7 +121,7 @@ module cpu_top (
     );
 
     // UART 接收：0x8000_000C，读操作会弹出 FIFO 头部（见 uart_rx.v 头注释）
-    uart_rx u_uart_rx (
+    uart_rx #(.DIV(UART_DIV)) u_uart_rx (
         .clk    (clk),
         .resetn (resetn),
         .ack    (uart_rx_ack),

@@ -268,7 +268,7 @@ cyc 335230: v_wb=1   ← 分支指令自身提交，同拍 fl=1（冲刷拍）
 | **P0** | **加分支预测（BHT / BTB）** | 最直接的场景是 `matrix_test` 这类**后向循环分支**（几乎必然跳转）。实测区域内后向分支 25,664 条中 **90.8% 都跳转** —— 「后向分支预测跳转」这种静态规则即可命中绝大多数。若把未命中率降到 10%，剩余冲刷损失约 7,400 拍，可省约 **6.7 万拍 ≈ 17.4%** | LUT 余量 98%，资源不是约束；属承重改动，必须完整回归 |
 | P1 | load-use 停顿消除 | 若能靠增加前递路径 / 编译器调度消化，可省约 **2.07 万拍（5.8%）** | 改动风险较高，收益中等 |
 | P2 | 分支解析提前到 ID 级 | 可再省 1 拍惩罚（2 拍 → 1 拍） | 需额外比较器与前递，时序压力上升，改动大 |
-| P3 | 提升 Fmax | 得分按频率线性提升（27 MHz 下 70.5 → 47.81 MHz 下 **124.8** CoreMark） | 不消耗逻辑资源，但受平台固定 27 MHz 时钟限制，只能在本地板验证。**实测估计可达 47.8126 MHz**（见 `doc/resource_efficiency.md` §3） |
+| ~~P3~~ | ~~提升 Fmax~~ —— **已做（2026-09-25）**：板载 27MHz 经 PLL 倍频到 **45 MHz**，并按报告的分析切掉 `addr_result` 假路径 | 得分按频率线性提升：同一设计 27 MHz 下 75.25 → **45 MHz 下 125.42 CoreMark（+66.7% = 纯时钟比）** | ~~受平台固定 27 MHz 时钟限制~~ 该限制**已被 PLL 绕开**。实测约束 45.0005 MHz、可达 51.5198 MHz（见 `doc/resource_efficiency.md` §10） |
 
 **理论天花板**：若两类损失全部消除，`10^6 / 288,056 = 3.472 CoreMark/MHz`
 （当前 **2.787**）。这是报告里可以做「优化闭环」叙事的抓手 ——
@@ -380,10 +380,14 @@ Project.unit<0>.triggerChannel<0><2>=pdata[1]
 > **省位宽的关键**：PC 只取低 15 位。若按 32 位传，四个 PC 就吃掉 128 位，
 > 加上其他信号直接顶到 256 上限。地址总线是位宽预算里最贵的东西。
 
-采样深度取 **1024**（例程里的默认值）：`1024 / 27MHz = 37.9 µs`。
+采样深度取 **1024**（例程里的默认值）：**`1024 / 45MHz = 22.8 µs`**
+（27 MHz 时代是 37.9 µs —— ILA 采的是系统时钟，改 PLL 后窗口按比例缩短）。
 DebugCore 的缓存深度范围是 **64 ~ 128k**（2 的整数幂），要抓更长的窗口可以调大，
 但要注意 BRAM 占用。平台上另有 `triggerPosition` 参数，
 把它设在缓冲区中间，才能看到触发**之前**的流水线状态。
+
+> ⚠️ **ILA 的时钟域**：采样时钟要接 **PLL 输出的 `clk_sys`（45MHz）**，
+> 不是板载晶振 —— 抓的是 CPU 那条流水线。若接错域，抓到的状态全是亚稳态。
 
 ### 7.2 抓取前必须加的防优化属性（两条路径都要）
 
@@ -412,7 +416,8 @@ wire id_ex_mem_read /* synthesis syn_keep=1 */;
 **重要：这些属性和 DebugCore/JTAG Hub 两个 IP 都只能用于调试版本。**
 
 - 它们会保留本可优化掉的逻辑，**LUT 用量会变化**，会破坏
-  `doc/resource_efficiency.md` 中记录的 **2,316 LUT / 47.81 MHz** 数据
+  `doc/resource_efficiency.md` 中记录的**基线数据**（**当前 45 MHz 设计：3,030 LUT / 51.52 MHz**；
+  27 MHz 时代的历史基线：2,316 LUT / 47.81 MHz）
 - `ips_debug_core`（含 256 位比较器 + `data_capture_mem`）与 `ips_jtag_hub` 自身也占 LUT 与 BRAM
 
 **抓完波形、截图存档后必须移除，并重新综合一次，确认资源与时序回到原值。**
@@ -438,7 +443,8 @@ scripts\run_riscv_tests.ps1             # 期望 49/1/0
 scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 358,846 拍（测试台总周期 1,462,898）
 ```
 
-删完重新综合，再用 `pds/RV32I_1/multiseed_summary.csv` 核对 LUT 是否回到 **2,316**。
+删完重新综合，再用 `pds/RV32I_1/multiseed_summary.csv` 核对 LUT 是否回到**基线**：
+当前 45 MHz 设计应为 **3,030**（27 MHz 时代的 2,316 已不是当前基线，别拿它对照）。
 
 ### 7.3 操作步骤
 
@@ -501,14 +507,15 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 358,846 拍（测�
    若通道数少于 §7.1 的 80 位计划，需要再裁剪探针。
 4. 截图分辨率与报告排版要求（建议原图，不要压缩到看不清信号名）。
 5. 抓完后**移除调试属性与调试核，重跑一次综合与回归**，确认
-   `49/1/0`、计时区间 `358,846` 拍、**2,316 LUT / 47.81 MHz** 都回到基线。
+   `49/1/0`、计时区间 `358,846` 拍、**LUT / Fmax 都回到基线**（当前 45 MHz 设计：
+   **3,030 LUT / 51.5198 MHz / slack +2.812 ns**；27 MHz 时代的 2,316 LUT / 47.81 MHz 是历史值）。
 
 ---
 
 ## 8. 复现命令
 
 ```powershell
-# 1) 生成 CoreMark 固件（ITER=1；上板要另用 770，见下）
+# 1) 生成 CoreMark 固件（ITER=1；上板要另用 1500，见下）
 scripts\run_coremark.ps1 -Iter 1 -SkipSim
 
 # 2) 跑剖析（不抓波形），得到 §2 的全部统计
@@ -527,8 +534,9 @@ python scripts\trace2svg.py sim\programs\trace_r1.txt doc\figures\pipeline_hazar
 # 5) 反汇编（确认循环里是什么代码）
 riscv-none-elf-objdump -d --start-address=0x0cd8 --stop-address=0x0d18 sim\programs\coremark.elf
 
-# 6) 上板用固件：ITER 必须按"每迭代 358,846 拍"重算，然后同步进 PDS 工程
-scripts\run_coremark.ps1 -Iter 770 -SkipSim
+# 6) 上板用固件：ITER 必须按"每迭代 358,846 拍 ÷ 板上时钟"重算，然后同步进 PDS 工程
+#    （本地盘古板 45 MHz（PLL）→ 1500，约 11.96 s；远程平台 27 MHz（无 PLL）→ 820）
+scripts\run_coremark.ps1 -Iter 1500 -SkipSim
 scripts\sync_firmware.ps1
 ```
 

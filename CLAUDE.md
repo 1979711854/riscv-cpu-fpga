@@ -3,11 +3,14 @@
 ## 项目目标
 - 参赛方向：全国大学生嵌入式芯片与系统设计竞赛 FPGA 赛道（选题：**RISC-V 处理器设计**）
 - 器件平台：紫光同创 **Logos2 PG2L200H**（速度 -6，封装 FBB676）；工具 **Pango Design Suite 2022.2-SP6.4**
-- 当前目标板：**远程 FPGA 平台**（27MHz 固定时钟，约束已可用）；本地"盘古2L200H"开发板器件相同，后期只需改 `.fdc` 引脚/时钟
+- 当前目标板：**本地"盘古2L200H"开发板**，系统时钟经 PLL 从板载 27MHz 倍频到 **45MHz**（2026-09-25 迁移完成）
+  > 远程 FPGA 平台**没有 PLL、固定 27MHz** —— 那是另一套口径，回那边要改回
+  > `EE_TICKS_PER_SEC`/`CPU_HZ`=27e6 并重新生成固件（见 `scripts/demo/addr_map.h` 注释）。
+  > **仿真也是 27MHz**（测试台例化 `cpu_top`，不传 `UART_DIV`）。三处口径别混。
 - 设计内容：**RV32I + M 扩展的 5 级流水线 CPU**（forwarding 前递 + load-use 停顿 + 多拍除法器），集成 UART/GPIO，跑 riscv-tests 与 **CoreMark v1.0**（要求运行 ≥10s）
 - 可选加分项：2 路组相联 I/D Cache、BTB 动态分支预测 + 完整异常/中断、边缘 AI 加速
 
-## 当前进度（2026-09-23 晚）
+## 当前进度（2026-09-25：45 MHz 迁移后）
 基础任务完成度详见 `doc/base_task_status.md`：
 
 | 基础任务 | 状态 |
@@ -35,14 +38,22 @@
   四个 CRC 与仿真逐位一致 → **CPU 真机算得对**）。
   2026-09-23 两轮分支优化后，仿真每迭代降到 **358,846** 周期 → **2.787 CoreMark/MHz**。
   > ⚠️ **改了流水线就必须重算 ITER，否则 CoreMark 判 invalid。**
-  > **速算式：`ITER = 270,000,000 ÷ 每迭代周期数`**（27 MHz × 10 s = 2.7 亿拍，
-  > 取整后留 5~10% 余量）。例：358,846 → 270e6/358846 ≈ 752 → 取 820。
-  > 420,094 周期/迭代时 ITER=700 = 10.89s（已上板实测）；382,972 时 ITER=770 = 10.92s；
-  > **当前 358,846，ITER=770 只剩 10.23s（余量仅 2.3%，太险）→ 取 820**（10.90s，余量 9.0%）。
-  > 上板流程：`run_coremark.ps1 -Iter 820 -SkipSim` → `sync_firmware.ps1` → PDS 重新综合。
-  > ✅ **2026-09-23 已在本地盘古板实测复测**：`Total ticks 294,262,913` → **10.898 s**，
-  > 358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**；`Correct operation validated`，
-  > 四个 CRC 与仿真逐位一致。原始日志 `doc/board/uart_20260923_201540.txt`。
+  > **速算式：`ITER = 时钟频率 × 10s ÷ 每迭代周期数`** —— **分子是哪个频率，取决于你往哪儿烧**：
+  >   * **本地盘古板：450,000,000 ÷ 每迭代周期数**（45 MHz × 10 s）
+  >   * 仿真 / 远程平台：270,000,000 ÷ 每迭代周期数（27 MHz × 10 s）
+  > 取整后留 5~10% 余量。**当前 358,846 周期/迭代 → 板上 ITER=1500**
+  > （1500 × 358,846 = 538,269,000 拍 ÷ 45e6 = **11.96 s**，余量 19.6%；跑分实测确认）。
+  > 上板流程（唯一入口）：`scripts\build_bitstream.ps1 coremark` —— 它会生成固件、同步、
+  > 综合一条龙，并打印 md5。
+  > 历史（27 MHz 时代）：420,094 周期/迭代时 ITER=700 = 10.89s（远程平台实测）；
+  > 382,972 时 ITER=770 = 10.92s；358,846 时 ITER=820 = **10.898 s**（本地板实测）。
+  > ✅ **2026-09-23 本地盘古板实测（27 MHz，ITER=820）**：`Total ticks 294,262,913` →
+  > **10.898 s**，358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**；
+  > `Correct operation validated`，四个 CRC 与仿真逐位一致。
+  > 原始日志 `doc/board/uart_20260923_201540.txt`。
+  > ⬜ **45 MHz 版的板上实测尚未做**（2026-09-25 迁移完成时只跑到综合）——
+  > 烧 `coremark_iter1500_pll45mhz_localboard.sbit`，期望 `Total ticks ≈ 538,270,000`
+  > → ÷45e6 = **11.96 s**。**别再用 ÷27e6。**
   > ⚠️ CoreMark 打印的 `Total time (secs)` / `Iterations/Sec` 是**整数截断**
   > （`HAS_FLOAT=0`），显示 10 / 82，真实值 10.898 / 75.24 —— 一律用
   > `Total ticks ÷ 27,000,000` 自己算。
@@ -75,7 +86,9 @@
   > 重新综合布线，**板上跑的都还是那个旧程序**，而 PDS 全程零报错。
   > 判据：看 `pds\RV32I_1\pds.log` 里的 `Loading memory data from file ... mem.hex`，
   > 再核对 `mem.hex` 的字数与 ELF 的 `.text` 规模是否相当（CoreMark = 4209 字）。
-  > **上板前的固定动作：`run_coremark.ps1 -Iter 770 -SkipSim` → `sync_firmware.ps1` → PDS 综合。**
+  > **上板前的固定动作：`scripts\build_bitstream.ps1 coremark`（或 `demo`）** ——
+  > 它把"生成固件 → 同步 → 校验 mem.hex 字数 → 综合出 .sbit"串成一条，并打印 md5。
+  > 别再手工跑 `run_coremark.ps1` + `sync_firmware.ps1` 两步，容易漏第二步。
 - **流水线效率基线（2026-09-23 两轮分支优化后实测，改动流水线后用来对比）**：CoreMark
   计时区间 **358,846** 拍 / 提交 288,056 条指令 → **CPI 1.2458**；损失构成：
   **分支惩罚 14.0%（50,070 拍）** + load-use 停顿 5.8%。实测方法见
@@ -94,6 +107,12 @@
 **回归纪律（重要）**：改动 RTL 后，riscv-tests 的 **49/1/0** 与 CoreMark 的
 **计时区间 358,846 拍**（测试台总周期 1,462,898）必须同时保持不变
 （除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
+> ✅ **2026-09-25（45 MHz 迁移）复测通过**：49 PASS / 1 FAIL / 0 TIMEOUT、
+> 358,846 拍 / 1,462,898 总周期，两者都**逐位不变** —— 证明 `core.v` 的
+> `addr_result` 旁路确实是纯组合改动（不增删任何周期）。
+> ⚠️ **勘误**：本文档此前记 ma_data 的 FAIL 是 **testnum 1** —— 实测**不是**。
+> 2026-09-25 用迁移前（HEAD）和迁移后两份 RTL 各跑一遍，**都是 testnum 668**，
+> 与 `addr_result` 无关。判回归时**只认 49/1/0 这个组合**，别去对 testnum。
 
 ## 仓库结构（以此为准，勿再新建顶层目录）
 - `rtl/core/`    CPU 核：`core.v`(5 级流水线/冒险/分支/trap) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
@@ -117,6 +136,8 @@
                  `build_bitstream.ps1`(**上板唯一入口**：固件→同步→综合出 `.sbit`，一条命令)
                  `serial_monitor.ps1`(**串口抓取**，零依赖；默认落盘 `doc/board/uart_<时间戳>.txt`)
 - `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
+                 `ipcore/pll/` **Pango PLL IP**（27MHz→45MHz）。`pll.v` 是 IP 生成产物，
+                 **必须经 `.pds` 的 `wgt_my_ips_src` 引用**，不能当普通源文件加（见关键约定 24）
                  `bitstreams/` 归档的 `.sbit`（`.sbit` 被 gitignore，只入库 README）
                  `bak_2026-09-21_ila/` 09-21 那次 ILA 调试版的产物归档（`.fic`/`timing`/`impl.tcl`）
 - `pds/riscv_cpu/` 早期 LED 练习工程
@@ -208,14 +229,35 @@
     所以"只点 Program 不重新浏览"极易烧成上一版 —— **2026-09-23 实踩：想烧跑分版
     结果烧成了演示程序版**（现象：按键有反应、串口是 `KEY=0x..`）。
     判据：`scripts\build_bitstream.ps1 coremark|demo` 会打印 md5，**别靠文件名猜**。
+24. **PLL IP 必须以"IP 源文件"的形式加进 `.pds`**，不能只把 `ipcore/pll/pll.v`
+    当普通 Verilog 源文件添加 —— 那样综合会报 `pll` 是黑盒。正确形态是
+    `wgt_my_ips_src` 里的一条 `(_ip "ipcore/pll/pll.idf")` +
+    `(_ip_source_item "ipcore/pll/pll.v")`。`.idf` 与 `.v` 要一起带。
+25. **`.fdc` 里看不见 45MHz** —— 那文件只有输入晶振的
+    `create_clock ... -period 37.037`（27MHz）。PLL 输出 45MHz 的约束是
+    **PDS 从 PLL IP 自动推导**的，只在时序报告里显示（`clk 45.0005 MHz`）。
+    **别以为约束没生效**，也别手动去改那句 create_clock。
+26. **`DEBUG_LED` 参数决定 `led[1:0]` 是调试信号还是 GPIO**（`cpu_top_board.v`）：
+    1（默认）= `led[0]=pll_locked` / `led[1]=done`；0 = `led[7:0]` 全给 GPIO。
+    PDS 综合取**默认值**，命令行传不了 `-D` 宏 —— 所以切演示版要改参数再综合。
+    `build_bitstream.ps1` 已按变体自动改（coremark→1、demo→0）并在结束时还原；
+    若手工在 PDS GUI 里综合，记得自己改。
+27. **板上跑完 CoreMark 的时长 = `Total ticks ÷ 45,000,000`**（不再是 ÷27e6）。
+    27e6 只对**仿真和远程平台**成立。文档里旧的 `294,262,913 ÷ 27e6 = 10.898s`
+    是 27MHz 时代的历史记录，别拿来当现在的判据。
 
 ## 待办
-- ⬜ **【高】迁移队友的 45 MHz 改动** —— 队友把系统时钟从 27 MHz 提到 **45 MHz**
-  （PLL 倍频），并加了一处关键路径优化（`core.v` 里 `addr_result` 把 32×32 乘法器
-  从"未对齐判据→异常→pc_r"假路径上切下来）。他那边综合结果：**约束 45.0005 MHz、
-  可达 51.52 MHz、All Constraints Met、LUT 3030/FF 2185**，CoreMark ITER 已重算为 1500。
-  **完整分析 + 迁移方案见 `doc/reports/2026-09-24_teammate_45mhz.md`**（走分支迁移，
-  别直接覆盖）。来源目录：`C:\Users\zjn\Desktop\RV32I\RV2_1\riscv-cpu-fpga`。
+- ✅ **队友的 45 MHz 改动已迁移**（2026-09-25，分支 `feat/pll-45mhz`）——
+  PLL 倍频 27MHz→45MHz + `core.v` 的 `addr_result` 关键路径优化。
+  迁移后实测复现了队友全部指标：**约束 45.0005 MHz、可达 51.5198 MHz、
+  slack 2.812、All Constraints Met、LUT 3030/FF 2185/DRM 16/APM 11**；
+  仿真侧 49/1/0 与 358,846 拍**逐位不变**。分析见
+  `doc/reports/2026-09-24_teammate_45mhz.md`。
+  ⬜ **仅剩板上实测未做**：烧 `coremark_iter1500_pll45mhz_localboard.sbit`，
+  期望 `Total ticks ≈ 538,270,000` ÷ 45e6 = **11.96 s** + `Correct operation validated`。
+  > 顺带：队友那份里 `ipcore/unified_mem/` + `mem_init.hex` 是**未被工程引用的半成品**
+  （他打算替换行为级存储器？），迁移时**故意没带**。要问清楚动向。
+  > 注意那是**负收益方向** —— 单周期 BRAM 无缺失惩罚，换 IP 核不提升性能。
 - **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
   **远程平台出 JTAG 通道与波形界面，`.fic` 探针描述文件要本地 PDS 用 Fabric Inserter 生成**。
   流程：加防优化属性（`/* synthesis syn_keep=1 */`）→ Compile/Synthesize → TOOL → Inserter

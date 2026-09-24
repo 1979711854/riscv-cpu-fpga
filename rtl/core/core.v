@@ -312,6 +312,13 @@ module core (
     // ------------------------------------------------------------------
     wire [31:0] alu_result = id_ex_is_csr ? csr_rdata :
                              id_ex_is_div ? div_result : alu_raw;
+    // 访存地址 = base + offset，恒为 ADD（load/store 的 alu_op 固定为 0，
+    // 见 control.v 的 OP_LOAD / OP_STORE —— 它们不写 alu_op，保持 default 的 0）。
+    // 单独用一个加法器产生地址，把 32×32 乘法器从
+    // "未对齐判据 → 异常 → pc_r 写使能" 这条【假路径】上切下来：
+    // mul 指令从不访存，乘法结果根本不该出现在 pc_r 的时序弧里。
+    // ⚠️ 只用于未对齐判据与 mtval，不改变任何流水线语义（见 §关键路径）。
+    wire [31:0] addr_result = alu_a + alu_b;
     assign      div_stall  = id_ex_is_div && !div_done;
 
     wire equal         = (rs1_val == rs2_val);
@@ -361,7 +368,7 @@ module core (
     // ---- 未对齐访存的判据 ----
     // LB/LBU 任意地址合法；LH/LHU 要求 addr[0]==0；LW 要求 addr[1:0]==0。
     // funct3[1:0]：00=字节 01=半字 10=字（load 与 store 同一套编码）
-    wire [1:0] mem_addr_low = alu_result[1:0];
+    wire [1:0] mem_addr_low = addr_result[1:0];
     wire mem_unaligned = (id_ex_funct3[1:0] == 2'b01) ? mem_addr_low[0] :
                          (id_ex_funct3[1:0] == 2'b10) ? |mem_addr_low : 1'b0;
     wire load_misaligned  = id_ex_mem_read  && mem_unaligned;
@@ -399,7 +406,7 @@ module core (
                                                32'd0;
     // mtval：未对齐给出错地址；非法指令给 0 —— 规范允许 0 或指令本身，
     // 本设计取 0 以免把整条指令再多带一级流水线寄存器。其余为 0。
-    wire [31:0] exc_tval = (load_misaligned || store_misaligned) ? alu_result : 32'd0;
+    wire [31:0] exc_tval = (load_misaligned || store_misaligned) ? addr_result : 32'd0;
 
     // ---- 中断 ----
     // mip 的两个位直接由外部电平驱动（只读），与 mie / mstatus.MIE 相与

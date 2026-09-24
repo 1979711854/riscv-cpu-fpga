@@ -33,7 +33,17 @@
 #   效果：演示程序（LED=KEY）按哪个开关，正下方那个灯就亮。
 #   ⚠️ 因此 led[i] **不再等于**手册 LEDi；报告里需注明"按板卡实际位置重排"。
 #
-# 器件与远程 FPGA 平台是同一颗，故时钟约束保持 27MHz / 37.037ns 不变。
+# ★ 时钟（2026-09-25 起）：板载 27MHz 晶振经 PLL 倍频到 **45MHz** 作系统时钟。
+#   * 下面这句 create_clock 约束的是**输入晶振**，仍是 27MHz / 37.037ns，别改。
+#   * PLL 输出（45MHz）的时钟约束由 PDS **从 PLL IP 自动推导**
+#     （IP 配置见 ipcore/pll/pll.idf：CLKIN_FREQ=27.0 / CLKOUT0_REQ_FREQ=45.0），
+#     时序报告里会显示 clk 45.0005 MHz、可达 51.5 MHz。
+#     ⚠️ 所以"只看这个文件"会误以为系统还是 27MHz —— 是本注释要澄清的点。
+#   * PLL IP 在工程里以 IP 源文件形式引用（RV32I_1.pds 的 wgt_my_ips_src），
+#     不能只把 pll.v 当普通源文件加进去。
+#   * 后果：UART 分频、CoreMark 的 EE_TICKS_PER_SEC、addr_map.h 的 CPU_HZ
+#     都要按 45MHz 取值。仿真仍是 27MHz —— 两套口径见 rtl/top/cpu_top_board.v 头注释。
+# 器件与远程 FPGA 平台是同一颗；**远程平台没有 PLL，仍是 27MHz**。
 #
 # 本工程 top module 是 cpu_top_board（不是 cpu_top）—— 它把 pc[31:0] / done
 # 这两个板级调试口挡在外面，并把 key[7:4] 恒定接 1。

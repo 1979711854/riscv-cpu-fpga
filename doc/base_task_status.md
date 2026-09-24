@@ -1,6 +1,7 @@
 # 基础任务完成度核对（对照《紫光同创.pdf》选题指南）
 
-> 核对日期：2026-09-21（更新）　依据：赛题"核心设计任务 → 基础任务"三条 + 代码与仿真核对
+> 核对日期：2026-09-21（更新）；2026-09-25 补时钟迁移（27 → 45 MHz）口径
+> 依据：赛题"核心设计任务 → 基础任务"三条 + 代码与仿真核对
 > 结论：**基础任务三条全部达成**，另有若干项超出基础要求。
 
 ## 赛题原文（基础任务）
@@ -49,14 +50,15 @@
   注：装异常之后程序仍应在 EBREAK 后跟自旋循环 —— riscv-tests 与 CoreMark 的
   start.S 本来就是这个写法。
 
-## 验证结果（2026-09-23 更新）
+## 验证结果（2026-09-23 结果；2026-09-25 补时钟迁移口径）
 
 | 项目 | 结果 |
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（本地盘古板实测，ITER=820，当前设计）** | `Total ticks 294,262,913` → **实际 10.898 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致。<br>原始串口日志：`doc/board/uart_20260923_201540.txt`。**上板教程：`doc/board_bringup.md`** |
-| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%** |
+| **CoreMark v1.0（本地盘古板实测，27 MHz 时代，ITER=820）** | `Total ticks 294,262,913` → **实际 10.898 秒**，`Correct operation validated` ✅ 达标，四个 CRC 与仿真逐位一致。<br>原始串口日志：`doc/board/uart_20260923_201540.txt`。**上板教程：`doc/board_bringup.md`**<br>⚠️ 这是**系统时钟迁到 45 MHz 之前**（板载 27 MHz）的实测记录；**45 MHz 版（ITER=1500，推算 11.96 秒）尚未上板实测** |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%**。<br>迁到 45 MHz 后每迭代周期**逐位不变**（与时钟无关），所以 2.787 CoreMark/MHz 也不变 |
+| **CoreMark 实际得分**（= 2.787 × 系统时钟） | 27 MHz 版 **75.25 CoreMark** → 45 MHz 版 **125.42 CoreMark（+66.7%，恰为时钟比 45.0005/27，即"同一设计只提频"的收益）**（口径见 `doc/resource_efficiency.md` §2/§3） |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **四个 CRC 与仿真逐位一致** |
@@ -107,3 +109,6 @@
 5. **PDS 工程已改为本地盘古板约束**（2026-09-23）—— `RV32I_1.fdc` 全部引脚
    按《MES2L676-200HP硬件使用手册》填好并**在板上实测验证过**；上板 top module
    是 `cpu_top_board`（不是 `cpu_top`）。详见 `doc/board_bringup.md`。
+   2026-09-25 起系统时钟由板载 27 MHz 经 **PLL 倍频到 45 MHz** ——注意 `.fdc` 里
+   约束的仍是 **27 MHz 输入晶振**，45 MHz 由 PDS 从 PLL IP 自动推导；**仿真与远程
+   平台不进 PLL，仍是 27 MHz**。
