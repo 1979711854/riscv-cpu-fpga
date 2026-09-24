@@ -69,13 +69,13 @@ module mem_bus (
     // CLINT：mtime 就复用上面的 cyc（不另起一个计数器，避免两处漂移）；
     //        mtimecmp 可写。
     //
-    // ★ MTIP 必须是【纯电平比较器】，绝不做锁存或脉冲：
+    // [重点] MTIP 必须是【纯电平比较器】，绝不做锁存或脉冲：
     //   软件写新的 mtimecmp → 下一拍比较自然翻低 → MTIP 自动落下。
     //   这正是"中断返回后能继续正常工作"的前提：`mret` 恢复 mstatus.MIE 后，
     //   若 MTIP 还是高的，会立刻再次 trap，PC 被钉死在 mtvec。
     //   做成"置位保持到软件清除"就会踩这个死循环。
     //
-    // ★ mtimecmp 复位值必须是【全 1】，不能是 0：
+    // [重点] mtimecmp 复位值必须是【全 1】，不能是 0：
     //   复位为 0 会让 `mtime >= mtimecmp` 恒真 → 上电起 MTIP 就一直是 1。
     //   虽然默认 mie.MTIE=0 与 mstatus.MIE=0 能挡住，但那是免费的第二道防线，
     //   只要有一处 tie 写错就会从上电起反复 trap。

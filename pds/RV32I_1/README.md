@@ -7,7 +7,7 @@
 - 地址映射：见 `../../rtl/bus/addr_map.vh`（外设区 `0x8000_0000` 起；
   `0x7FF0~0x7FFF` 为 CoreMark 兼容区，不可移动）
 
-## ⚠️ 约束文件当前指向远程 FPGA 平台
+## [!] 约束文件当前指向远程 FPGA 平台
 
 `RV32I_1.fdc` 里 `clk=D18 / resetn=C22 / uart_tx=AB26 / done=U16` 是**远程 FPGA 平台**
 的引脚。新增的 `led[7:0]` / `key[7:0]` / `uart_rx` 该平台没有对应引脚，因此在 `.fdc`
@@ -34,7 +34,7 @@
 
 打开工程后若提示找不到源文件，先确认 `../../rtl/` 目录存在（即仓库结构完整）。
 
-> ⚠️ 若 PDS 报找不到 `addr_map.vh`，把 `rtl/bus` 加进工程的 **include 搜索路径**
+> [!] 若 PDS 报找不到 `addr_map.vh`，把 `rtl/bus` 加进工程的 **include 搜索路径**
 > （或在 `.pds` 里确认 `addr_map.vh` 已在源文件列表中）。
 
 ## 固件（BRAM 初值）

@@ -49,7 +49,7 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 **RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，所以这项 FAIL
 判定为"架构取舍、预期失败"。失败是**确定性**的，testnum 恒为 1。
 
-> ⚠️ **勘误（2026-09-21）**：本报告曾有一个版本写着"取指重定向改造后 `ma_data`
+> [!] **勘误（2026-09-21）**：本报告曾有一个版本写着"取指重定向改造后 `ma_data`
 > 自动转为 PASS，说明它此前更可能是冲刷路径上的潜在 bug"——**该结论无法复现，
 > 现已撤回。** 复核方式：
 >
@@ -141,19 +141,19 @@ Total ticks      : 294065438
 Total time (secs): 10
 Iterations/Sec   : 70
 Iterations       : 700
-seedcrc          : 0xe9f5     ✅ 与仿真一致
-[0]crclist       : 0xe714     ✅
-[0]crcmatrix     : 0x1fd7     ✅
-[0]crcstate      : 0x8e3a     ✅
+seedcrc          : 0xe9f5 [OK] 与仿真一致
+[0]crclist       : 0xe714 [OK]
+[0]crcmatrix     : 0x1fd7 [OK]
+[0]crcstate      : 0x8e3a [OK]
 [0]crcfinal      : 0x65c5        （随迭代次数变化，与仿真不同属正常）
 Correct operation validated. See README.md for run and reporting rules.
 ```
 
-- **实际时长 = 294,065,438 ÷ 27MHz = 10.89 秒** ✅ 满足赛题 ≥10s
+- **实际时长 = 294,065,438 ÷ 27MHz = 10.89 秒** [OK] 满足赛题 ≥10s
   （`Total time (secs): 10` 是整数截断；`Iterations/Sec: 70` = 700 ÷ 10 也是按截断后的 10 算的）
 - **`Correct operation validated`** = CoreMark 自己判定 CRC 全部通过
 - `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 与仿真**逐位一致** → **CPU 在真实硬件上算得对的最强证据**
-  （⚠️ **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`）
+  （[!] **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`）
 
 ### 板上实测结果（本地盘古板，45 MHz，ITER=1500）—— **当前设计**（2026-09-25）
 
@@ -171,7 +171,7 @@ seedcrc          : 0xe9f5
 Correct operation validated. See README.md for run and reporting rules.
 ```
 
-- **538,285,445 ÷ 45 MHz = 11.9619 秒** ✅ 满足赛题 ≥10s → **125.40 CoreMark**（= 1500 ÷ 11.9619）
+- **538,285,445 ÷ 45 MHz = 11.9619 秒** [OK] 满足赛题 ≥10s → **125.40 CoreMark**（= 1500 ÷ 11.9619）
 - 每迭代 **358,857** 周期（538,285,445 ÷ 1500）—— **与 27 MHz 板上实测逐位相同**
   （时钟翻倍而周期数不变 → 证明周期数与时钟无关，仿真的 358,846 也可外推到板上）
 - `seedcrc / crclist / crcmatrix / crcstate` 与仿真**逐位一致**
@@ -202,7 +202,7 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 > 因为本次改造的目的就是减少周期数；但区域内提交指令数、停顿数、前递数、访存数
 > **完全相同**，说明只改了时序、没改行为。
 
-> ⚠️ **别用 ITER=1 的测试台总周期（当前 1,462,898）当"每迭代成本"。** 那是**仿真
+> [!] **别用 ITER=1 的测试台总周期（当前 1,462,898）当"每迭代成本"。** 那是**仿真
 > 测试台**的总周期，含约 108 万周期的一次性 UART 打印开销；而 CoreMark 自己的
 > `Total ticks` 计时在打印**之前**就停了、**不含**打印。两个口径不同，混用会把
 > 迭代成本算错。
@@ -219,7 +219,7 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 仿真 / 远程平台(27MHz): 270,000,000 / 358,846 ≈  752  → 取 ITER=820 （10.90s，余量 9.0%）
 ```
 
-> ⚠️ **改了流水线、或换了平台时钟，都必须重算这个数。**
+> [!] **改了流水线、或换了平台时钟，都必须重算这个数。**
 > 两条独立的历史教训：
 > ① 旧设计 420,094 周期/迭代时用 700 正合适（10.89s）；降到 358,846 后
 > **ITER=700 只剩 9.93s，会被判 invalid**。
@@ -233,7 +233,7 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 - 综合前必须把 `mem.hex` 放进 PDS 工程目录（`scripts\sync_firmware.ps1`）。
   缺失时 PDS 只报 `Cannot open specified data file "mem.hex"` 然后**照常生成比特流**，
   但 BRAM 是空的 —— 板上什么都不会跑，且没有任何其他报错
-- ⚠️ **同一类坑的第二种形态：文件在，但内容过期。** PDS 综合读的是
+- [!] **同一类坑的第二种形态：文件在，但内容过期。** PDS 综合读的是
   `pds\RV32I_1\mem.hex`，**不是** `sim\programs\mem.hex`，而且从不检查时间戳。
   跑过 `run_demo.ps1` / `run_riscv_tests.ps1` 之后再 `sync_firmware.ps1`，
   工程里就留下 demo / riscv-test 的镜像；此后无论怎么改 RTL、重新综合布线，

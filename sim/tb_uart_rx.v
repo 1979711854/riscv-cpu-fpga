@@ -41,7 +41,7 @@ module tb_uart_rx;
     endtask
 
     // ---- 读并弹出一个字节，比对期望值 ----
-    // ★ ack 必须在【negedge 之后】驱动。
+    // [重点] ack 必须在【negedge 之后】驱动。
     //   若写成 "ack=1; @(posedge clk); ack=0;"，任务在 posedge 恢复执行与
     //   uart_rx 里 always 块采样是同一时间步内的不确定顺序，ack 可能被提前
     //   清零而丢掉这次弹出（表现为 FIFO 头永远不动）。真实硬件里 ack 来自

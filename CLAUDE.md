@@ -15,9 +15,9 @@
 
 | 基础任务 | 状态 |
 |---|---|
-| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | ✅ 达标（5 级流水线、前递、load-use 停顿、6 种分支；**分支惩罚 1 拍**，见下） |
-| ① RV32I 基础整数指令集 | ✅ **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
-| ③ 集成基础外设（UART/GPIO） | ✅ 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
+| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | [OK] 达标（5 级流水线、前递、load-use 停顿、6 种分支；**分支惩罚 1 拍**，见下） |
+| ① RV32I 基础整数指令集 | [OK] **全覆盖**，含 FENCE / FENCE.I / ECALL / EBREAK |
+| ③ 集成基础外设（UART/GPIO） | [OK] 存储总线 + 地址译码 + GPIO + UART 收发；演示程序跑通 |
 
 - 验证：riscv-tests rv32ui + rv32um（50 项）→ **49 PASS / 1 FAIL / 0 TIMEOUT**
   （M 扩展的 mul/mulh/mulhsu/mulhu/div/divu/rem/remu 8 项也纳入回归 —— CPU 实现了
@@ -26,7 +26,7 @@
   > `load_half = addr_low[1] ? … : …` 假设按访问宽度对齐，而该测试在 0x2001 做
   > `lh`（半字跨字节边界）→ 取错字节。**RISC-V 规范允许实现不支持未对齐访问**，
   > 属架构取舍，不是 bug。
-  > ⚠️ **2026-09-21 勘误**：此前本文档与多份报告称"取指重定向后 `ma_data` 自动
+  > [!] **2026-09-21 勘误**：此前本文档与多份报告称"取指重定向后 `ma_data` 自动
   > 转 PASS、说明它是冲刷路径上的潜在 bug"——**该结论无法复现，已撤回**。
   > 用取指重定向【之前】的 RTL 复测，同样是 FAIL (testnum 1)，改造前后行为完全一致；
   > 且基线 ELF 的 SHA256 全部校验通过、riscv-tests 源码不存在，不存在"重编译出
@@ -37,7 +37,7 @@
   `Total ticks 294,065,438` → 10.89 秒，`Correct operation validated`，
   `seedcrc/crclist/crcmatrix/crcstate` 与仿真逐位一致 → **CPU 真机算得对**）。
   2026-09-23 两轮分支优化后，仿真每迭代降到 **358,846** 周期 → **2.787 CoreMark/MHz**。
-  > ⚠️ **改了流水线就必须重算 ITER，否则 CoreMark 判 invalid。**
+  > [!] **改了流水线就必须重算 ITER，否则 CoreMark 判 invalid。**
   > **速算式：`ITER = 时钟频率 × 10s ÷ 每迭代周期数`** —— **分子是哪个频率，取决于你往哪儿烧**：
   >   * **本地盘古板：450,000,000 ÷ 每迭代周期数**（45 MHz × 10 s）
   >   * 仿真 / 远程平台：270,000,000 ÷ 每迭代周期数（27 MHz × 10 s）
@@ -47,28 +47,28 @@
   > 综合一条龙，并打印 md5。
   > 历史（27 MHz 时代）：420,094 周期/迭代时 ITER=700 = 10.89s（远程平台实测）；
   > 382,972 时 ITER=770 = 10.92s；358,846 时 ITER=820 = **10.898 s**（本地板实测）。
-  > ✅ **2026-09-23 本地盘古板实测（27 MHz，ITER=820）**：`Total ticks 294,262,913` →
+  > [OK] **2026-09-23 本地盘古板实测（27 MHz，ITER=820）**：`Total ticks 294,262,913` →
   > **10.898 s**，358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**；
   > `Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 与仿真逐位一致
   > （**`crcfinal` 不比** —— 见本节末尾 CRC 判据说明）。
   > 原始日志 `doc/board/uart_20260923_201540.txt`。
-  > ✅ **2026-09-25 45 MHz 版板上实测通过**：`Total ticks 538,285,445` → ÷45e6 =
+  > [OK] **2026-09-25 45 MHz 版板上实测通过**：`Total ticks 538,285,445` → ÷45e6 =
   > **11.9619 s**，`Iterations 1500`，`Correct operation validated`，
   > **358,857 拍/迭代 —— 与 27 MHz 板上实测逐位相同**（周期数与时钟无关的直接证据）。
   > 得分 **125.40 CoreMark**，较 27 MHz 板的 75.24 **+66.7%**（= 纯时钟比 45.0005/27）。
   > 日志 `doc/board/uart_20260925_005201.txt`。
   > **别再用 ÷27e6** —— 那是仿真/远程平台口径。
   >
-  > ⚠️ **CRC 判据要修正**（2026-09-25 读 CoreMark 源码后确认）：
+  > [!] **CRC 判据要修正**（2026-09-25 读 CoreMark 源码后确认）：
   > **只有 `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 四个能跨 ITER、跨时钟比对**，
   > 它们必须逐位相同。**`crcfinal` 不能比** —— 它是 `iterate()` 里
   > `res->crc = crcu16(crc, res->crc)` 的**跨迭代累加器**，必然随 ITER 变
   > （实测 ITER=1→0xe714、ITER=820→0xbd59、ITER=1500→0x25b5，三个都对）。
   > 此前"四个 CRC 与仿真逐位一致"的措辞不严，已更正。
-  > ⚠️ CoreMark 打印的 `Total time (secs)` / `Iterations/Sec` 是**整数截断**
+  > [!] CoreMark 打印的 `Total time (secs)` / `Iterations/Sec` 是**整数截断**
   > （`HAS_FLOAT=0`），显示 10 / 82，真实值 10.898 / 75.24 —— 一律用
   > `Total ticks ÷ 27,000,000` 自己算。
-  > ⚠️ **别用 ITER=1 的测试台总周期（当前 1,462,898）去推算迭代成本**。那是仿真
+  > [!] **别用 ITER=1 的测试台总周期（当前 1,462,898）去推算迭代成本**。那是仿真
   > 测试台的总周期，含约 108 万周期的一次性串口打印开销；而 CoreMark 自己的
   > `Total ticks` 计时在打印**之前**就停了，不含打印。两个口径不同，混用会把迭代
   > 成本算错，进而把 ITER 估得偏小（本项目据此写成"ITER≈200 约 10s"，
@@ -76,11 +76,11 @@
 - **本地盘古板上板跑通（2026-09-23 首次）**：clk/UART/GPIO 全链路验证通过，
   27 MHz 实测确认（串口无乱码）。**上板教程见 `doc/board_bringup.md`**，
   实测证据见 `doc/board/`，引脚出处见 `pds/RV32I_1/RV32I_1.fdc` 头部注释。
-  > ⚠️ **上板 top module 是 `cpu_top_board`，不是 `cpu_top`**（`rtl/top/cpu_top_board.v`）——
+  > [!] **上板 top module 是 `cpu_top_board`，不是 `cpu_top`**（`rtl/top/cpu_top_board.v`）——
   > 它把 `pc[31:0]`/`done` 挡在板外，因为 PDS 会把未约束的输出自动布到 BANKR5
   > （板上有 SFP/HSST）的真实引脚上。仿真仍用 `cpu_top`（`pc` 是 `+TRACE` 与
   > TIMEOUT 诊断的数据源，不能删）。
-  > ⚠️ **板上 Jtag 与 USB UART 是两个独立接口**，两根 USB 线都要插 ——
+  > [!] **板上 Jtag 与 USB UART 是两个独立接口**，两根 USB 线都要插 ——
   > 只插 Jtag，串口永远没输出（这是最容易卡住的一步）。
 - 演示程序：`scripts\run_demo.ps1`（读按键 → 写 LED → 串口打印 + 串口回显）
   串口查看用 `scripts\serial_monitor.ps1`（零依赖，用 .NET 自带 SerialPort，
@@ -90,7 +90,7 @@
 - **工程坑**：综合前必须把 `mem.hex` 放进 PDS 工程目录（`scripts\sync_firmware.ps1`）。
   缺失时 PDS 只报一行 `Cannot open specified data file "mem.hex"`，然后**照常生成比特流** ——
   但 BRAM 是空的，板上什么都不跑，且没有任何其他报错，极难排查。
-  > ⚠️ **同一类坑的第二种形态（2026-09-21 实踩）：文件在，但内容过期。**
+  > [!] **同一类坑的第二种形态（2026-09-21 实踩）：文件在，但内容过期。**
   > PDS 综合读的是 `pds\RV32I_1\mem.hex`（**不是** `sim\programs\mem.hex`），
   > 而且**从不检查时间戳**。跑过 `run_demo.ps1` 或 `run_riscv_tests.ps1` 之后再
   > `sync_firmware.ps1`，工程里就留下 demo / riscv-test 的镜像；此后无论怎么改 RTL、
@@ -110,7 +110,8 @@
   > 优化记录见 `doc/reports/2026-09-21_branch_opt_verify.md`。
 - **高阶任务②（完整异常/中断）已实现**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret`
   + 六类同步异常（非法指令/EBREAK/未对齐 load+store/ECALL/写只读 CSR）+ 定时器中断（CLINT）。
-  自写汇编测试在 `sim/tests/`，一键 `scriptsun_own_tests.ps1`。
+  自写汇编测试在 `sim/tests/`，一键 `scripts
+un_own_tests.ps1`。
   > 未做：BTB（实测剩余空间仅约 2.3%）、外部中断 MEIP（通路具备但无测试）。
   > 关键取舍见 `doc/spec.md` §6：只支持 M 模式（MPP 硬连线）；未实现的 CSR 读 0、写忽略、
   > 不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
@@ -118,10 +119,10 @@
 **回归纪律（重要）**：改动 RTL 后，riscv-tests 的 **49/1/0** 与 CoreMark 的
 **计时区间 358,846 拍**（测试台总周期 1,462,898）必须同时保持不变
 （除非本次改动的目的就是改变某一项）。后者是"没碰坏流水线"最灵敏的探针。
-> ✅ **2026-09-25（45 MHz 迁移）复测通过**：49 PASS / 1 FAIL / 0 TIMEOUT、
+> [OK] **2026-09-25（45 MHz 迁移）复测通过**：49 PASS / 1 FAIL / 0 TIMEOUT、
 > 358,846 拍 / 1,462,898 总周期，两者都**逐位不变** —— 证明 `core.v` 的
 > `addr_result` 旁路确实是纯组合改动（不增删任何周期）。
-> ⚠️ **勘误**：本文档此前记 ma_data 的 FAIL 是 **testnum 1** —— 实测**不是**。
+> [!] **勘误**：本文档此前记 ma_data 的 FAIL 是 **testnum 1** —— 实测**不是**。
 > 2026-09-25 用迁移前（HEAD）和迁移后两份 RTL 各跑一遍，**都是 testnum 668**，
 > 与 `addr_result` 无关。判回归时**只认 49/1/0 这个组合**，别去对 testnum。
 
@@ -134,7 +135,7 @@
 - `rtl/periph/`  `uart_tx.v`(发送，1024 深 FIFO) `uart_rx.v`(接收，16 深 FIFO、读弹出) `gpio.v`(LED+按键)
 - `rtl/top/`     `cpu_top.v` SoC 顶层，只做连线（地址映射见 `rtl/bus/addr_map.vh`）
                  `cpu_top_board.v` **上板专用顶层**（PDS 的 top）：包住 `cpu_top`，
-                 不引出 `pc[31:0]`/`done`（原因见"当前进度"里的 ⚠️）
+                 不引出 `pc[31:0]`/`done`（原因见"当前进度"里的 [!]）
 - `rtl/top.v`    早期 LED 点灯练习工程顶层（保留）
 - `sim/`         `mem_model.vh`(存储器行为模型，被各 tb `include)
                  `tb_riscv.v` `tb_coremark.v` `tb_demo.v`（集成）+ `tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v`（单元）
@@ -256,14 +257,14 @@
 27. **板上跑完 CoreMark 的时长 = `Total ticks ÷ 45,000,000`**（不再是 ÷27e6）。
     27e6 只对**仿真和远程平台**成立。文档里旧的 `294,262,913 ÷ 27e6 = 10.898s`
     是 27MHz 时代的历史记录，别拿来当现在的判据。
-28. ⛔ **`unified_mem` 这个名字指两样完全不同的东西，删之前必须看清路径**：
+28. [!] **`unified_mem` 这个名字指两样完全不同的东西，删之前必须看清路径**：
     * **`rtl/mem/unified_mem.v`（我们仓库）= 统一存储器本体，承重，删了 CPU 就没存储器**
       （`.pds` 正引用它；`sim/mem_model.vh` 是它的仿真版）。**永远不要删。**
     * `pds/.../ipcore/unified_mem/`（**只在队友桌面那份导出目录里**）= 队友用 IP Compiler
       生成 Pango 双口 BRAM 的**失败尝试**，`.pds` 从未引用。**这个才是可删的**
       （含 `mem_init.hex`、`ip_backup/`，约 2 MB）。
     2026-09-25 队友确认过它"是添加 IP 核失败的产物，可删"。
-    ⚠️ 这句话**只针对后者** —— 因为名字一样，转述时极易被理解成"把 unified_mem 删掉"，
+[!] 这句话**只针对后者** —— 因为名字一样，转述时极易被理解成"把 unified_mem 删掉"，
     那会把存储器干掉。**转述给别人时务必带上路径。**
 29. **判 CoreMark 的 CRC 只看 `seedcrc`/`crclist`/`crcmatrix`/`crcstate` 四个，
     `crcfinal` 不能比** —— 它是 CoreMark `iterate()` 里的**跨迭代累加器**，
@@ -273,37 +274,37 @@
     不知道这条的话，看到 `crcfinal` 变了会误判成回归。
 
 ## 待办
-- 📌 **【当前主线】下一步优化任务书：`doc/reports/2026-09-25_next_steps_handoff.md`**
+-  **【当前主线】下一步优化任务书：`doc/reports/2026-09-25_next_steps_handoff.md`**
   —— **自包含**，可直接交给前端队友。
 
-  **赛题原文（2026-09-25 核对）**：基础任务 3 条 **全达标 ✅**；高阶任务 3 条：
+  **赛题原文（2026-09-25 核对）**：基础任务 3 条 **全达标 [OK]**；高阶任务 3 条：
   | 高阶任务 | 赛题原文要点 | 我们 |
   |---|---|---|
-  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | ❌ 未做（**负收益**，见下）|
-  | ② 高级控制 | **动态分支预测器（如 BTB）** *以及* **完整异常/中断机制** | **半成品**：异常/中断 ✅、动态预测 ❌ |
-  | ③ AI 加速 | YOLO / 轻量 LLM + 传感器 | ❌ **硬件不可行**（32KB BRAM 硬墙）|
+  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | [X] 未做（**负收益**，见下）|
+  | ② 高级控制 | **动态分支预测器（如 BTB）** *以及* **完整异常/中断机制** | **半成品**：异常/中断 [OK]、动态预测 [X] |
+  | ③ AI 加速 | YOLO / 轻量 LLM + 传感器 | [X] **硬件不可行**（32KB BRAM 硬墙）|
 
   **总方针（2026-09-25 用户已定）：高阶任务选做，性能优先。** 不适配架构的宁可不做。
 
   **待办优先级**：
   | 任务 | 优先级 | 收益 | 理由 |
   |---|---|---|---|
-  | 动态分支预测（BTB + BHT）| **P0** | +2~3% | ⭐ **补齐高阶任务②的后一半** —— 另一半已完成，**边际成本最低的一项** |
+  | 动态分支预测（BTB + BHT）| **P0** | +2~3% | [重点] **补齐高阶任务②的后一半** —— 另一半已完成，**边际成本最低的一项** |
   | 主频 45 → 49.89 MHz（`PLL RATIO0: 25.5→23`）| **P0** | **+10.9%** | 已确认**比赛用本地板**；PDS 已证明可达 51.52 |
   | ~~2 路组相联 Cache~~ | **不做** | — | **已决策：不做。** 我们是单周期 32KB BRAM、CoreMark 只占 16.4KB，**没有慢速后端可藏** → Cache 命中 1 拍（零收益）、缺失 2 拍（纯亏），只能为凑评分项牺牲 5~15% 性能。**答辩话术见任务书 §4.2** |
   | 消除 load-use 停顿 | P2 | +5.8% | 风险高，有余力再做 |
 
   做完前两项预期得分 125.40 → **~143（+14%）**，且高阶任务②变完整。**两项都是"性能正收益 + 补齐评分项"，没有取舍。**
-  > ⚠️ **ILA 波形抓取必须排在最后**（RTL 冻结后）—— 加 ILA 探针本身要改 RTL（`syn_keep`），
+  > [!] **ILA 波形抓取必须排在最后**（RTL 冻结后）—— 加 ILA 探针本身要改 RTL（`syn_keep`），
   > 且 `.fic` 与 `.sbit` 必须同批。现在抓的话，队友一改 RTL 就作废。详见任务书 §9。
-  > ⚠️ **别把没把握的写成已完成**：MEIP 只有通路无测试、AI 完全不可行。评委一验证就穿帮。
-- ✅ **队友的 45 MHz 改动已迁移**（2026-09-25，分支 `feat/pll-45mhz`）——
+  > [!] **别把没把握的写成已完成**：MEIP 只有通路无测试、AI 完全不可行。评委一验证就穿帮。
+- [OK] **队友的 45 MHz 改动已迁移**（2026-09-25，分支 `feat/pll-45mhz`）——
   PLL 倍频 27MHz→45MHz + `core.v` 的 `addr_result` 关键路径优化。
   迁移后实测复现了队友全部指标：**约束 45.0005 MHz、可达 51.5198 MHz、
   slack 2.812、All Constraints Met、LUT 3030/FF 2185/DRM 16/APM 11**；
   仿真侧 49/1/0 与 358,846 拍**逐位不变**。分析见
   `doc/reports/2026-09-24_teammate_45mhz.md`。
-  ✅ **板上实测已完成（2026-09-25）**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
+[OK] **板上实测已完成（2026-09-25）**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
   `Iterations 1500`、`Correct operation validated`、358,857 拍/迭代（与 27MHz 板上逐位相同）、
   得分 **125.40 CoreMark**。日志 `doc/board/uart_20260925_005201.txt`。
   > 顺带：队友那份里 `ipcore/unified_mem/`（+ `mem_init.hex`、`ip_backup/`）**已确认是
@@ -318,26 +319,27 @@
   关键坑：**`.fic` 与 `.sbit` 必须来自同一次综合布线**，重新生成比特流后旧 `.fic` 就作废。
   通道位宽上限 256 bit（DebugCore 的 `ips_dbc_compare_256b` 硬件限制），PC 只连低 15 位能省一大半。
   详见 `doc/ila_analysis.md` §7。
-- ✅ **上本地板卡已完成**（2026-09-23）：`.fdc` 已全部改为盘古板实测引脚，
+- [OK] **上本地板卡已完成**（2026-09-23）：`.fdc` 已全部改为盘古板实测引脚，
   上板 top 是 `cpu_top_board`，教程见 `doc/board_bringup.md`。
   **本地板现在插两根 USB 线（Jtag + USB UART）即可烧录与看串口。**
   剩下的板卡相关待办：
-  - ⬜ **ILA 硬件抓波形**（见上）—— 本地板在手后可以不走远程平台，
+  - [ ] **ILA 硬件抓波形**（见上）—— 本地板在手后可以不走远程平台，
     改走本地 PDS Debugger 扫 JTAG 抓（`doc/ila_analysis.md` §7.4 备选路径）
-  - ⬜ **演示视频/照片**：演示程序已在板上跑通（LED 已按开关位置重排），
+  - [ ] **演示视频/照片**：演示程序已在板上跑通（LED 已按开关位置重排），
     但 `doc/board/` 里还只有串口文本，缺录像/照片
-  - ⬜ `doc/base_task_status.md` 的板卡相关描述若还有"引脚以注释预留"字样，需清理
+  - [ ] `doc/base_task_status.md` 的板卡相关描述若还有"引脚以注释预留"字样，需清理
 - **补 riscv-tests 源码**（可选）：放到 `third_party/riscv-tests`（需联网 clone）。
   **不补也能全量回归** —— `scripts\run_riscv_tests.ps1` 不带参数时会自动回退到随附的
   基线 ELF（`third_party/riscv-tests-elf/`，50 个 = rv32ui 42 + rv32um 8，已入库，约 650KB）。
   之所以把二进制入库：上游 riscv-tests 会变，重新 clone 未必复现同一批二进制，
   基线漂移会让人误以为是自己改坏了 CPU。详见该目录的 README。
 - **高阶任务**（详见 `doc/spec.md` §6）：
-  - ✅ **完整异常/中断已做**：CSR 文件 + 6 条 CSR 指令 + mret + 六类同步异常
-    + 定时器中断（CLINT）。测试 `sim/tests/`，一键 `scriptsun_own_tests.ps1`
-  - ⬜ **BTB 动态分支预测**：实测剩余可优化空间只有约 **2.3%**（前向 taken + jalr），
+  - [OK] **完整异常/中断已做**：CSR 文件 + 6 条 CSR 指令 + mret + 六类同步异常
+    + 定时器中断（CLINT）。测试 `sim/tests/`，一键 `scripts
+un_own_tests.ps1`
+  - [ ] **BTB 动态分支预测**：实测剩余可优化空间只有约 **2.3%**（前向 taken + jalr），
     见 `doc/ila_analysis.md` §6
-  - ⬜ **外部中断 MEIP**：通路已具备（cpu_top 接了 UART RX 非空），但**没有测试**，
+  - [ ] **外部中断 MEIP**：通路已具备（cpu_top 接了 UART RX 非空），但**没有测试**，
     不得当作已验证能力
-  - ⬜ 2 路组相联 I/D Cache：**负收益**（存储器是单周期 BRAM，访存恒 1 拍、无缺失惩罚）
-  - ⬜ 边缘 AI：32KB BRAM 是硬墙（无片外存储），当前硬件条件不可行
+  - [ ] 2 路组相联 I/D Cache：**负收益**（存储器是单周期 BRAM，访存恒 1 拍、无缺失惩罚）
+  - [ ] 边缘 AI：32KB BRAM 是硬墙（无片外存储），当前硬件条件不可行

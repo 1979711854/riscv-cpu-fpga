@@ -16,11 +16,11 @@
 | 资源（新设计） | LUT **3,030**（1.90%）、FF 2,185、DRM 16、APM 11 |
 | 实际得分 | **125.40 CoreMark** @45 MHz（板上实测）。27 MHz 板上实测为 75.24，**+66.7%**（即纯时钟比 45/27）|
 
-> ✅ **45 MHz 版已板上实测通过**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
+> [OK] **45 MHz 版已板上实测通过**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
 > `Iterations 1500`，`Correct operation validated`，358,857 拍/迭代。
 > 日志 `doc/board/uart_20260925_005201.txt`。
 >
-> ⭐ **"每迭代周期"在 27 MHz 和 45 MHz 下逐位相同（都是 358,857）** ——
+> [重点] **"每迭代周期"在 27 MHz 和 45 MHz 下逐位相同（都是 358,857）** ——
 > 时钟翻倍而周期数不变，这正是"仿真数据可外推到板上"的依据。
 >
 > 板上验证流程见 `doc/board_bringup.md`。
@@ -34,7 +34,7 @@
 
 ---
 
-## 🚀 主流程：在 PDS 里做
+##  主流程：在 PDS 里做
 
 ### 第 1 步：打开工程
 
@@ -42,7 +42,7 @@
 PDS → File > Open Project →  pds/RV32I_1/RV32I_1.pds
 ```
 
-> ⚠️ **工程是 `pds/RV32I_1/`，不是 `pds/riscv_cpu/`**（后者是早期的 LED 练习工程）。
+> [!] **工程是 `pds/RV32I_1/`，不是 `pds/riscv_cpu/`**（后者是早期的 LED 练习工程）。
 > 工程里的源文件指向仓库根的 `../../rtl/**`，**不要在 `pds/` 下另存 RTL 副本**，
 > 否则两处会漂移。改 RTL 只需在 PDS 里重新 compile。
 
@@ -54,14 +54,14 @@ compile → synthesize → device map → place & route → generate bitstream
 
 产物：`pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`
 
-> ⚠️ **这个文件名看不出里面是哪个固件**（跑分版的还是演示版的）。它只代表
+> [!] **这个文件名看不出里面是哪个固件**（跑分版的还是演示版的）。它只代表
 > "最后一次综合的那版"，而 PDS Programmer 会记住上次的路径 —— 只点 Program
 > 不重新浏览文件，很容易烧成上一版。**要烧哪一版就用 `build_bitstream.ps1` 生成哪一版**，
 > 它会打印 md5。别靠文件名猜。
 
 ### 第 3 步：烧录
 
-> ⚠️ 同目录的 `cpu_top_board.smsk` 是掩码文件，**大小和文件头与 `.sbit` 一模一样**，别点错。
+> [!] 同目录的 `cpu_top_board.smsk` 是掩码文件，**大小和文件头与 `.sbit` 一模一样**，别点错。
 
 **已知无害告警**（可以忽略）：
 - `C: Bitstream-2001: SCBV has not been set` —— 配置 bank 电压提醒，不影响上板
@@ -69,12 +69,12 @@ compile → synthesize → device map → place & route → generate bitstream
 
 ---
 
-## ⚠️ 唯一需要命令行的一步：编译 C 程序
+## [!] 唯一需要命令行的一步：编译 C 程序
 
 **PDS 不是 C 编译器**，CoreMark 和演示程序都是 C，必须先用 RISC-V gcc 编成机器码，
 再转成 BRAM 能加载的 `mem.hex`。
 
-> 💡 **只有换程序时才需要做这一步。** 平时改 RTL 的话，流程全在 PDS 里。
+>  **只有换程序时才需要做这一步。** 平时改 RTL 的话，流程全在 PDS 里。
 
 ### 需要装的工具链
 
@@ -126,7 +126,7 @@ scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目
 
 ---
 
-## 📁 目录结构
+##  目录结构
 
 ```
 riscv-cpu-fpga/
@@ -136,9 +136,9 @@ riscv-cpu-fpga/
 │   ├── bus/                 addr_map.vh + mem_bus.v（唯一的地址译码处）
 │   ├── periph/              uart_tx / uart_rx / gpio
 │   ├── top/cpu_top.v        SoC 顶层（仿真用）
-│   └── top/cpu_top_board.v  ★ 上板顶层（PDS 的 top）：PLL 27→45MHz + 裁剪调试端口
+│   └── top/cpu_top_board.v [重点] 上板顶层（PDS 的 top）：PLL 27→45MHz + 裁剪调试端口
 │
-├── pds/RV32I_1/             ★ PDS 工程（源文件指向 ../../rtl/**）
+├── pds/RV32I_1/ [重点] PDS 工程（源文件指向 ../../rtl/**）
 │   ├── RV32I_1.pds          工程文件
 │   ├── RV32I_1.fdc          引脚/时钟约束（只有 27MHz 输入晶振；45MHz 由 PLL IP 推导）
 │   ├── ipcore/pll/          Pango PLL IP（27MHz→45MHz），必须以 IP 源形式引用
@@ -171,7 +171,7 @@ riscv-cpu-fpga/
 
 ---
 
-## 🔧 可选：命令行仿真与回归
+##  可选：命令行仿真与回归
 
 改 RTL 后建议跑一遍，比上板快得多：
 
@@ -191,7 +191,7 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 ---
 
-## 📚 文档索引
+##  文档索引
 
 | 文件 | 内容 |
 |---|---|
@@ -206,7 +206,7 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 ---
 
-## 🔄 Git 协作
+##  Git 协作
 
 ```powershell
 git pull origin main                    # 开始工作前
@@ -217,13 +217,13 @@ git push origin main
 
 提交信息前缀：`feat:` 新功能 · `fix:` 修复 · `docs:` 文档 · `refactor:` 重构
 
-> ⚠️ **不要提交 PDS 生成物**（`compile/`、`synthesize/`、`.sbit` 等）。
+> [!] **不要提交 PDS 生成物**（`compile/`、`synthesize/`、`.sbit` 等）。
 > `.gitignore` 已配置好，用 `git add .` 时它们不会被加入。
 > 唯一例外是 `pds/RV32I_1/mem.hex`——它是固件快照，有意入库，便于复现比特流。
 
 ---
 
-## ⚠️ 常见问题
+## [!] 常见问题
 
 **Q：PDS 打开工程后提示找不到源文件？**
 A：确认仓库结构完整（`rtl/` 与 `pds/` 同级）。工程用的是相对路径 `../../rtl/**`，

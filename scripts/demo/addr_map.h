@@ -24,7 +24,7 @@
 #define LEGACY_UART_TX 0x00007FFCu
 
 /* 板上时钟：本地盘古板经 PLL 27MHz→45MHz（见 rtl/top/cpu_top_board.v）。
- * ★ 仿真与远程 FPGA 平台固定 27MHz —— 回远程平台要把这里改回 27000000u，
+ * [重点] 仿真与远程 FPGA 平台固定 27MHz —— 回远程平台要把这里改回 27000000u，
  *   同时 scripts/coremark_port/core_portme.c 的 EE_TICKS_PER_SEC 一起改。 */
 #define CPU_HZ      45000000u
 

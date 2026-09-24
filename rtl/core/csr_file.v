@@ -134,11 +134,11 @@ module csr_file (
     // （int_take 被 !id_ex_mret 门控，同步异常与 mret 不可能同拍）。
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            mstatus_mie_r  <= 1'b0;    // ★ 复位必须为 0
+            mstatus_mie_r  <= 1'b0;    // [重点] 复位必须为 0
             mstatus_mpie_r <= 1'b0;
-            mie_mtie_r     <= 1'b0;    // ★ 复位必须为 0
+            mie_mtie_r     <= 1'b0;    // [重点] 复位必须为 0
             mie_meie_r     <= 1'b0;
-            mtvec_r        <= 32'd0;   // ★ 复位取 0
+            mtvec_r        <= 32'd0;   // [重点] 复位取 0
             mscratch_r     <= 32'd0;
             mepc_r         <= 32'd0;
             mcause_r       <= 32'd0;
@@ -149,7 +149,7 @@ module csr_file (
 
             if (trap) begin
                 // 同步异常 / 中断的入口副作用。
-                // ★ mstatus.MIE ← 0 是【必须】的：它让 int_take 在下一拍自动消掉。
+                // [重点] mstatus.MIE ← 0 是【必须】的：它让 int_take 在下一拍自动消掉。
                 //   漏掉的话中断会每拍重新触发，PC 被钉死在 mtvec（handler 的
                 //   第一条指令永远进不了 EX），表现是 PC 不动、周期数暴涨。
                 mepc_r         <= trap_pc;

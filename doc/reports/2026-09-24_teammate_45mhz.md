@@ -14,11 +14,11 @@
 | 时钟约束 | 27 MHz | **45.0005 MHz** |
 | 可达 Fmax | 37.53 MHz | **51.52 MHz** |
 | slack | +10.394 ns | **+2.812 ns** |
-| 约束 | ✅ | ✅ **All Constraints Met** |
+| 约束 | [OK] | [OK] **All Constraints Met** |
 | LUT / FF | 2915 / 2183 | 3030 / 2185 |
 | CoreMark ITER | 820 | **1500**（45 MHz 下 11.96 s）|
 
-⭐ **这正好印证了 2026-09-23 的关键路径分析** —— 当时写下"乘法器 APM 三级级联约占 8 ns，
+[重点] **这正好印证了 2026-09-23 的关键路径分析** —— 当时写下"乘法器 APM 三级级联约占 8 ns，
 是 Fmax 优化最直接的抓手"。**队友独立找到了同一个点并把它切掉了**（见 §2 的 `addr_result`）。
 
 ---
@@ -33,7 +33,7 @@
 | 判定是"基于我们"的依据 | ① `.gitignore` 与我们**逐字节相同**；② `rtl/core/csr_file.v` 与我们**完全相同**（那是我们 09-23 才写的）；③ `rtl/core/core.v` 只差 7 行 |
 | 另一份 | 桌面还有 `riscv-cpu-fpga_clean_20260924.zip`（1.0 MB，09-24 14:32）—— 疑似同一份的打包版，未查 |
 
-### ⚠️ 比对方法：必须先剥 CR
+### [!] 比对方法：必须先剥 CR
 
 两边的行尾符不一致（git 的 `autocrlf` 造成），**不剥 CR 的话几乎每个文件都"不同"**
 （连 09-14 就没动过的 `imm_gen.v`、`SHA256SUMS` 都报差异）。正确做法：
@@ -111,7 +111,7 @@ diff -rq --strip-trailing-cr --exclude=programs --exclude=tools \
 +    assign led[7:2] = led_gpio[7:2];
 ```
 
-> ⚠️ `led[0]/led[1]` 覆盖了我们"LED 按开关位置重排"的映射 → 演示程序 `LED=KEY`
+> [!] `led[0]/led[1]` 覆盖了我们"LED 按开关位置重排"的映射 → 演示程序 `LED=KEY`
 > 的按键→灯对应关系会失效。**用户已决定：保留调试信号，但加开关能切回演示映射。**
 
 ### 2.3 其余源码改动（都很小）
@@ -149,7 +149,7 @@ diff -rq --strip-trailing-cr --exclude=programs --exclude=tools \
  Device Map: LUT 3030 / FF 2185 / DRM 16 / APM 11 / DistRAM 132
 ```
 
-### ★ `.fdc` 没写 45 MHz 约束，但约束是生效的
+### [重点] `.fdc` 没写 45 MHz 约束，但约束是生效的
 
 `.fdc` 与我们**逐字节相同**，仍只有 `create_clock -name {clk} [get_ports {clk}] -period {37.037}`。
 PDS **从 PLL IP 自动推导出了输出时钟约束**（时序报告里显示 `45.0005 MHz`）——
@@ -223,7 +223,7 @@ module cpu_top_board #(
     endgenerate
 ```
 
-⚠️ PDS 综合时 parameter 取默认值，所以**要切演示版得重新综合**（或用 `-D` 宏）。
+[!] PDS 综合时 parameter 取默认值，所以**要切演示版得重新综合**（或用 `-D` 宏）。
 在 `.fdc` 头部与 `doc/board_bringup.md` 里都要写清这一点。
 
 ---
@@ -239,7 +239,7 @@ module cpu_top_board #(
 | 5 | PDS 综合 | 复现 `45.0005 MHz` 约束 + `All Constraints Met`，Fmax ≈ 51.5 MHz |
 | 6 | 上板 | 烧完看串口：CoreMark `Total ticks` → 除以 **45e6** 应 ≈ 11.96 s；`Correct operation validated` |
 
-> ⚠️ **第 6 项的判据变了**：板上时钟现在是 45 MHz，所以
+> [!] **第 6 项的判据变了**：板上时钟现在是 45 MHz，所以
 > `板上时长 = Total ticks ÷ 45,000,000`（不再是 ÷27e6）。
 > `core_portme.c` 的 `EE_TICKS_PER_SEC` 已是 45e6，CoreMark 自己算的数是对的；
 > 但**我们文档里那些"÷27e6"的说明要同步改**。
@@ -250,10 +250,10 @@ module cpu_top_board #(
 
 1. ~~**`ipcore/unified_mem` + `mem_init.hex`**：队友做了但没启用（`.pds` 未引用）。
    动向不明 —— **要问队友**是打算替换行为级存储器、还是中途放弃。~~
-   ✅ **2026-09-25 已问明**：那是队友**加 IP 核失败**的产物，**可删**。
+[OK] **2026-09-25 已问明**：那是队友**加 IP 核失败**的产物，**可删**。
    迁移时本就**故意没带**，我们仓库里没有这些东西 —— 详见
    `doc/reports/2026-09-25_45mhz_migration.md` §4.2。
-   > ⛔ **转述警告**：这里的 `ipcore/unified_mem/` 与我们**自己的**
+   > [!] **转述警告**：这里的 `ipcore/unified_mem/` 与我们**自己的**
    > `rtl/mem/unified_mem.v`（统一存储器本体，**承重，绝不能删**）同名但完全无关。
    > 一句"把 unified_mem 删掉"足以毁掉设计 —— **务必带路径**。
    至于"用真 IP 核"的动机：仍是**负收益方向**（单周期 BRAM 无缺失惩罚，

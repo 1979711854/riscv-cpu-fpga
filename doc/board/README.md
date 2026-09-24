@@ -6,7 +6,7 @@
 > 板上资源：`clk=D18`(27MHz 晶振)、`resetn=C22`、`UART=B24/C24`、LED/KEY 见
 > `pds/RV32I_1/RV32I_1.fdc` 头部注释。
 
-## 当前设计：**45 MHz（PLL 倍频）**，2026-09-25 板上实测通过 ✅
+## 当前设计：**45 MHz（PLL 倍频）**，2026-09-25 板上实测通过 [OK]
 
 2026-09-25 起板上时钟改为 **45 MHz**（板载 27MHz 经 PLL 倍频，见 `doc/board_bringup.md` §2）。
 **已验证通过**，日志 `uart_20260925_005201.txt`。
@@ -18,7 +18,7 @@
 | `Total ticks` | 294,262,913 | **538,285,445** |
 | 时长算法 | ÷ 27e6 = 10.898 s | **÷ 45e6 = 11.9619 s** |
 | 得分 | 75.24 CoreMark | **125.40 CoreMark（+66.7%）** |
-| 板上证据 | ✅ | ✅ **已完成** |
+| 板上证据 | [OK] | [OK] **已完成** |
 
 > **"每迭代周期"在两个时钟下逐位相同（都是 358,857）** —— 这正是
 > "周期数与时钟无关"的直接证据，也让"仿真数据可外推到板上"这条推论站得住。
@@ -31,7 +31,7 @@
 | `uart_20260923_200737.txt` | **从左到右**依次按 4 个开关 → `0x01 → 0x02 → 0x04 → 0x08` | 证明 `key[0..3]` 与开关左右顺序一致 |
 | `uart_20260923_201540.txt` | CoreMark v1.0（ITER=820，**27 MHz**） | 27 MHz 时代的板上证据 |
 | `uart_20260923_202257.txt` | CoreMark 第二次跑（按复位键重跑，未重烧） | **复现性**：`Total ticks` 与第一次逐位相同（都是 294262913） |
-| **`uart_20260925_005201.txt`** | ⭐ **CoreMark v1.0（ITER=1500，45 MHz）** | **当前设计的板上证据**；30 秒内跑了 2 轮，`Total ticks` 逐位相同 |
+| **`uart_20260925_005201.txt`** | [重点] **CoreMark v1.0（ITER=1500，45 MHz）** | **当前设计的板上证据**；30 秒内跑了 2 轮，`Total ticks` 逐位相同 |
 
 ## CoreMark 关键数据
 
@@ -66,12 +66,12 @@ Correct operation validated.
 
 时长 = 294,262,913 ÷ 27e6 = **10.898 s**；每迭代周期 358,857；得分 75.24 CoreMark。
 
-### ⚠️ CRC 怎么比才对：**别拿 `crcfinal` 当判据**
+### [!] CRC 怎么比才对：**别拿 `crcfinal` 当判据**
 
 | CRC | 随 ITER 变吗 | 能不能用来比对 |
 |---|---|---|
-| `seedcrc` / `crclist` / `crcmatrix` / `crcstate` | **不变** | ✅ **这才是判据**，跨 ITER、跨时钟都必须逐位相同 |
-| `crcfinal` | **变** | ❌ 不能比 |
+| `seedcrc` / `crclist` / `crcmatrix` / `crcstate` | **不变** | [OK] **这才是判据**，跨 ITER、跨时钟都必须逐位相同 |
+| `crcfinal` | **变** | [X] 不能比 |
 
 **依据（读 CoreMark 源码确认，`third_party/coremark/core_main.c` 的 `iterate()`）：**
 
@@ -99,7 +99,7 @@ for (i = 0; i < iterations; i++) {
 （CLAUDE.md 早先写"四个 CRC 与仿真逐位一致"措辞不严，已一并更正。）
 | **复现性** | 按复位键重跑一次（未重烧），`Total ticks` **逐位相同** —— 板上跑分是确定性的 |
 
-> ⚠️ `Total time (secs)` 与 `Iterations/Sec` 是**整数截断**打印的
+> [!] `Total time (secs)` 与 `Iterations/Sec` 是**整数截断**打印的
 > （`HAS_FLOAT=0`，见 `scripts/coremark_port/core_portme.h`），
 > 报告里引用请用 `Total ticks ÷ EE_TICKS_PER_SEC(=27,000,000)` 自己算，
 > 别直接用打印的 `10` / `82`。

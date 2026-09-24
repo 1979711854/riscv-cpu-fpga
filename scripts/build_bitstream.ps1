@@ -20,13 +20,13 @@
 .PARAMETER Variant
     coremark = CoreMark ITER=1500 跑分版（板上约 11.96 s，赛题硬指标）
     demo     = 演示程序版（读按键 -> 写 LED -> 串口打印）
-    ⚠️ 两个变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
+[!] 两个变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
          demo     -> DEBUG_LED=0（led[7:0] 全给 GPIO，恢复 LED=KEY 演示映射）
 
 .PARAMETER Iter
     仅 coremark 用，默认 1500。
-    ⚠️ **改了流水线/取指逻辑必须重算**：
+[!] **改了流水线/取指逻辑必须重算**：
         ITER = 450,000,000 ÷ 每迭代周期数   ← 分母是**板上 45MHz×10s**
     （仿真/远程平台是 27MHz，那边用 270,000,000。别混。）
 
@@ -72,7 +72,7 @@ Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
 Write-Host ""
 
 # ---- 0) 设置 DEBUG_LED（try/finally 保证还原）----
-# ⚠️ 必须用 .NET 的 File::ReadAllText/WriteAllText 配 no-BOM 编码：
+# [!] 必须用 .NET 的 File::ReadAllText/WriteAllText 配 no-BOM 编码：
 #    Windows PowerShell 5.1 的 `Set-Content -Encoding utf8` 会**写 BOM**，
 #    在 .v 文件开头插三个字节，iverilog/PDS 可能因此拒收。
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -161,7 +161,7 @@ Write-Host "     配置文件就是上面这个路径（**别用备份/旧文件
 if ($Variant -eq "coremark") {
     Write-Host "  2) 烧完立刻抓串口（一轮约 12 秒，慢一拍就错过）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
-    Write-Host "     ★ 板上时钟已改为 45MHz，期望 Total ticks ≈ 538270000 -> /45e6 = 11.96 s"
+    Write-Host " [重点] 板上时钟已改为 45MHz，期望 Total ticks ≈ 538270000 -> /45e6 = 11.96 s"
     Write-Host "       （**别再用 ÷27e6** —— 那是仿真/远程平台的口径）"
 } else {
     Write-Host "  2) 烧完开串口，应反复打印 KEY=0x00 LED=0x00；按 SW4..SW7 看对应灯亮"

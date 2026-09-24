@@ -46,7 +46,7 @@ module cpu_tb_riscv;
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
         .done(),           // 本测试台不关心 done（判分靠 tohost）
-        // ★ 必须接！漏了它 irq_timer 悬空为 Z，core 里
+        // [重点] 必须接！漏了它 irq_timer 悬空为 Z，core 里
         //   `int_timer = mie.MTIE & Z` 会是不定态，中断行为随机 ——
         //   表现为测试台与调试台跑出完全不同的结果（2026-09-23 实踩）。
         .irq_timer(irq_timer)

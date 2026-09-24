@@ -80,7 +80,7 @@ module core (
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
     reg        id_ex_pred_taken;   // 该指令在 ID 级是否【实际发生过】预测重定向
     // ID/EX 里是否真的有一条指令（不是气泡）。
-    // ★ 中断受理必须看它：否则在"上一条指令刚重定向、ID/EX 已清空"的那一拍，
+    // [重点] 中断受理必须看它：否则在"上一条指令刚重定向、ID/EX 已清空"的那一拍，
     //   若此时 MIE 恰好为 1（例如 mret 刚把 MIE 从 MPIE 恢复），中断会被受理，
     //   而 mepc 取的是 id_ex_pc —— 气泡的 id_ex_pc 是 0，于是 mepc 被写成 0，
     //   随后的 mret 直接跳到地址 0。2026-09-23 实测踩到，现象是测试莫名重启。
@@ -165,7 +165,7 @@ module core (
     // 更新【无门控】：fetch_addr 在 stall/div_stall 时就等于 if_addr_d 自身，
     // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !div_stall)` 门控。
     //
-    // ⚠️ 原来那个门控必须去掉，因为 `trap && stall` 是**可达的**
+    // [!] 原来那个门控必须去掉，因为 `trap && stall` 是**可达的**
     //（EX 里是未对齐的 load 时，ex_exception 与 load-use stall 同拍成立）。
     // 那时 fetch_addr = trap_target 而门控会拦住更新 → if_addr_d 停在旧值
     // → 下一拍的 if_id_pc 与指令对不上。这个坑基线测试碰不到，只有自写的
@@ -306,7 +306,7 @@ module core (
     // EX 结果三选一：CSR 读 > 多拍除法 > ALU
     //   * CSR 读值【骑在这里】才能白拿前递与写回通路 —— 对下游而言它就是
     //     "EX 算出来的结果"，不需要任何额外旁路。
-    //   * ⚠️ 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
+    //   * [!] 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
     //     `id_ex_is_div`，误触发除法停顿 → div_stall 永不释放 → 死锁。
     //     所以 CSR 用**独立的** id_ex_is_csr 标志，alu_op 保持 0。
     // ------------------------------------------------------------------
@@ -317,7 +317,7 @@ module core (
     // 单独用一个加法器产生地址，把 32×32 乘法器从
     // "未对齐判据 → 异常 → pc_r 写使能" 这条【假路径】上切下来：
     // mul 指令从不访存，乘法结果根本不该出现在 pc_r 的时序弧里。
-    // ⚠️ 只用于未对齐判据与 mtval，不改变任何流水线语义（见 §关键路径）。
+    // [!] 只用于未对齐判据与 mtval，不改变任何流水线语义（见 §关键路径）。
     wire [31:0] addr_result = alu_a + alu_b;
     assign      div_stall  = id_ex_is_div && !div_done;
 
@@ -390,7 +390,7 @@ module core (
     // ---- 同步异常 ----
     // 判据之间天然互斥（非法指令的 mem_read/mem_write 必为 0，ecall/ebreak 同理），
     // 所以下面的优先级只为把编码写清楚，不承担正确性。
-    // ⚠️ 必须用 csr_wr_en_raw（"这条指令真的在写吗"），不能用 csr_wr_illegal 单独判断。
+    // [!] 必须用 csr_wr_en_raw（"这条指令真的在写吗"），不能用 csr_wr_illegal 单独判断。
     //    csr_wr_illegal 只看地址是不是只读区，而【只读 CSR 是可以读的】——
     //    `csrr a0, mhartid` 是 RS 且 rs1=x0，根本不写，却被判成非法指令，
     //    导致 riscv-tests 的 init 段每轮都 trap → 重启 → 50 个测试全 TIMEOUT。
@@ -414,7 +414,7 @@ module core (
     wire int_ext     = csr_mie_meie & irq_ext;
     wire int_pending = int_timer | int_ext;
     // 门控：
-    //   id_ex_valid —— ★ EX 里必须真的有指令。缺了它会在"上一条指令刚重定向、
+    //   id_ex_valid —— [重点] EX 里必须真的有指令。缺了它会在"上一条指令刚重定向、
     //                  ID/EX 已清空"的那一拍误受理中断，而 mepc 取的是气泡的
     //                  id_ex_pc(=0) → mret 跳到地址 0。2026-09-23 实测踩到。
     //   !div_stall  —— 护住多拍除法器，避免残留状态/陈旧结果
@@ -599,7 +599,7 @@ module core (
             id_ex_rs2       <= 5'd0;
             id_ex_funct3    <= 3'd0;
             id_ex_sys_ebreak <= 1'b0;
-            // ⚠️ 下面这几个新增标志【一个都不能漏】：冲刷后残留旧标志
+            // [!] 下面这几个新增标志【一个都不能漏】：冲刷后残留旧标志
             //    会让气泡被当成非法指令或 CSR 指令 → 假异常。且是静默的。
             id_ex_is_csr    <= 1'b0;
             id_ex_csr_addr  <= 12'd0;
@@ -649,7 +649,7 @@ module core (
     end
 
     // ================= EX/MEM 寄存器 =================
-    // ★ trap 必须清 EX/MEM，只清 ID/EX 是不够的（2026-09-23 实测踩到）：
+    // [重点] trap 必须清 EX/MEM，只清 ID/EX 是不够的（2026-09-23 实测踩到）：
     //   `EX/MEM <= ID/EX` 是在【同一个时钟沿】发生的。trap 那拍肇事指令正躺在
     //   ID/EX 里，清 ID/EX 只能保证【下一拍】的 EX/MEM 是气泡，而【这一拍】
     //   EX/MEM 照样把它收下 —— 于是下拍访存口就真的把它写出去了。

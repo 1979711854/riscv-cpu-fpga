@@ -17,7 +17,7 @@
 | **Jtag ×1** | FTDI（双通道） | **两个** `USB Serial Port (COMxx)` | 烧比特流（PDS Programmer） |
 | **USB UART ×1** | **CP2102** + USB Type-C | **一个** `Silicon Labs CP210x USB to UART Bridge (COMxx)` | 看 CPU 的串口输出 |
 
-⚠️ **只插 Jtag 那根，串口是不会有任何输出的** —— 这是最容易卡住的一步。
+[!] **只插 Jtag 那根，串口是不会有任何输出的** —— 这是最容易卡住的一步。
 
 用一下命令认哪个是真串口：
 
@@ -53,7 +53,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(45MHz) ──> cpu_top
   **不能只把 `pll.v` 当普通源文件加进去** —— 那样综合会报 `pll` 是黑盒。
 * **由此产生的连带改动**：UART 分频 390（`cpu_top_board` 传 `UART_DIV`）、
   CoreMark 的 `EE_TICKS_PER_SEC = 45000000`、`addr_map.h` 的 `CPU_HZ = 45000000u`。
-* ⚠️ **仿真仍然是 27 MHz**（测试台例化 `cpu_top`，不传参数 → 分频 234）。
+* [!] **仿真仍然是 27 MHz**（测试台例化 `cpu_top`，不传参数 → 分频 234）。
   所以：**仿真 27 MHz / 上板 45 MHz**，两套口径别混。
   远程 FPGA 平台**没有 PLL，也是 27 MHz**。
 
@@ -86,7 +86,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(45MHz) ──> cpu_top
 
 ## 3. 生成要烧的比特流：**一条命令**
 
-⚠️ **仓库里没有任何 `.sbit` 文件**（被 `.gitignore` 排除，每个 9 MB）。
+[!] **仓库里没有任何 `.sbit` 文件**（被 `.gitignore` 排除，每个 9 MB）。
 **队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
 ```powershell
@@ -109,7 +109,7 @@ PDS → TOOL → Programmer（下载）
   配置文件：<上面那个路径>
 ```
 
-### ⚠️ 为什么必须用脚本，而不是"直接烧 generate_bitstream 里现成的"
+### [!] 为什么必须用脚本，而不是"直接烧 generate_bitstream 里现成的"
 
 **那个文件名看不出里面是哪个固件** —— 它只代表「最后一次综合的那版」。
 
@@ -152,7 +152,7 @@ D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe -project RV32I_1.pds -run gen_bit_st
 > **`led[0]` 是排障利器**：灯亮 = PLL 锁定成功；**不亮 = PLL 没锁，CPU 被一直复位**
 > （那时串口必然是死的）。`led[1]` 亮 = CoreMark 已写 0x7FF8 收尾。
 
-⚠️ **PDS 综合取的是参数默认值，命令行传不了 `-D` 宏**，所以切换必须改参数再重新综合：
+[!] **PDS 综合取的是参数默认值，命令行传不了 `-D` 宏**，所以切换必须改参数再重新综合：
 
 * 用 `build_bitstream.ps1` 时**脚本会自动设置**（coremark→1、demo→0），综合完还原源文件，
   不用管；
@@ -228,7 +228,7 @@ Correct operation validated.
 
 实测：538,285,445 ÷ 45,000,000 = **11.9619 s** → **125.40 CoreMark**（满足赛题 ≥10 s）。
 
-⚠️ **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
+[!] **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
 显示 `11`（实际 11.9619）、`136`（= 1500 ÷ 11 的截断值，**真实 125.40**）。
 **真实时长要自己算：**
 
@@ -242,7 +242,7 @@ Correct operation validated.
 `seedcrc / crclist / crcmatrix / crcstate`（`0xe9f5 / 0xe714 / 0x1fd7 / 0x8e3a`）
 与仿真逐位一致 —— 这是"CPU 真机算得对"的判据，**换时钟不该改变它们**。
 
-⚠️ **`crcfinal` 不能拿来比对** —— 它跨迭代累加、**随 ITER 变**：
+[!] **`crcfinal` 不能拿来比对** —— 它跨迭代累加、**随 ITER 变**：
 ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`，**三个都正确**。
 
 ---

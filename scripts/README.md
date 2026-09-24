@@ -20,7 +20,7 @@ scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
 ```
 
-> ⚠️ **上板前记得换回 ITER=1500 并同步**：跑过 `-Iter 1` 之后
+> [!] **上板前记得换回 ITER=1500 并同步**：跑过 `-Iter 1` 之后
 > `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有几毫秒（45 MHz 板上约 0.008 s）、
 > CoreMark 判 invalid。
 > ```powershell

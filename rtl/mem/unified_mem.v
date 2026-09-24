@@ -38,7 +38,7 @@ module unified_mem (
     // 否则高位被静默截断。
     (* syn_ramstyle = "block_ram" *) reg [31:0] mem [0:8191];
 
-    // ★ 这里【不要】加整数组清零的 for 循环。
+    // [重点] 这里【不要】加整数组清零的 for 循环。
     //   PDS 的循环展开上限是 2000 次（Verilog-4092: Loop limit 2000 exceeded），
     //   8192 次的清零循环会直接让 compile 失败。
     //   仿真侧需要清零是另一回事 —— 那是为了防 X 传播，写在 sim/mem_model.vh 里，

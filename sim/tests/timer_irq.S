@@ -114,7 +114,7 @@ irq_handler:
 
         addi  s0, s0, 1             /* 计数 +1 */
 
-        /* ★ 让 MTIP 自动落下：把 mtimecmp 推到远未来。
+        /* [重点] 让 MTIP 自动落下：把 mtimecmp 推到远未来。
          *   本设计里 MTIP 是纯电平比较器，这一写下一拍就翻低 ——
          *   这正是 mret 恢复 MIE 后不会立刻再次 trap 的原因。*/
         li    t5, MTIMECMP

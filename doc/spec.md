@@ -61,7 +61,7 @@ id_ex_pc  = pc_r - 12          // 正在 EX 执行
 退回 `if_addr_d[14:2]`（重读上一拍已读过的同一 word），让 `if_id` 在 stall 结束那拍
 拿到 (pc, 指令) 同址的一对。
 
-> ⚠️ 是 **`imem_addr` 后退，不是 `pc_r` 后退**。若把 `pc_r` 也往后推，
+> [!] 是 **`imem_addr` 后退，不是 `pc_r` 后退**。若把 `pc_r` 也往后推，
 > 连续两拍 stall 会让同一条指令被取两次，非幂等指令被重复执行 —— 历史上踩过。
 
 **跳转目标在冲刷当拍就旁路给取指端**（2026-09-21 改造）。因为取指是**同步读 BRAM**，
@@ -82,7 +82,7 @@ else if (ex_flush) pc_r <= ex_target + 32'd4;
 量化证据见 `doc/ila_analysis.md` §2：
 
 ```
-计时区间自洽：288,056（提交）+ 20,720（load-use 停顿）+ 50,070（分支）= 358,846 ✓
+计时区间自洽：288,056（提交）+ 20,720（load-use 停顿）+ 50,070（分支）= 358,846 [OK]
 分支 50,070 的构成：命中 28,860×1 + 误判 2,367×2 + 未预测 8,238×2
 ```
 
@@ -151,16 +151,16 @@ else if (ex_flush) pc_r <= ex_target + 32'd4;
 0x8000_0000 起  外设区（字内偏移 = addr[5:2]）
     0x00 W LED[7:0]     R {16'b0, key[7:0], led[7:0]}   GPIO
     0x08 W UART TX      R 0
-    0x0C R UART RX      {valid[31], 23'b0, data[7:0]}   ★ 读操作会弹出 FIFO 头
+    0x0C R UART RX      {valid[31], 23'b0, data[7:0]} [重点] 读操作会弹出 FIFO 头
     0x10 R TIMER[31:0]  （与 0x7FF4 同一个计数器，即 CLINT 的 mtime）
     0x14 W/R MTIMECMP[31:0]  定时器比较值：mtime >= mtimecmp → MTIP 拉高
-                             ★ 只接受整字写（sw）；复位值全 1，上电不会误触发
-                             ★ 软件写新值后 MTIP 自动落下（纯电平比较，不锁存）
+[重点] 只接受整字写（sw）；复位值全 1，上电不会误触发
+[重点] 软件写新值后 MTIP 自动落下（纯电平比较，不锁存）
 ```
 
 > **CLINT / 定时器中断**：`mtime` 就是那个自由跑计数器（32 位，不是规范建议的
 > 64 位）。
-> ⚠️ **回绕周期跟着时钟走**：27 MHz 下约 **159 秒**，板上 45 MHz 下只有 **95.4 秒**。
+> [!] **回绕周期跟着时钟走**：27 MHz 下约 **159 秒**，板上 45 MHz 下只有 **95.4 秒**。
 > 按"最长的一次连续计时"算，本项目最长的 CoreMark 计时区间是 **11.96 秒**
 > （ITER=1500 @45MHz），两者都远小于回绕周期，**当前无风险**。
 > 但若日后把 ITER 加到几千、或做更长的长稳测试，**必须重新核对** ——
@@ -229,11 +229,11 @@ else if (ex_flush) pc_r <= ex_target + 32'd4;
 - 测试：`sim/tests/exceptions.S`、`sim/tests/timer_irq.S`，
   一键跑 `scripts/run_own_tests.ps1`。
 
-> ⚠️ **只支持 M 模式**：`mstatus.MPP` 硬连线 2'b11，`mret` 永远回 M 模式。
+> [!] **只支持 M 模式**：`mstatus.MPP` 硬连线 2'b11，`mret` 永远回 M 模式。
 > 这不是偷懒 —— riscv-tests 的 init 会 `csrwi mstatus, 0` 把 MPP 清 0，
 > 如实实现会让 `mret` 降到 U 模式，与测试对 `mcause` 的假设不符。
 >
-> ⚠️ **未实现的 CSR 读 0、写忽略、不抛非法**（stvec/medeleg/satp/pmp* 等）。
+> [!] **未实现的 CSR 读 0、写忽略、不抛非法**（stvec/medeleg/satp/pmp* 等）。
 > init 段会访问它们，按规范抛异常会让 50 个基线 ELF 当场全挂。
 > 这是明知与规范有偏差的工程取舍。
 

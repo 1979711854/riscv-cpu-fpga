@@ -31,8 +31,8 @@ barebones_clock(void)
 #define TIMER_RES_DIVIDER          1
 #define SAMPLE_TIME_IMPLEMENTATION 1
 /* 时钟频率 = 本固件要跑的那个平台的系统时钟。
- * ★ 上板（本地盘古板）：PLL 27MHz→45MHz，见 rtl/top/cpu_top_board.v；
- * ★ 仿真 / 远程 FPGA 平台：固定 27MHz。
+ * [重点] 上板（本地盘古板）：PLL 27MHz→45MHz，见 rtl/top/cpu_top_board.v；
+ * [重点] 仿真 / 远程 FPGA 平台：固定 27MHz。
  * 填错不会报错，但 CoreMark 会算出错误的秒数 —— 判 valid 时按这个值卡。 */
 #define EE_TICKS_PER_SEC           45000000
 

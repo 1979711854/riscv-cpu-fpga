@@ -12,12 +12,12 @@
 
 | # | 验证项 | 结果 |
 |---|---|---|
-| 1 | `run_riscv_tests.ps1` | ✅ **49 PASS / 1 FAIL / 0 TIMEOUT** —— 与迁移前逐项一致 |
-| 2 | `run_coremark.ps1 -Iter 1` | ✅ **Total ticks 358,846 / total cycles 1,462,898** —— **逐位不变** |
-| 3 | `run_sim.ps1 -NoWave` | ✅ 6 个测试台全过（exit 0）|
-| 4 | `run_own_tests.ps1` | ✅ `exceptions` PASS、`timer_irq` PASS |
-| 5 | PDS 综合布线 | ✅ **45.0005 MHz / 可达 51.5198 MHz / slack +2.812 / All Constraints Met** |
-| 6 | 板上实测 | ✅ **`Total ticks 538,285,445` → 11.9619 s / 125.40 CoreMark**；`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致 —— 见 §4.1 |
+| 1 | `run_riscv_tests.ps1` | [OK] **49 PASS / 1 FAIL / 0 TIMEOUT** —— 与迁移前逐项一致 |
+| 2 | `run_coremark.ps1 -Iter 1` | [OK] **Total ticks 358,846 / total cycles 1,462,898** —— **逐位不变** |
+| 3 | `run_sim.ps1 -NoWave` | [OK] 6 个测试台全过（exit 0）|
+| 4 | `run_own_tests.ps1` | [OK] `exceptions` PASS、`timer_irq` PASS |
+| 5 | PDS 综合布线 | [OK] **45.0005 MHz / 可达 51.5198 MHz / slack +2.812 / All Constraints Met** |
+| 6 | 板上实测 | [OK] **`Total ticks 538,285,445` → 11.9619 s / 125.40 CoreMark**；`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致 —— 见 §4.1 |
 
 **第 2 项是本次迁移最重要的证据**：`addr_result` 属于纯组合旁路，
 周期数与迁移前**逐位相同**，所以 `doc/resource_efficiency.md` 里那套
@@ -29,23 +29,23 @@
 
 | 文件 | 改动 | 与方案一致？ |
 |---|---|---|
-| `rtl/core/core.v` | 新增 `addr_result = alu_a + alu_b`，用于 `mem_addr_low` / `exc_tval` | ✅ |
-| `rtl/top/cpu_top_board.v` | PLL 例化 + `lock` 门控复位 + **`DEBUG_LED` 参数开关** + 文件头重写 | ✅（开关按用户拍板） |
-| `rtl/top/cpu_top.v` | 新增 `parameter [9:0] UART_DIV = 10'd234`，透传给 uart_tx/rx | ✅ |
-| `rtl/periph/uart_tx.v` | `localparam DIV` → `parameter DIV` | ✅ |
-| `rtl/periph/uart_rx.v` | 同上；`HALF` 改为 `DIV / 2`（不再硬编码 117） | ✅ |
-| `scripts/coremark_port/core_portme.c` | `EE_TICKS_PER_SEC` → 45000000 | ✅ |
-| `scripts/demo/addr_map.h` | `CPU_HZ` → 45000000u | ✅ |
-| `pds/RV32I_1/ipcore/pll/` | 整个目录复制过来 | ✅ |
-| `pds/RV32I_1/RV32I_1.pds` | 只加 `wgt_my_ips_src` 里的 pll IP 引用 | ✅ 最小改动 |
-| `pds/RV32I_1/mem.hex` | ITER=1500 | ✅ 但**自己重新生成**，见 §2 |
-| `scripts/build_bitstream.ps1` | 默认 `Iter` 820→1500；**按变体自动设置 `DEBUG_LED`**；文档口径 | ➕ 方案外，理由见 §3.2 |
-| `pds/RV32I_1/RV32I_1.fdc` | 只加时钟说明注释（约束一个字没改） | ➕ 方案 §3 要求补注释 |
+| `rtl/core/core.v` | 新增 `addr_result = alu_a + alu_b`，用于 `mem_addr_low` / `exc_tval` | [OK] |
+| `rtl/top/cpu_top_board.v` | PLL 例化 + `lock` 门控复位 + **`DEBUG_LED` 参数开关** + 文件头重写 | [OK]（开关按用户拍板） |
+| `rtl/top/cpu_top.v` | 新增 `parameter [9:0] UART_DIV = 10'd234`，透传给 uart_tx/rx | [OK] |
+| `rtl/periph/uart_tx.v` | `localparam DIV` → `parameter DIV` | [OK] |
+| `rtl/periph/uart_rx.v` | 同上；`HALF` 改为 `DIV / 2`（不再硬编码 117） | [OK] |
+| `scripts/coremark_port/core_portme.c` | `EE_TICKS_PER_SEC` → 45000000 | [OK] |
+| `scripts/demo/addr_map.h` | `CPU_HZ` → 45000000u | [OK] |
+| `pds/RV32I_1/ipcore/pll/` | 整个目录复制过来 | [OK] |
+| `pds/RV32I_1/RV32I_1.pds` | 只加 `wgt_my_ips_src` 里的 pll IP 引用 | [OK] 最小改动 |
+| `pds/RV32I_1/mem.hex` | ITER=1500 | [OK] 但**自己重新生成**，见 §2 |
+| `scripts/build_bitstream.ps1` | 默认 `Iter` 820→1500；**按变体自动设置 `DEBUG_LED`**；文档口径 | + 方案外，理由见 §3.2 |
+| `pds/RV32I_1/RV32I_1.fdc` | 只加时钟说明注释（约束一个字没改） | + 方案 §3 要求补注释 |
 
 **没带的**（按方案）：
 * `ipcore/unified_mem/` + `mem_init.hex` + `ip_backup/` —— 队友"加 IP 核失败"的产物
   （2026-09-25 已确认，见 §4.2），`.pds` 从未引用。本来就是**负收益方向**。
-  ⛔ 别和我们自己的 `rtl/mem/unified_mem.v` 搞混 —— 那个是承重的存储器本体。
+[!] 别和我们自己的 `rtl/mem/unified_mem.v` 搞混 —— 那个是承重的存储器本体。
 * `doc/**`、`CLAUDE.md`、`bitstreams/`、`bak_2026-09-21_ila/` —— 我们比队友新。
 * 任何 PDS 构建产物。
 
@@ -94,7 +94,7 @@ scripts\run_coremark.ps1 -Iter 1500 -SkipSim
 
 ## 4. 待办
 
-### 4.1 ✅ 板上实测（2026-09-25 已完成）
+### 4.1 [OK] 板上实测（2026-09-25 已完成）
 
 ```powershell
 # 烧 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit
@@ -130,14 +130,14 @@ Correct operation validated.
 | ITER | 820 | **1500** |
 | 期望 `Total ticks` | 294,262,913 | 期望 ≈ 538,270,000，**实测 538,285,445** |
 | 时长算法 | ÷ 27e6 = 10.898 s | **÷ 45e6 = 11.9619 s** |
-| 四个子 CRC | `e9f5 / e714 / 1fd7 / 8e3a` | **完全相同** ✅ |
+| 四个子 CRC | `e9f5 / e714 / 1fd7 / 8e3a` | **完全相同** [OK] |
 
 **CRC 不变是本项的核心判据** —— 时钟变了、ITER 变了，程序算的还是同一件事。
 若 CRC 对不上，说明 45 MHz 下某处出了问题（而不是"时钟没生效"）。
 
-> ⚠️ **CRC 判据口径更正（此前措辞不严）**：判据是
+> [!] **CRC 判据口径更正（此前措辞不严）**：判据是
 > **`seedcrc` / `crclist` / `crcmatrix` / `crcstate` 四个逐位一致** —— 它们跨 ITER、跨时钟不变。
-> **`crcfinal` 不能拿来比对** ❌。读 CoreMark 源码（`third_party/coremark/core_main.c` 的
+> **`crcfinal` 不能拿来比对** [X]。读 CoreMark 源码（`third_party/coremark/core_main.c` 的
 > `iterate()`）可确认：`res->crc = crcu16(crc, res->crc)` 是**跨迭代累加**的
 > （子 CRC 只在第 0 轮快照），所以它**随 ITER 变** ——
 > **ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`，三个都正确**。
@@ -148,16 +148,16 @@ Correct operation validated.
 
 日志已落盘到 `doc/board/uart_20260925_005201.txt`，`doc/board/README.md` 的"待补"标记已更新。
 
-> ⭐ **最重要的新事实**：每迭代周期在两个时钟下**逐位相同** ——
+> [重点] **最重要的新事实**：每迭代周期在两个时钟下**逐位相同** ——
 > 27 MHz 板上 358,857、45 MHz 板上 358,857，仿真 358,846。
 > **时钟翻倍而周期数不变**，直接证明了"周期数与时钟无关"，
 > 也是"仿真数据可外推到板上"的依据。
 
-### 4.2 ✅ 已解决：`ipcore/unified_mem` 是"加 IP 核失败"的产物，**已删除**
+### 4.2 [OK] 已解决：`ipcore/unified_mem` 是"加 IP 核失败"的产物，**已删除**
 
 **队友 2026-09-25 确认**：那是他用 IP Compiler 加 Pango 双口 BRAM
 （`ipm2l_dpram_v1_9`）**没成功**留下的东西，`.pds` 从未引用过，**可以删**。
-✅ **已按此删除**（2026-09-25，用户确认）。
+[OK] **已按此删除**（2026-09-25，用户确认）。
 
 涉及三处，**都只在队友桌面那份导出目录里，我们仓库本来就没有**
 （迁移时按 §1 故意没带）：
@@ -176,7 +176,7 @@ Correct operation validated.
 > 单周期 BRAM，访存恒 1 拍、**无缺失惩罚**，换成真 IP 核不提升性能。
 > 除非动机是"用真 IP 核"拿规范化加分，否则不值得做。
 
-> ⛔ **名字撞车警告（转述时务必带上路径）**：
+> [!] **名字撞车警告（转述时务必带上路径）**：
 > 我们**自己的** `rtl/mem/unified_mem.v` 是**统一存储器本体，承重，绝不能删** ——
 > 删了整个 CPU 没有存储器，`.pds` 直接编译不过。
 > 队友说的"那个可以删"**只指 `pds/.../ipcore/unified_mem/`**。
@@ -207,7 +207,7 @@ Correct operation validated.
    真正错的是同一个小标题写的"ITER=820"。已在 `pds/README.md` 按"推测 + 待核"措辞标注，
    **原数保留不抹**。
 
-4. ⭐ **`doc/resource_efficiency.md` 里 `2.787 × 27 ≈ 70.50` 是算错的** ——
+4. [重点] **`doc/resource_efficiency.md` 里 `2.787 × 27 ≈ 70.50` 是算错的** ——
    即本节开头那个错误的源头。`2.787 × 27 = 75.25`；**70.50 实际等于 `2.611 × 27`**，
    而 2.611 是**第二轮优化后、第三轮之前**的效率，与 2.787 不是同一版设计。
    同一处原文的 `2.787 × 47.8126 ≈ 124.84` 犯了同样的错（124.84 = 2.611 × 47.81）。

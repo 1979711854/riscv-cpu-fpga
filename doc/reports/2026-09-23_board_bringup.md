@@ -17,8 +17,8 @@
 | | 数值 | 变化 |
 |---|---|---|
 | riscv-tests | **49 PASS / 1 FAIL / 0 TIMEOUT** | 不变（唯一 FAIL 仍是 `ma_data` testnum 668） |
-| **CoreMark 板上实测** | **`Total ticks 294,262,913` → 10.898 s** | ✅ **本轮新增**（此前只有推算） |
-| 板上 vs 仿真（每迭代） | 358,857 vs 358,846 = **+0.0031%** | ✅ 硬件与仿真几乎完全吻合 |
+| **CoreMark 板上实测** | **`Total ticks 294,262,913` → 10.898 s** | [OK] **本轮新增**（此前只有推算） |
+| 板上 vs 仿真（每迭代） | 358,857 vs 358,846 = **+0.0031%** | [OK] 硬件与仿真几乎完全吻合 |
 | CoreMark/MHz | **2.787** | 不变（板上算出与仿真一致） |
 | Fmax（当前提交口径） | **37.5333 MHz**（slack +10.394） | 旧文档写 47.81 MHz，见 §4 |
 | LUT / FF | **2,915 / 2,183** | 旧文档写 2,316（阶段 1 旧值） |
@@ -31,11 +31,11 @@
 
 | 验证项 | 结论 |
 |---|---|
-| `clk` = **D18**（27 MHz） | ✅ 串口无乱码 → 波特率分频正确 → 时钟确实是 27 MHz |
-| `uart_tx`/`uart_rx` = **C24/B24**（经 CP2102） | ✅ 收发都对 |
-| `key[0..3]` = **C23/B22/A22/B20**（丝印 SW4–SW7） | ✅ 从左到右依次按 → `0x01/0x02/0x04/0x08` |
-| `resetn` = **C22**（丝印 SW3） | ✅ 能重启程序（重印 `RV32I SoC demo ready`） |
-| `led[0..7]` | ✅ 写入字节与读到字节一致 |
+| `clk` = **D18**（27 MHz） | [OK] 串口无乱码 → 波特率分频正确 → 时钟确实是 27 MHz |
+| `uart_tx`/`uart_rx` = **C24/B24**（经 CP2102） | [OK] 收发都对 |
+| `key[0..3]` = **C23/B22/A22/B20**（丝印 SW4–SW7） | [OK] 从左到右依次按 → `0x01/0x02/0x04/0x08` |
+| `resetn` = **C22**（丝印 SW3） | [OK] 能重启程序（重印 `RV32I SoC demo ready`） |
+| `led[0..7]` | [OK] 写入字节与读到字节一致 |
 
 引脚表出处：`pds/RV32I_1/RV32I_1.fdc` 头部注释（按《MES2L676-200HP硬件使用手册》逐条核对）。
 **上板教程：`doc/board_bringup.md`**。**实测证据：`doc/board/`**。
@@ -51,7 +51,7 @@ seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 
 四个 CRC 与仿真基准（`doc/reports/2026-09-21_branch_opt_verify.md`）**逐位一致**。
 
-> ⚠️ CoreMark 打印的 `Total time (secs): 10` 与 `Iterations/Sec: 82` 是**整数截断**
+> [!] CoreMark 打印的 `Total time (secs): 10` 与 `Iterations/Sec: 82` 是**整数截断**
 > （`HAS_FLOAT=0`，见 `scripts/coremark_port/core_portme.h`）。真实值是 **10.898 / 75.24**。
 > 报告里一律用 `Total ticks ÷ 27,000,000` 自己算，别引用打印值。
 
@@ -122,7 +122,7 @@ scripts\run_own_tests.ps1           # 期望 exceptions PASS + timer_irq PASS
 
 ---
 
-## 3. ★ 本轮踩的坑（已写进 `CLAUDE.md` 关键约定 16–19）
+## 3. [重点] 本轮踩的坑（已写进 `CLAUDE.md` 关键约定 16–19）
 
 1. **PDS 把未约束的输出端口自动布到 BANKR5**（本板是 SFP/HSST）—— 见 §1.4。
 2. **手册 0 起编号、板上丝印 1 起编号**；LED 丝印相对开关乱序是硬件现状。
@@ -139,7 +139,7 @@ scripts\run_own_tests.ps1           # 期望 exceptions PASS + timer_irq PASS
 
 ---
 
-## 4. ⚠️ 新产生的数据债：文档里的 Fmax / LUT 全是旧值
+## 4. [!] 新产生的数据债：文档里的 Fmax / LUT 全是旧值
 
 `doc/resource_efficiency.md`、`doc/ila_analysis.md`、`doc/paper/*` 等处写的是
 **Fmax 47.8126 MHz / LUT 2,316**，那是"取指重定向后（=382,972 时代）"的**阶段 1 干净基线**。

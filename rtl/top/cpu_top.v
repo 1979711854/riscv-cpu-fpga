@@ -102,7 +102,7 @@ module cpu_top (
         .irq_timer   (irq_timer),
         // 外部中断：UART 接收 FIFO 非空（rdata[31] 就是 valid 位）。
         // 电平信号 —— 读一次 0x8000_000C 弹出队头后自然落下。
-        // ⚠️ 本轮只做到"接口具备"，未写针对它的中断测试（见 doc/spec.md 已知限制）。
+        // [!] 本轮只做到"接口具备"，未写针对它的中断测试（见 doc/spec.md 已知限制）。
         .irq_ext     (uart_rx_rdata[31])
     );
 

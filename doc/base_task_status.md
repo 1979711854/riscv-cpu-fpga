@@ -14,29 +14,29 @@
 
 | # | 要求 | 现状 | 判定 |
 |---|---|---|---|
-| 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | ✅ 达标 |
-| 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | ✅ 达标 |
-| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（吞吐损失 **2 拍**，2026-09-21 取指重定向改造） | ✅ 达标 |
-| 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | ✅ 达标 |
-| 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | ✅ 达标 |
-| 3b | GPIO | LED 输出 + 按键输入（`rtl/periph/gpio.v`，输入 2 级同步） | ✅ 达标 |
-| 3c | 总线/外设集成 | 存储总线 `rtl/bus/mem_bus.v` + 地址映射单点定义 `rtl/bus/addr_map.vh`；CPU 不再硬译码地址 | ✅ 达标 |
-| — | 演示程序 | `scripts/demo/`：读按键 → 写 LED → 串口打印 + 串口回显（`run_demo.ps1` 一键跑） | ✅ 额外完成 |
+| 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | [OK] 达标 |
+| 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | [OK] 达标 |
+| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（吞吐损失 **2 拍**，2026-09-21 取指重定向改造） | [OK] 达标 |
+| 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | [OK] 达标 |
+| 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | [OK] 达标 |
+| 3b | GPIO | LED 输出 + 按键输入（`rtl/periph/gpio.v`，输入 2 级同步） | [OK] 达标 |
+| 3c | 总线/外设集成 | 存储总线 `rtl/bus/mem_bus.v` + 地址映射单点定义 `rtl/bus/addr_map.vh`；CPU 不再硬译码地址 | [OK] 达标 |
+| — | 演示程序 | `scripts/demo/`：读按键 → 写 LED → 串口打印 + 串口回显（`run_demo.ps1` 一键跑） | [OK] 额外完成 |
 
 ## 指令覆盖（RV32I 逐类）
 
 | 类别 | 实现情况 |
 |---|---|
-| R 型（add/sub/and/or/xor/sll/srl/sra/slt/sltu） | ✅ |
-| I 型算术（addi/andi/ori/xori/slli/srli/srai/slti/sltiu） | ✅ |
-| 加载（lw/lh/lb/lhu/lbu，含符号/零扩展） | ✅（**未对齐访问不支持**，RISC-V 规范 §2.6 允许） |
-| 存储（sw/sh/sb，byte_en 选通） | ✅（同上） |
-| 分支（beq/bne/blt/bge/bltu/bgeu） | ✅ 全部 6 条 |
-| 跳转（jal/jalr） | ✅ |
-| 立即数高（lui/auipc） | ✅ |
-| M 扩展（mul/mulh/mulhsu/mulhu + div/divu/rem/remu） | ✅（超出基础要求） |
-| **FENCE / FENCE.I** | ✅ 显式译码为 NOP，依据见下 |
-| **ECALL / EBREAK** | ✅ ECALL = NOP；EBREAK = 停机钩子（置 `done`，为将来接异常机制留口） |
+| R 型（add/sub/and/or/xor/sll/srl/sra/slt/sltu） | [OK] |
+| I 型算术（addi/andi/ori/xori/slli/srli/srai/slti/sltiu） | [OK] |
+| 加载（lw/lh/lb/lhu/lbu，含符号/零扩展） | [OK]（**未对齐访问不支持**，RISC-V 规范 §2.6 允许） |
+| 存储（sw/sh/sb，byte_en 选通） | [OK]（同上） |
+| 分支（beq/bne/blt/bge/bltu/bgeu） | [OK] 全部 6 条 |
+| 跳转（jal/jalr） | [OK] |
+| 立即数高（lui/auipc） | [OK] |
+| M 扩展（mul/mulh/mulhsu/mulhu + div/divu/rem/remu） | [OK]（超出基础要求） |
+| **FENCE / FENCE.I** | [OK] 显式译码为 NOP，依据见下 |
+| **ECALL / EBREAK** | [OK] ECALL = NOP；EBREAK = 停机钩子（置 `done`，为将来接异常机制留口） |
 
 ### 4 条指令的实现依据（写进报告用）
 
@@ -56,7 +56,7 @@
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` ✅ 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
+| **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` [OK] 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
 | **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%**。<br>迁到 45 MHz 后每迭代周期**逐位不变**（与时钟无关），所以 2.787 CoreMark/MHz 也不变 |
 | **CoreMark 实际得分**（= 2.787 × 系统时钟） | 27 MHz 版 **75.25 CoreMark**（板上实测 75.24，ITER=820）→ 45 MHz 版 **125.40 CoreMark（板上实测，+66.7%，恰为时钟比 45.0005/27，即"同一设计只提频"的收益）**（口径见 `doc/resource_efficiency.md` §2/§3） |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
@@ -84,11 +84,12 @@
 
 | 方向 | 状态 |
 |---|---|
-| **完整异常/中断** | ✅ **已完成**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret` + 六类同步异常（非法指令 / EBREAK / 未对齐 load+store / ECALL / 写只读 CSR）+ 定时器中断（CLINT）。自写汇编测试在 `sim/tests/`，一键 `scriptsun_own_tests.ps1` |
-| BTB 动态分支预测 | ⬜ 未做。已实现的是 **ID 级静态后向预测 + jal**（零状态）。实测前向 taken + jalr 的剩余空间只有约 **2.3%**，见 `doc/ila_analysis.md` §6 |
-| 外部中断 MEIP | ⚠️ 只做了接口（`cpu_top` 接了 UART RX 非空），**没有测试**，不得当作已验证能力 |
-| 2 路组相联 I/D Cache | ⬜ 未做。**且经分析是负收益** —— 存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、无结构冲突，Cache 只会引入缺失惩罚 |
-| 边缘 AI 加速 | ⬜ 未做。32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行 |
+| **完整异常/中断** | [OK] **已完成**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret` + 六类同步异常（非法指令 / EBREAK / 未对齐 load+store / ECALL / 写只读 CSR）+ 定时器中断（CLINT）。自写汇编测试在 `sim/tests/`，一键 `scripts
+un_own_tests.ps1` |
+| BTB 动态分支预测 | [ ] 未做。已实现的是 **ID 级静态后向预测 + jal**（零状态）。实测前向 taken + jalr 的剩余空间只有约 **2.3%**，见 `doc/ila_analysis.md` §6 |
+| 外部中断 MEIP | [!] 只做了接口（`cpu_top` 接了 UART RX 非空），**没有测试**，不得当作已验证能力 |
+| 2 路组相联 I/D Cache | [ ] 未做。**且经分析是负收益** —— 存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、无结构冲突，Cache 只会引入缺失惩罚 |
+| 边缘 AI 加速 | [ ] 未做。32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行 |
 
 > 统一存储器已为 I/D Cache 备好后端：将来两块 Cache 共用这份 backing store，
 > `fence.i` 需要相应升级为"冲刷 I-Cache"而不是当前的 NOP。
