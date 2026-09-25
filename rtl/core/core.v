@@ -48,16 +48,16 @@ module core (
     // 这里【只把声明提前】，逻辑一行未改。
     // ------------------------------------------------------------------
     // 冒险 / 除法
-    wire        stall;
+    wire        stall /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
     wire [31:0] div_result;
     wire        div_busy, div_done;
-    wire        div_stall;
-    wire        ex_flush;
+    wire        div_stall /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+    wire        ex_flush /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
     wire [31:0] ex_target;      // EX 级解析出的跳转目标（在 EX 段才被赋值）
     // 分支预测：ID 级重定向 / EX 级误判恢复（三段都在后文才被赋值）
-    wire        id_redirect;    // ID 级已按预测重定向（三处都要引用它）
+    wire        id_redirect /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;    // ID 级已按预测重定向（三处都要引用它）
     wire [31:0] id_target;      // ID 级算出的预测目标
-    wire        ex_mispred;     // 预测 taken 但实际 not-taken
+    wire        ex_mispred /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;     // 预测 taken 但实际 not-taken
     wire [31:0] ex_mispred_target;
 
     // ---- 异常 / 中断 ----
@@ -76,7 +76,9 @@ module core (
     wire [31:0] csr_wdata;
     wire        csr_wr_en;
     // ID/EX
-    reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
+    reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_write;
+    // 单独声明：要给它挂 ILA 调试属性，故从上面那行拆出
+    reg        id_ex_mem_read /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
     reg        id_ex_pred_taken;   // 该指令在 ID 级是否【实际发生过】预测重定向
     // ID/EX 里是否真的有一条指令（不是气泡）。
@@ -256,10 +258,10 @@ module core (
     reg [255:0] bht_valid;
 
     wire [7:0] bht_idx   = if_id_pc[9:2];
-    wire       bht_hit   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
-    wire       bht_taken = bht_ctr[bht_idx][1];
+    wire       bht_hit /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
+    wire       bht_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_ctr[bht_idx][1];
 
-    wire        id_pred_taken = (branch && bht_hit) ? bht_taken
+    wire        id_pred_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = (branch && bht_hit) ? bht_taken
                                                     : ((branch && imm[31]) || jump);
     assign      id_target     = if_id_pc + imm;
 
@@ -286,12 +288,12 @@ module core (
         (ex_mem_wb_sel == 2'b10) ? (ex_mem_pc + 32'd4) :
         (ex_mem_wb_sel == 2'b11) ? ex_mem_imm :
         ex_mem_alu_result;
-    wire fwd_a_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+    wire fwd_a_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                     (ex_mem_rd == id_ex_rs1) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_a_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
-    wire fwd_b_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+    wire fwd_a_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
+    wire fwd_b_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                     (ex_mem_rd == id_ex_rs2) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_b_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
+    wire fwd_b_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
     wire [31:0] rs1_val = fwd_a_ex ? ex_mem_forward_val :
                           fwd_a_wb ? wb_data : id_ex_rdata1;
     wire [31:0] rs2_val = fwd_b_ex ? ex_mem_forward_val :
@@ -338,7 +340,7 @@ module core (
     wire equal         = (rs1_val == rs2_val);
     wire less_signed   = ($signed(rs1_val) < $signed(rs2_val));
     wire less_unsigned = (rs1_val < rs2_val);
-    reg branch_taken;
+    reg branch_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
     always @(*) begin
         case (id_ex_funct3)
             3'b000: branch_taken = equal;          // BEQ
