@@ -75,7 +75,7 @@
   > [!] CoreMark 打印的 `Total time (secs)` / `Iterations/Sec` 是**整数截断**
   > （`HAS_FLOAT=0`），显示 10 / 82，真实值 10.898 / 75.24 —— 一律用
   > `Total ticks ÷ 27,000,000` 自己算。
-  > [!] **别用 ITER=1 的测试台总周期（当前 1,462,898）去推算迭代成本**。那是仿真
+  > [!] **别用 ITER=1 的测试台总周期（当前 1,457,776）去推算迭代成本**。那是仿真
   > 测试台的总周期，含约 108 万周期的一次性串口打印开销；而 CoreMark 自己的
   > `Total ticks` 计时在打印**之前**就停了，不含打印。两个口径不同，混用会把迭代
   > 成本算错，进而把 ITER 估得偏小（本项目据此写成"ITER≈200 约 10s"，
@@ -300,88 +300,117 @@
     而 `if (i == 0) res->crclist = res->crc;` 只在第 0 轮快照。
     不知道这条的话，看到 `crcfinal` 变了会误判成回归。
 
-## 待办
--  **【当前主线】下一步优化任务书：`doc/reports/2026-09-25_next_steps_handoff.md`**
-  —— **自包含**，可直接交给前端队友。
+30. **ILA 探针属性必须带 `PAP_MARK_DEBUG`，只写 `syn_keep` 不够** ——
+    Pango 自带例程里 `adc.v` 的 `wire prdata /* synthesis syn_keep = 1 */` **不出现在 `.fic`**，
+    而 `adc_crtl_demo.v` 的 `wire pdata /* synthesis PAP_MARK_DEBUG="1" */` **出现**。
+    `syn_keep` 只防优化，`PAP_MARK_DEBUG` 才是让 Fabric Inserter 把它列出来的那个。
+    **两个都写。** 属性必须挂在【声明】上、且必须在【分号之前】。
+31. [!] **多比特 wire 上的 `PAP_MARK_DEBUG` 会被综合整条丢弃** ——
+    手册例子里 `wire [7:0] debug_this_bus /* synthesis PAP_MARK_DEBUG="<0/t1/12>" */`
+    暗示一个标记能给总线分配连续 channel；**实测 PDS 2022.2-SP6.4 不保留它**：
+    ```
+    (* PAP_KEEP="TRUE", PAP_MARK_DEBUG="<0/d0/77>" *)  wire dbg_mem_we;  <- 1 位：保留
+        wire [14:0] dbg_pc;                                              <- 总线：属性丢失
+    ```
+    **所以 PC / opcode 这类必须拆成一位一根 wire**（15+15+15+15+7 = 67 根）。
+32. [!] **Inserter 的网线树【不列出模块端口的网线】** —— `pc`、`mem_we`、`mem_re`
+    都是 `module core` 的**输出端口**，在 Inserter 里**根本选不到**（`mem_we` 在 RTL 里
+    只是 `assign mem_we = ex_mem_mem_write;` 的别名，没法和端口分开选）。
+    **解法：在 RTL 里新建内部 `wire` 做别名**，再标记那些 wire。
+    另外 PC 在网表里叫 **`pc`** 不叫 `pc_r`（`assign pc = pc_r` 被合并；
+    flop 实例名是 `\pc_r[0]` 但输出网线叫 `pc[0]`）。
+33. [!] **Fabric Debugger 用前必须先连 JTAG Server** —— 不连的话器件栏只有
+    `device - jtag chain` 这个**空树标题**，看着像已经扫到了，其实什么都没连，
+    敲任何命令都报 `the connection is disconnected`。
+    做法：工具栏 `Connect to server`（或 `File` 菜单）→ IP `127.0.0.1` + 端口 **`65420`**
+    → 选 Cable → 总结页点 `Next`。TCL 等价：`dbg_connect -ip 127.0.0.1 -port 65420`。
+    连不上就手动起 `D:\pango\PDS_2022.2-SP6.4in\cdt_js.exe -port 65420`。
+34. [!] **Inserter 里三个设置项的位置**（手册与直觉不符，详见 `doc/ila_analysis.md` §7.1.1）：
+    * **采样时钟**在 **`Net Connections → Modify Connection → Select Net → Channel View → Clock Port`**
+      —— **不在 `Trigger Parameters` 里**（那里只有 `Sample On`，那是"采样沿"不是"时钟源"）
+    * **触发条件 / 触发位置**在 **Fabric Debugger 的 `Trigger Setup` 里运行时配**，
+      **不用重新综合**（手册原文："实时配置 Debugger Core 无需重新编译"）
+    * 换触发信号要**改两处**：`dbg_set_unit -unit N ...` 改 TU 的值，
+      **还要** `dbg_set_condition -select 0 -set "TUN"` 把条件公式指过去。
+      只改 `-unit` 的话条件仍指向 `TU0`（2026-09-25 实踩）。
+      判据：`Position=512` 居中，所以波形里**采样 512** 那拍对应触发信号必须是 1。
+35. [!] **抓 CoreMark 的 ILA 波形必须先按复位键** —— CoreMark 是一次性程序，
+    上电跑 11.8 秒就结束，之后 CPU 在停机自旋 `j 38`（`while(1)`）。
+    那条循环里**没有任何条件分支**，而 `ex_flush = ex_resolve_taken && !id_ex_pred_taken`
+    在"跳转被预测中"时恒为 0 → **触发条件永远等不到**（表现是波形一直 `waiting for trigger`）。
+    做法：`dbg_run` 挂上触发 → 按板上 **丝印 KEY1**（手册 KEY0 / 管脚 C22，本板复位键）
+    → CoreMark 重跑，11.8 秒内触发必然满足。
+    板级判据：`led[1]=done=`**丝印 D18**（亮=已跑完）；`led[0]=pll_locked=`**丝印 D19**。
+36. **Fabric Debugger 关掉后总线定义会丢**（只有 `File → Save Project As` 存出 `.dprj`
+    才会连总线一起落盘），但**波形数据会自动落到 `pds/RV32I_1/data.wf`** 不会丢。
+    恢复视图：`source scripts/ila_restore_view.tcl`（重建 5 条总线）。
+    抓完立刻存一份 `.dprj`。
+    > 另：组合成总线**不会移除原信号**（手册 §5.2.1"一条新的总线被加入到 DataPort 的最上面"），
+    > 所以波形里总线和 86 根裸位会**同时出现**。想要清爽视图得手工
+    > `DataPorts → Clear All` 后 ctrl 点选再 `Add to View`（TCL 没有"只加某一根"的命令）。
 
-  **赛题原文（2026-09-25 核对）**：基础任务 3 条 **全达标 [OK]**；高阶任务 3 条：
+## 待办
+-  **【当前主线】应用场景落地：RT-Thread + 掌上游戏机**
+  —— **自包含任务书**，可直接交给前端队友：
+  * **`doc/reports/2026-09-25_handoff_rtthread_gameconsole.md`** —— 任务书（要做什么）
+  * **`doc/reports/2026-09-25_progress_report.md`** —— 进度报告（现在在哪、决策记录、答辩话术）
+
+  **场景（2026-09-25 定）**：能玩平台跳跃游戏的掌上游戏机，跑 RT-Thread。
+  显示方案倾向**买一块 SPI TFT 小屏**（最省事）；板载还有 HDMI 输出口（工作量大，备选）。
+
+  **推进顺序：B → A → C → D**，别一上来就碰 DDR3 或 HDMI：
+  | 任务 | 优先级 | 说明 |
+  |---|---|---|
+  | **B. RT-Thread Nano 移植** | **P0** | ✅ 可先开工，**不依赖显示**。CSR 已齐（`mscratch` 有 = M 模式 port 可用）|
+  | **A. 显示外设** | **P0** | 买 SPI TFT；**32 KB 装不下帧缓冲** → 必须 tile/sprite 实时合成 |
+  | **C. 游戏本体** | P1 | **不能跑 NES 模拟器**（装不下）；自己做，素材原创（版权）|
+  | D. 收尾（报告+录像）| P1 | `doc/board/` 里目前只有串口文本，缺录像 |
+
+  **赛题对齐（2026-09-25 核对）**：基础任务 3 条**全达标 [OK]**；高阶任务：
   | 高阶任务 | 赛题原文要点 | 我们 |
   |---|---|---|
-  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | [X] **决定不做**（负收益，见下）|
+  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | [X] **决定不做**（负收益，答辩话术见进度报告 §3.1）|
   | ② 高级控制 | **动态分支预测器（如 BTB）** *以及* **完整异常/中断机制** | **[OK] 已完整**（异常/中断 09-23、BTB/BHT 09-25）|
-  | ③ AI 加速 | YOLO / 轻量 LLM + 传感器 | [X] **硬件不可行**（32KB BRAM 硬墙）|
+  | ③ AI 加速 | YOLO / 轻量 LLM + 传感器 | [X] **硬件不可行**（32KB BRAM 硬墙，话术见 §3.2）|
 
   **总方针（2026-09-25 用户已定）：高阶任务选做，性能优先。** 不适配架构的宁可不做。
+  **但写进报告的部分必须真实** —— 没做的就写没做，评委一验证就穿帮。
 
-  **已完成的两个 P0**（2026-09-25，分支 `feat/bht-49mhz`）：
-  | 任务 | 结果 |
-  |---|---|
-  | 动态分支预测 BTB + BHT | 358,846 → **354,119** 拍（+1.32%）；riscv-tests 仍 **49/1/0** |
-  | 主频 45 → **49.8927 MHz** | slack +1.550 ns，`All Constraints Met`；+10.87% |
-  | 板上实测（两项一起）| [OK] **588,890,651 拍 → 11.8031 s / 140.89 CoreMark**（与推算分毫不差）|
+  **性能已冻结，不再动**（得分 140.89 CoreMark，板上实测）：
+  | 可选项 | 收益 | 说明 |
+  |---|---|---|
+  | BHT 表扩容（256 → 1024/4096 项）| +1% | 别名冲突已定位（149/341 分支冲突）。改动小，但要**单独一次**做 |
+  | 消除 load-use 停顿 | +5.8% | 风险高，有余力再说 |
+  | 主频再提 | +4.2 MHz 空间 | 可达 54.0745 MHz，当前 49.8927 MHz |
+  | ~~2 路组相联 Cache~~ | **不做** | 单周期 32KB BRAM、工作集仅 16.4KB，**没有慢速后端可藏** → 命中 1 拍（零收益）、缺失 2 拍（纯亏）|
 
-  **合计：得分 125.40 → 140.89（+12.35%），已板上实测确认**，且高阶任务②从半成品变完整。
-  详见 `doc/reports/2026-09-25_49mhz_migration.md`。
-
-  **剩余可选项**：
-  | 任务 | 优先级 | 收益 | 理由 |
-  |---|---|---|---|
-  | **ILA 硬件抓波形** | **P0** | 评分项 | 赛题点名要求。**必须排在 RTL 冻结之后**（见下）|
-  | BHT 表扩容（256 → 1024/4096 项）| P2 | +1% | 别名冲突已定位（149/341 分支冲突）。改动小、风险低，但要**单独一次**做，别和上板验证混 |
-  | 消除 load-use 停顿 | P2 | +5.8% | 风险高，有余力再做 |
-  | ~~2 路组相联 Cache~~ | **不做** | — | **已决策：不做。** 我们是单周期 32KB BRAM、CoreMark 只占 16.4KB，**没有慢速后端可藏** → Cache 命中 1 拍（零收益）、缺失 2 拍（纯亏）。**答辩话术见任务书 §4.2** |
-
-  **当前比特流**：`pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`
-  （md5 `c4e2c4d2...`，ITER=1663 / 49.8927 MHz / BTB+BHT）。
-  [OK] **板上实测已通过**（2026-09-25 17:23）：`Total ticks 588,890,651` →
-  **11.8031 s / 140.89 CoreMark**，日志 `doc/board/uart_20260925_172318.txt`。
-  **RTL 至此冻结，可以开始 ILA 抓波形。**
-  > [!] **ILA 波形抓取必须排在最后**（RTL 冻结后）—— 加 ILA 探针本身要改 RTL（`syn_keep`），
-  > 且 `.fic` 与 `.sbit` 必须同批。现在抓的话，队友一改 RTL 就作废。详见任务书 §9。
-  > [!] **别把没把握的写成已完成**：MEIP 只有通路无测试、AI 完全不可行。评委一验证就穿帮。
-- [OK] **队友的 45 MHz 改动已迁移**（2026-09-25，分支 `feat/pll-45mhz`）——
-  PLL 倍频 27MHz→45MHz + `core.v` 的 `addr_result` 关键路径优化。
-  迁移后实测复现了队友全部指标：**约束 45.0005 MHz、可达 51.5198 MHz、
-  slack 2.812、All Constraints Met、LUT 3030/FF 2185/DRM 16/APM 11**；
-  仿真侧 49/1/0 与 358,846 拍**逐位不变**。分析见
-  `doc/reports/2026-09-24_teammate_45mhz.md`。
-[OK] **板上实测已完成（2026-09-25）**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
-  `Iterations 1500`、`Correct operation validated`、358,857 拍/迭代（与 27MHz 板上逐位相同）、
-  得分 **125.40 CoreMark**。日志 `doc/board/uart_20260925_005201.txt`。
-  > 顺带：队友那份里 `ipcore/unified_mem/`（+ `mem_init.hex`、`ip_backup/`）**已确认是
-  > "加 IP 核失败"的产物，可删**（队友 2026-09-25 确认）。迁移时**故意没带**，
-  > 所以我们仓库里本来就没有。**别把它和 `rtl/mem/unified_mem.v` 搞混 —— 见关键约定 28。**
-  > 另外那本来就是**负收益方向**（单周期 BRAM 无缺失惩罚，换 IP 核不提升性能）。
-- **ILA 硬件抓波形**（赛题点名要求的评分项，分析部分已完成）：分工是
-  **远程平台出 JTAG 通道与波形界面，`.fic` 探针描述文件要本地 PDS 用 Fabric Inserter 生成**。
-  流程：加防优化属性（`/* synthesis syn_keep=1 */`）→ Compile/Synthesize → TOOL → Inserter
-  选 DebugCore → 配时钟/深度 1024/触发/通道映射 → **保存得到 `.fic`** → P&R → 出 `.sbit`
-  → 平台烧写 → 平台 ILA 模块点「导入fic文件」。
-  关键坑：**`.fic` 与 `.sbit` 必须来自同一次综合布线**，重新生成比特流后旧 `.fic` 就作废。
-  通道位宽上限 256 bit（DebugCore 的 `ips_dbc_compare_256b` 硬件限制），PC 只连低 15 位能省一大半。
-  详见 `doc/ila_analysis.md` §7。
-- [OK] **上本地板卡已完成**（2026-09-23）：`.fdc` 已全部改为盘古板实测引脚，
-  上板 top 是 `cpu_top_board`，教程见 `doc/board_bringup.md`。
-  **本地板现在插两根 USB 线（Jtag + USB UART）即可烧录与看串口。**
-  剩下的板卡相关待办：
-  - [ ] **ILA 硬件抓波形**（见上）—— 本地板在手后可以不走远程平台，
-    改走本地 PDS Debugger 扫 JTAG 抓（`doc/ila_analysis.md` §7.4 备选路径）
-  - [ ] **演示视频/照片**：演示程序已在板上跑通（LED 已按开关位置重排），
-    但 `doc/board/` 里还只有串口文本，缺录像/照片
-  - [ ] `doc/base_task_status.md` 的板卡相关描述若还有"引脚以注释预留"字样，需清理
+  > [!] **别把没把握的写成已完成**：MEIP 只有通路无测试、AI 完全不可行、
+  > 未对齐访存不支持（`ma_data` FAIL 属架构取舍）。评委一验证就穿帮。
+- [OK] **ILA 硬件在环抓波形已完成**（2026-09-25）——赛题点名要求的评分项。
+  全链路：探针束（RTL 精确标记）→ 综合 86/86 存活 → Inserter 自动连线 →
+  `.fic` 逐条核对 → 登记进 `.pds` → P&R（DRM 16→19 确认调试核插入）→ 烧板 →
+  连 JTAG Server → 抓波形 → **收尾还原并逐项核对回基线**。
+  * 波形证据：`doc/board/ila_hw_exflush_coremark.vcd`（**三种 BHT 行为的逐拍证据**）、
+    `ila_hw_halt_loop.vcd`（停机自旋）
+  * 方法、坑与逐拍解读：`doc/ila_analysis.md` §7
+  * **调试版比特流已归档**（`bitstreams/debug_ila_86probe_localboard.sbit`，md5 `96ee7877`）
+    —— **想补抓波形直接烧它 + 用 `cpu_top_board.fic` 即可，不用重做 Inserter/P&R**
+- [OK] **两份历史交接报告已归档**（内容已并入进度报告，无需再读）：
+  45 MHz 迁移（`reports/2026-09-25_45mhz_migration.md`）、队友 45 MHz 改动复核
+  （`reports/2026-09-24_teammate_45mhz.md`）。
+  > 队友那份里 `ipcore/unified_mem/`（+ `mem_init.hex`、`ip_backup/`）**是"加 IP 核失败"
+  > 的产物，可删**。迁移时**故意没带**，我们仓库里本来就没有。
+  > **别和 `rtl/mem/unified_mem.v` 搞混 —— 见关键约定 28。**
 - **补 riscv-tests 源码**（可选）：放到 `third_party/riscv-tests`（需联网 clone）。
-  **不补也能全量回归** —— `scripts\run_riscv_tests.ps1` 不带参数时会自动回退到随附的
+  **不补也能全量回归** —— `scripts
+un_riscv_tests.ps1` 不带参数时会自动回退到随附的
   基线 ELF（`third_party/riscv-tests-elf/`，50 个 = rv32ui 42 + rv32um 8，已入库，约 650KB）。
   之所以把二进制入库：上游 riscv-tests 会变，重新 clone 未必复现同一批二进制，
   基线漂移会让人误以为是自己改坏了 CPU。详见该目录的 README。
-- **高阶任务**（详见 `doc/spec.md` §6）：
-  - [OK] **完整异常/中断已做**：CSR 文件 + 6 条 CSR 指令 + mret + 六类同步异常
-    + 定时器中断（CLINT）。测试 `sim/tests/`，一键 `scripts
-un_own_tests.ps1`
-  - [OK] **动态分支预测已做**（2026-09-25）：256 项带 tag 的 BHT，只预测条件分支方向。
-    详见上面"当前进度"里的高阶任务②条目与 `doc/reports/2026-09-25_49mhz_migration.md` §4.3。
-    ⬜ 残余：表扩到 1024/4096 项可再回收约 1%（别名冲突已定位）
-  - [ ] **外部中断 MEIP**：通路已具备（cpu_top 接了 UART RX 非空），但**没有测试**，
+- **演示视频/照片**：`doc/board/` 里目前只有串口文本和 ILA 波形数据，**缺录像/照片**。
+- **高阶任务的剩余项**：
+  - [ ] **外部中断 MEIP**：通路已具备（`cpu_top` 接了 UART RX 非空），但**没有测试**，
     不得当作已验证能力
-  - [ ] 2 路组相联 I/D Cache：**负收益**（存储器是单周期 BRAM，访存恒 1 拍、无缺失惩罚）
-  - [ ] 边缘 AI：32KB BRAM 是硬墙（无片外存储），当前硬件条件不可行
+  - [ ] BHT 表扩容 / 消除 load-use 停顿 / 主频再提 —— 见上面「性能已冻结」表
+  - [x] ~~2 路组相联 I/D Cache~~：**负收益，已决策不做**
+  - [x] ~~边缘 AI~~：**32KB BRAM 是硬墙，硬件条件不可行**

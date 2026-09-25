@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | [OK] 达标 |
 | 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | [OK] 达标 |
-| 2c | 分支跳转处理 | 6 种分支条件全实现；jal/jalr 目标与 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（吞吐损失 **2 拍**，2026-09-21 取指重定向改造） | [OK] 达标 |
+| 2c | 分支跳转处理 | 6 种分支条件全实现；**条件分支方向由 256 项带 tag 的 BHT 动态预测**（2026-09-25），预测命中当拍重定向，吞吐损失 **1 拍**；未命中/误判与 jal/jalr 目标走 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（损失 **2 拍**，2026-09-21 取指重定向改造） | [OK] 达标 |
 | 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | [OK] 达标 |
 | 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | [OK] 达标 |
 | 3b | GPIO | LED 输出 + 按键输入（`rtl/periph/gpio.v`，输入 2 级同步） | [OK] 达标 |
@@ -56,8 +56,8 @@
 |---|---|
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
-| **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` [OK] 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
-| **CoreMark 效率（当前设计，仿真）** | 每迭代 **354,119** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.824 CoreMark/MHz**。<br>**四轮演进**：2.380 → 2.611 → 2.787 → **2.824**（最后一轮是 2026-09-25 的 BHT）|<br>BHT 之前板上实测 358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**，且**两个时钟下逐位相同**（与时钟无关）|
+| **CoreMark v1.0（本地盘古板实测，49.8927 MHz，ITER=1663）** | `Total ticks 588,890,651` ÷ 49,892,700 = **实际 11.8031 秒** → **140.89 CoreMark**，`Correct operation validated` [OK] 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_172318.txt`。**上板教程：`doc/board_bringup.md`**<br>历史：45 MHz 时代（ITER=1500，`Total ticks 538,285,445` → 11.9619 秒 / 125.40 CoreMark）见 `doc/board/uart_20260925_005201.txt`；27 MHz 时代（ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）见 `doc/board/uart_20260923_201540.txt`。**较 45 MHz +12.36%，较 27 MHz +87.3%** |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **354,119** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.824 CoreMark/MHz**。<br>**四轮演进**：2.380 → 2.611 → 2.787 → **2.824**（最后一轮是 2026-09-25 的 BHT）|<br>板上实测 354,113 拍/迭代，与仿真 354,119 差 **−0.0016%**；历史：BHT 之前板上实测 358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**，且**两个时钟下逐位相同**（与时钟无关）|
 | **CoreMark 实际得分**（= CoreMark/MHz × 系统时钟） | 27 MHz 板测 **75.24** → 45 MHz 板测 **125.40** → **49.89 MHz 板测 140.89**（**均已板上实测**，累计 **+87.3%**）<br>口径见 `doc/resource_efficiency.md` §2 / §11 |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |

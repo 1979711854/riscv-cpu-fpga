@@ -1,6 +1,7 @@
 # 49.89 MHz 迁移执行报告（2026-09-25）
 
 > 上游：`doc/reports/2026-09-25_next_steps_handoff.md` §3（任务② 主频 45 → 49.89 MHz）
+> 　　（该任务书已随任务完成删除，内容并入 `doc/reports/2026-09-25_progress_report.md`）
 > 基线：`doc/reports/2026-09-25_45mhz_migration.md`（45 MHz 迁移，已上板闭环）
 > 本报告记录 49.89 MHz 提频**改了什么、验证到什么程度、还剩什么没做**。
 
