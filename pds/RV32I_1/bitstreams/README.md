@@ -45,6 +45,23 @@ scripts\build_bitstream.ps1 demo        # 演示程序版
 > 27 MHz 那两份是**加 PLL 之前**的综合产物，板上跑起来仍按 27 MHz 分频 ——
 > 要现跑现的，用 `build_bitstream.ps1` 重新生成，别混用。
 
+## [!] ILA 调试版（不用于提交）—— 与 `.fic` 成对
+
+| 文件 | md5 | 说明 |
+|---|---|---|
+| `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`（本机，不入库）| `96ee7877` | **调试版**：含 DebugCore + JTAG Hub + 86 位探针。LUT 4,200 / FF 3,394 / DRM 19 / APM 11，slack **+1.329 ns**，`All Constraints Met`。综合 2026-09-25 18:30 |
+| `pds/RV32I_1/cpu_top_board_ila.fic`（**已入库**）| `178d8aad` | 探针通道映射。`clockChannel=clk_sys`，dataChannel 86 条（0..85），4 个 1 位触发端口 = `ex_flush`/`stall`/`bht_hit`/`mispred` |
+
+> [!] **这两份必须同批用**。重新综合/布线后旧 `.fic` 作废 —— 通道映射会整体错位，
+> 现象是"有信号但全不对"。`.sbit` 是调试版、**别拿去当比赛提交版**。
+
+**怎么确认调试核真进去了**：看 DRM —— 生产版 16、调试版 **19**（+3 = 1024×86bit 的采集 RAM）。
+DRM 没变就是没插进去（多半是 `.fic` 没登记进 `.pds` 的 `wgt_my_fic_src`）。
+详见 `doc/ila_analysis.md` §7.6 第 6b/6c 步。
+
+**抓完波形要收尾**：删掉 `core.v` 末尾的探针束、撤掉 `.pds` 里的 `.fic` 登记，重新综合，
+核对回到生产版基线 **LUT 3,721 / DRM 16 / slack +1.550 ns**。
+
 ## 提交比赛作品
 
 比特流要作为**离线交付物**单独打包（走 git 进不去）。用 `build_bitstream.ps1`

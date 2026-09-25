@@ -874,6 +874,33 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    * 或在 PDS 里**添加资源文件**，把 `.fic` 作为 **FIC / 约束文件**加进去。
 
 6c. **验证调试核真的进去了**（跑完 P&R 再看）：
+
+   > [OK] **2026-09-25 已跑通并验证**：
+
+   | 项 | 生产版（提交用）| 调试版 | 变化 |
+   |---|---|---|---|
+   | **DRM** | 16 | **19** | **+3** = 1024×86bit ≈ 3 块 DRM36K |
+   | LUT | 3,721 | 4,200 | +479（调试核 + 86 根探针）|
+   | FF | — | 3,394 | |
+   | APM | 11 | 11 | 不变 |
+   | slack（慢角）| +1.550 ns | **+1.329 ns** | 少 0.22 ns，仍 `All Constraints Met` |
+   | 比特流 md5 | `c4e2c4d2` | **`96ee7877`** | |
+
+   最硬的证据是 P&R 日志直接点名了调试核实例
+   （`place_route/run.log`）：
+
+   ```
+   C: Route-2036: The clock path from clkbufg_4/gopclkbufg:CLKOUT to
+      u_CORES/u_debug_core_0/u_Data_Capture_Memory/block_ram.ram_data_1_1/gopdrm_36k:CLKB[0] ...
+   ```
+
+   **DRM 一点没变 = 调试核没插进去**，回第 6b 步。
+
+   **DRM 在哪看**（三个地方）：
+   * 最快：`pds/RV32I_1/multiseed_summary.csv` 的 `Used` 行，列头就是 `LUT,FF,DRM,APM`
+   * 详细：`pds/RV32I_1/place_route/run.log` 的 `Logic Utilization` 表
+   * GUI：PDS 左侧 **Place & Route → Architecture Browser**
+
    调试核的采集 RAM 是实打实占 BRAM 的 —— 1024 采样 × 86 位 = 88,064 bit，
    约 3 块 DRM36K。所以 **DRM 用量应该从 16 涨到 ~19-20**。
    **DRM 一点没变 = 调试核没插进去**，回第 6b 步。
