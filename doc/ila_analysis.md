@@ -915,7 +915,37 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 
 **D. 抓波形（本地 PDS Debugger）**
 
-9. PDS **TOOL → Debugger** → **Scan JTAG**。能扫到器件与 `debug_core` 才可行。
+9. PDS **TOOL → Debugger**。**注意 Debugger 不是"扫一下就有波形"** ——
+   器件栏里那个 FPGA **只有在里面真的载入了 DebugCore 时才会展开出叶节点**。
+   正确顺序是四步：
+
+   ```
+   (1) 工具栏 Search JTAG Chain            列出链上器件（这一步只列出器件）
+   (2) 工具栏 Configure Bitstream File     选 .sbit 并【下载到 FPGA】
+   (3) 导入 .fic                          手动：File → Import sample data
+                                          自动：见下面的命名约定
+   (4) 器件下出现 DebugCore 叶节点
+         → 双击 "Trigger Setup" 配触发 → Run
+   ```
+
+   > [!] **只看到 `device - jtag chain`、展不开 = FPGA 里没有 DebugCore。**
+   > 最常见的原因就是第 (2) 步烧的还是生产版比特流（`generate_bitstream/`
+   > 里那个文件名不变，很容易烧成上一版）。**从 Debugger 里用
+   > `Configure Bitstream File` 下载一次**最稳 —— 它既保证设计对，又会顺带
+   > 触发 .fic 的自动导入。
+
+   > [!] **`.fic` 的自动导入有命名约定**（Debugger 手册 §3.5）：
+   > 它会搜索**位流文件所在目录 + 上一层目录**，找与**位流文件同名**的 `.fic`
+   > 或 `<位流名>_trs.fic`。位流叫 `cpu_top_board.sbit`，所以它找的是
+   > **`cpu_top_board.fic`**（或 `cpu_top_board_trs.fic`）。
+   >
+   > 我们原来叫 `cpu_top_board_ila.fic` —— **名字对不上，自动导入找不到**。
+   > 所以 `pds/RV32I_1/` 下同时放了两份同内容的：
+   > * `cpu_top_board.fic` —— **给 Debugger 自动导入用**（与位流同名）
+   > * `cpu_top_board_ila.fic` —— **`.pds` 的 `wgt_my_fic_src` 登记的那份**
+   >
+   > 两份内容必须一致（目前 md5 都是 `178d8aad`）。手工导入也用
+   > `File → Import sample data` 选任意一份即可。
 10. 双击器件栏里的 **`Trigger Setup`** 叶节点，配三块（**实时下发，不用重新综合**）：
     * **Match Function**：给 `ex_flush` 那一行的 Value 填 **`R`**（上升沿）
     * **Trigger Condition**：`Enable` 该 Trigger Unit
