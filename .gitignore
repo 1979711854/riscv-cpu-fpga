@@ -86,6 +86,10 @@ $RECYCLE.BIN/
 /pds/**/impl.tcl
 # Fabric Inserter 的临时工程（打开 Inserter 就在工程目录生成 temp_<时间戳>，无内容）
 /pds/**/temp_*
+# Fabric Debugger 的工作文件（抓完波形自动落盘，工具产物，不是交付物）
+/pds/**/data.wf
+/pds/**/cur_project
+/pds/**/*.dprj
 # [!] .fic 故意【不】忽略 —— 它是 ILA 探针的通道映射记录，小且有存档价值。
 #     但提交前必须确认 Project.device.designInputFile 指向的那份 .adf
 #     与它配套的 .sbit 是同一次综合（否则是过期文件，会误导人）。

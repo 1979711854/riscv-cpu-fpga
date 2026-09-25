@@ -692,6 +692,31 @@ DRM 16 / APM 11。生产版（P&R 后）是 **LUT 3,721 / slack +1.550 ns / All 
 
 **抓完波形、截图存档后必须移除，并重新综合一次，确认资源与时序回到原值。**
 
+> **波形怎么保存**（Debugger 手册 §4.3 File 菜单 + §5.12）：
+>
+> | 目的 | 操作 | 产物 |
+> |---|---|---|
+> | 放进报告 | Waveform 窗口截图（`Win+Shift+S` / `Alt+PrintScreen`）| PNG |
+> | 存档 / 逐拍核对 | **`File → Export sample data`** → VCD（或 TXT）| `.vcd` / `.txt` |
+> | 下次打开还在 | `File → Save Project As` | `.dprj` + `.wdf` |
+>
+> * `Export sample data` 支持 **ASCII / WDF / FIC / VCD / TXT**。
+>   **VCD** 是标准格式，GTKWave 能开；**TXT** 可以只导出指定界面
+>   （Waveform / Listing / BusPlot）上的 **Bus 值**，导出来是一张干净的数值表。
+> * `File → Save Project As` 生成的 `.dprj` + `.wdf` 能把波形和全部设置原样恢复，
+>   **不用重新抓**。TCL 等价：`dbg_save_project -file <路径>.dprj`。
+> * 工具栏 **`TriggerMode`** 选 `Continuous` 会多出 **`EnabledOutPutFile`**，
+>   勾上后**每次触发自动落盘**（VCD / ASCII / WDF）—— 抓四种触发时省事。
+>   注意 `Single`（默认）**不保存**。
+>
+> [!] **Debugger 会自动在工程目录写两个工作文件**：
+> `pds/RV32I_1/data.wf`（波形数据）与 `pds/RV32I_1/cur_project`（当前工程指针）。
+> 抓完就自动落盘了，下次 `File → Open Project` 能直接恢复。这两个是工具产物，
+> 已加进 `.gitignore`，**别当成要提交的成果**。
+>
+> **建议流程**：先导 VCD 存档并逐拍核对，确认无误**再**截图进报告 ——
+> 免得截完写进报告才发现某处对不上。
+
 > [!] **抓 CoreMark 的波形必须先按复位键，否则永远等不到触发。**
 > CoreMark 是**一次性程序**：板上电后跑 11.8 秒就结束，之后 CPU 进空闲循环。
 > 而空闲循环里的跳转（`jal` 或向后分支）**全都是被预测中的** ——
