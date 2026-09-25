@@ -13,7 +13,7 @@
 | `resource_efficiency.md` | **赛题三条性能指标成文**（CoreMark/MHz、Fmax、CoreMark/LUTs） |
 | `ila_analysis.md` | **流水线效率分析**（CPI/停顿/冲刷占比）+ ILA 抓取方案 + 优化建议 |
 | `board_bringup.md` | **上板教程** —— 接线（两根 USB 线）、引脚表、烧录两个流程、串口抓取、排障速查 |
-| `board/` | **板上实测证据** —— 串口原始日志 + 索引（**45 MHz 版 ITER=1500 已实测：11.9619 s / 125.40 CoreMark**；27 MHz 时代 ITER=820 的 10.898 s 作为历史对照保留） |
+| `board/` | **板上实测证据** —— 串口原始日志 + 索引（**45 MHz 版 ITER=1500 已实测：11.9619 s / 125.40 CoreMark**；49.89 MHz 版**待实测**；27 MHz 时代 ITER=820 的 10.898 s 作为历史对照保留） |
 | `figures/` | 流水线时序波形图（`pipeline_*.svg` / `.png`） |
 | `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`、**`2026-09-24_teammate_45mhz.md`（迁移方案）**、**`2026-09-25_45mhz_migration.md`（执行结果：6 项验证全部通过，含板上实测）**） |
 | `paper/` | 论文撰写思路与获奖策略 |
@@ -24,7 +24,7 @@
 
 1. `spec.md` §3.1 **取指时序不变量**与 §4.1 **总线时序契约** —— 改 `core.v` / `mem_bus.v` 前必读
 2. `test_report_riscv-tests.md` 末尾的**回归纪律** —— 改完 RTL 后
-   riscv-tests 的 **49/1/0** 与 CoreMark 的**计时区间 358,846 拍**必须同时不变
-   （测试台总周期 1,462,898）
+   riscv-tests 的 **49/1/0** 与 CoreMark 的**计时区间 354,119 拍**必须同时不变
+   （测试台总周期 1,457,776）
 3. `pds/README.md` §4.1 与 §8 坑 1 —— **`mem.hex` 缺失或过期都会静默产出错误比特流**，
    板上跑的可能是上一个人留下的程序

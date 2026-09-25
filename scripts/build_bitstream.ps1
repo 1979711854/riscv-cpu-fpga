@@ -18,16 +18,16 @@
     现在躺着的是什么。
 
 .PARAMETER Variant
-    coremark = CoreMark ITER=1500 跑分版（板上约 11.96 s，赛题硬指标）
+    coremark = CoreMark ITER=1663 跑分版（板上约 11.80 s，赛题硬指标）
     demo     = 演示程序版（读按键 -> 写 LED -> 串口打印）
 [!] 两个变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
          demo     -> DEBUG_LED=0（led[7:0] 全给 GPIO，恢复 LED=KEY 演示映射）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 1500。
+    仅 coremark 用，默认 1663。
 [!] **改了流水线/取指逻辑必须重算**：
-        ITER = 450,000,000 ÷ 每迭代周期数   ← 分母是**板上 45MHz×10s**
+        ITER = 498,927,000 ÷ 每迭代周期数   ← 分母是**板上 49.8927MHz×10s**
     （仿真/远程平台是 27MHz，那边用 270,000,000。别混。）
 
 .PARAMETER NoBuild
@@ -42,7 +42,7 @@ param(
     [ValidateSet("coremark", "demo")]
     [string]$Variant,
 
-    [int]$Iter = 1500,
+    [int]$Iter = 1663,
 
     [switch]$NoBuild
 )
@@ -56,9 +56,16 @@ $memHex  = Join-Path $pdsDir "mem.hex"
 $sbit    = Join-Path $pdsDir "generate_bitstream\cpu_top_board.sbit"
 $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 
-# 期望的 mem.hex 行数（每字两行：@地址 + 数据），用来挡住"固件没同步过去"
-$expectLines = @{ coremark = 8418; demo = 326 }
-$expectDesc  = @{ coremark = "4209 字"; demo = "163 字" }
+# 期望的 mem.hex 行数（每字两行：@地址 + 数据）—— 只作**粗筛**，真正的判据是下面的逐字节比对。
+#
+# [!] 这个数字**会随编译期常量变**，别当成硬约束。实测（2026-09-25）：
+#       EE_TICKS_PER_SEC = 45,000,000  -> 4209 字（8418 行）
+#       EE_TICKS_PER_SEC = 49,892,700  -> 4208 字（8416 行）
+#     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
+#     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
+#     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
+$expectLines = @{ coremark = 8416; demo = 326 }
+$expectDesc  = @{ coremark = "4208 字"; demo = "163 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -103,13 +110,30 @@ try {
     Write-Host "[2/3] 同步进 PDS 工程 ..." -ForegroundColor Yellow
     & (Join-Path $PSScriptRoot "sync_firmware.ps1")
 
-    $lines = (Get-Content $memHex).Count
-    if ($lines -ne $expectLines[$Variant]) {
-        Write-Host "!! mem.hex 行数不对：期望 $($expectLines[$Variant])（$($expectDesc[$Variant])），实际 $lines" -ForegroundColor Red
-        Write-Host "   说明固件没同步成功 —— 停下，别往下走。" -ForegroundColor Red
+    # ---- 2a) 主判据：PDS 工程里的 mem.hex 必须与刚生成的那份【逐字节相同】----
+    # 这才是"已同步"的真正定义，比数行数牢靠得多（行数会随编译期常量变，见上面的注释）。
+    # [!] 这一条挡的是 CLAUDE.md 里那个"文件在、但内容过期"的坑：PDS 从不检查
+    #     mem.hex 的时间戳，工程里留着旧镜像也会照常综合、全程零报错。
+    $memHexSrc = Join-Path $repo "sim\programs\mem.hex"
+    $hSrc = (Get-FileHash $memHexSrc -Algorithm SHA256).Hash
+    $hDst = (Get-FileHash $memHex    -Algorithm SHA256).Hash
+    if ($hSrc -ne $hDst) {
+        Write-Host "!! 同步失败：PDS 工程里的 mem.hex 与刚生成的不是同一份" -ForegroundColor Red
+        Write-Host "     生成: $memHexSrc  sha256 $($hSrc.Substring(0,16))" -ForegroundColor Red
+        Write-Host "     工程: $memHex     sha256 $($hDst.Substring(0,16))" -ForegroundColor Red
+        Write-Host "   板上会跑旧程序，而 PDS 全程不报错 —— 停下，别往下走。" -ForegroundColor Red
         exit 1
     }
-    Write-Host "    mem.hex = $lines 行（$($expectDesc[$Variant])）OK" -ForegroundColor Green
+
+    # ---- 2b) 粗筛：字数是否落在预期附近（挡住"根本是别的程序"）----
+    $lines = (Get-Content $memHex).Count
+    if ($lines -ne $expectLines[$Variant]) {
+        Write-Host "!! mem.hex 行数与预期不符：期望 $($expectLines[$Variant])（$($expectDesc[$Variant])），实际 $lines" -ForegroundColor Yellow
+        Write-Host "   若本次确实改过编译期常量（EE_TICKS_PER_SEC / ITER 等），属正常，更新本脚本的 expectLines 即可。" -ForegroundColor Yellow
+        Write-Host "   否则说明固件不对 —— 停下查清楚再往下走。" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "    mem.hex 已同步并校验：$lines 行（$($expectDesc[$Variant])），sha256 一致" -ForegroundColor Green
 
     if ($NoBuild) {
         Write-Host ""
@@ -161,8 +185,8 @@ Write-Host "     配置文件就是上面这个路径（**别用备份/旧文件
 if ($Variant -eq "coremark") {
     Write-Host "  2) 烧完立刻抓串口（一轮约 12 秒，慢一拍就错过）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
-    Write-Host " [重点] 板上时钟已改为 45MHz，期望 Total ticks ≈ 538270000 -> /45e6 = 11.96 s"
-    Write-Host "       （**别再用 ÷27e6** —— 那是仿真/远程平台的口径）"
+    Write-Host " [重点] 板上时钟 49.8927MHz，期望 Total ticks ≈ 588,900,000 -> /49,892,700 = 11.80 s"
+    Write-Host "       （**别再用 ÷45e6 或 ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
 } else {
     Write-Host "  2) 烧完开串口，应反复打印 KEY=0x00 LED=0x00；按 SW4..SW7 看对应灯亮"
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4"

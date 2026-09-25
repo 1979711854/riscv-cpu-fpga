@@ -1,6 +1,6 @@
 # 基础任务完成度核对（对照《紫光同创.pdf》选题指南）
 
-> 核对日期：2026-09-21（更新）；2026-09-25 补时钟迁移（27 → 45 MHz）口径
+> 核对日期：2026-09-21（更新）；2026-09-25 补时钟迁移（27 → 45 MHz → **49.89 MHz**）与动态分支预测口径
 > 依据：赛题"核心设计任务 → 基础任务"三条 + 代码与仿真核对
 > 结论：**基础任务三条全部达成**，另有若干项超出基础要求。
 
@@ -57,8 +57,8 @@
 | riscv-tests（50 项：rv32ui 42 + rv32um 8） | **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL 是 `ma_data` 未对齐访存，规范允许，见 §已知限制） |
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
 | **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` [OK] 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
-| **CoreMark 效率（当前设计，仿真）** | 每迭代 **358,846** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.787 CoreMark/MHz**；板上实测 358,857 拍/迭代，与仿真差 **+0.0031%**。<br>迁到 45 MHz 后每迭代周期**逐位不变**（与时钟无关），所以 2.787 CoreMark/MHz 也不变 |
-| **CoreMark 实际得分**（= 2.787 × 系统时钟） | 27 MHz 版 **75.25 CoreMark**（板上实测 75.24，ITER=820）→ 45 MHz 版 **125.40 CoreMark（板上实测，+66.7%，恰为时钟比 45.0005/27，即"同一设计只提频"的收益）**（口径见 `doc/resource_efficiency.md` §2/§3） |
+| **CoreMark 效率（当前设计，仿真）** | 每迭代 **354,119** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.824 CoreMark/MHz**。<br>**四轮演进**：2.380 → 2.611 → 2.787 → **2.824**（最后一轮是 2026-09-25 的 BHT）|<br>BHT 之前板上实测 358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**，且**两个时钟下逐位相同**（与时钟无关）|
+| **CoreMark 实际得分**（= CoreMark/MHz × 系统时钟） | 27 MHz 板测 **75.24** → 45 MHz 板测 **125.40**（+66.7%）→ **49.89 MHz 预期 140.89**（推算，**尚未上板**）<br>口径见 `doc/resource_efficiency.md` §2 / §11 |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **逐位一致**（**`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`） |
@@ -110,6 +110,6 @@ un_own_tests.ps1` |
 5. **PDS 工程已改为本地盘古板约束**（2026-09-23）—— `RV32I_1.fdc` 全部引脚
    按《MES2L676-200HP硬件使用手册》填好并**在板上实测验证过**；上板 top module
    是 `cpu_top_board`（不是 `cpu_top`）。详见 `doc/board_bringup.md`。
-   2026-09-25 起系统时钟由板载 27 MHz 经 **PLL 倍频到 45 MHz** ——注意 `.fdc` 里
-   约束的仍是 **27 MHz 输入晶振**，45 MHz 由 PDS 从 PLL IP 自动推导；**仿真与远程
+   2026-09-25 起系统时钟由板载 27 MHz 经 **PLL 倍频到 49.89 MHz**（先 45，再提频）——注意 `.fdc` 里
+   约束的仍是 **27 MHz 输入晶振**，PLL 输出由 PDS 从 PLL IP 自动推导；**仿真与远程
    平台不进 PLL，仍是 27 MHz**。

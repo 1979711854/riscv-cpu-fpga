@@ -232,7 +232,7 @@ module core (
     imm_gen u_imm (.instr(if_id_instr), .imm(imm));
 
     // ================= ID 级分支预测 =================
-    // 规则（静态、零状态）：条件分支且偏移为负（后向，通常是循环回边）→ 预测跳转；
+    // 静态规则（作为 BHT 未命中 / jal 的兜底）：条件分支且偏移为负（后向）→ 预测跳转；
     //                      无条件 jal → 必跳转，同样预测。
     //
     // 为什么选这条静态规则而不是 2 位饱和计数器 BHT —— 实测支撑：
@@ -246,7 +246,21 @@ module core (
     // 所以不存在"预测对了方向但目标算错"的情形。
     // jalr 的目标依赖 rs1，ID 级没有前递通路，因此【不预测】，仍走 EX 冲刷
     // （实测约占冲刷事件的 5%）。
-    wire        id_pred_taken = (branch && imm[31]) || jump;
+    // ---- 动态预测（保守版）：带 tag 的 256 项 2 位饱和计数器 BHT，只预测条件分支方向 ----
+    // jal 无条件必跳、目标只依赖 if_id_pc+imm，仍走静态预测；jalr 目标依赖 rs1、ID 级无
+    // 前递通路，仍【不预测】走 EX 冲刷。保守版因此不需要 BTB 的 target 部分：branch/jal 的
+    // 目标与 EX 级算出的必然相同，不存在"预测对方向但目标算错"（那只可能由 jalr 引起）。
+    // 索引 idx=PC[9:2]、tag=PC[31:8]，直接映射 256 项。预测错不影响正确性：EX 级冲刷兜住。
+    reg [23:0] bht_tag  [0:255];
+    reg [1:0]  bht_ctr  [0:255];
+    reg [255:0] bht_valid;
+
+    wire [7:0] bht_idx   = if_id_pc[9:2];
+    wire       bht_hit   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
+    wire       bht_taken = bht_ctr[bht_idx][1];
+
+    wire        id_pred_taken = (branch && bht_hit) ? bht_taken
+                                                    : ((branch && imm[31]) || jump);
     assign      id_target     = if_id_pc + imm;
 
     // ex_flush 优先：EX 级是更老的指令，它重定向时 ID 级指令本来就会被杀掉。
@@ -355,6 +369,32 @@ module core (
     // 预测 taken 但实际 not-taken  → 误判恢复：回到 fall-through
     assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken;
     assign ex_mispred_target = id_ex_pc + 32'd4;
+
+    // ---- BHT 训练（EX 级，用解析结果，与是否冲刷无关）----
+    // 每条条件分支真正解析出方向后都要更新（预测对错都学）。未命中时【每个分支都分配】、
+    // 按方向初始化计数器（taken→weakly taken，not-taken→weakly not-taken），这样后向
+    // not-taken 分支也能学到（若只在 taken 时分配，这类分支永远分配不上）。预测表是纯
+    // 建议性的：读写同拍无转发、读到旧值是允许的（最多一次误预测，被冲刷兜住）。
+    wire [7:0] bht_idx_w = id_ex_pc[9:2];
+    wire       bht_hit_w = bht_valid[bht_idx_w] && (bht_tag[bht_idx_w] == id_ex_pc[31:8]);
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            bht_valid <= 256'd0;
+        end else if (id_ex_branch) begin
+            if (bht_hit_w) begin
+                if (branch_taken)
+                    bht_ctr[bht_idx_w] <= (bht_ctr[bht_idx_w] == 2'b11) ? 2'b11
+                                                                        : bht_ctr[bht_idx_w] + 2'd1;
+                else
+                    bht_ctr[bht_idx_w] <= (bht_ctr[bht_idx_w] == 2'b00) ? 2'b00
+                                                                        : bht_ctr[bht_idx_w] - 2'd1;
+            end else begin
+                bht_valid[bht_idx_w] <= 1'b1;
+                bht_tag[bht_idx_w]   <= id_ex_pc[31:8];
+                bht_ctr[bht_idx_w]   <= branch_taken ? 2'b10 : 2'b01;
+            end
+        end
+    end
 
     // ================= EX 级：异常与中断 =================
     // 统一在【EX 级】产生（PC、前递后的值、访存地址此刻全部齐备）。

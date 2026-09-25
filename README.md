@@ -10,11 +10,12 @@
 | 项目 | 结果 |
 |---|---|
 | riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
-| CoreMark v1.0 **板上实测** | **11.9619 秒**，`Correct operation validated`（45 MHz / ITER=1500）<br>27 MHz / ITER=820 时为 10.898 秒 |
-| CoreMark 效率 | **2.787 CoreMark/MHz**（每迭代 358,846 周期，与时钟无关） |
-| 时序（45 MHz，PLL 倍频） | 约束 **45.0005 MHz** / Estimated **51.5198 MHz**，Setup +2.812ns，**失败端点 0** |
-| 资源（新设计） | LUT **3,030**（1.90%）、FF 2,185、DRM 16、APM 11 |
-| 实际得分 | **125.40 CoreMark** @45 MHz（板上实测）。27 MHz 板上实测为 75.24，**+66.7%**（即纯时钟比 45/27）|
+| 动态分支预测 | [OK] **已实现**（256 项、2 位饱和计数器、带 tag 的 BHT，2026-09-25）—— 高阶任务② 补齐 |
+| CoreMark 效率 | **2.824 CoreMark/MHz**（每迭代 354,119 周期，与时钟无关） |
+| CoreMark **板上实测** | 已完成的是 **45 MHz / ITER=1500 → 11.9619 秒**（125.40 CoreMark）<br>27 MHz / ITER=820 时为 10.898 秒<br>[!] **49.89 MHz / ITER=1663 尚未上板**（推算 11.80 秒 / 140.89 CoreMark）|
+| 时序（49.8927 MHz，PLL 倍频） | 约束 **49.8927 MHz** / Estimated **54.0745 MHz**，Setup +1.550ns，**失败端点 0** |
+| 资源（新设计） | LUT **3,721**（2.33%，PDS 显示 3%）、FF 2,441、DRM 16、APM 11、分布式 RAM 336 |
+| 实际得分 | 45 MHz 板上实测 **125.40 CoreMark**（27 MHz 板测 75.24，**+66.7%** = 纯时钟比）<br>49.89 MHz **预期 140.89 CoreMark**（待上板） |
 
 > [OK] **45 MHz 版已板上实测通过**：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 s**，
 > `Iterations 1500`，`Correct operation validated`，358,857 拍/迭代。
@@ -23,7 +24,14 @@
 > [重点] **"每迭代周期"在 27 MHz 和 45 MHz 下逐位相同（都是 358,857）** ——
 > 时钟翻倍而周期数不变，这正是"仿真数据可外推到板上"的依据。
 >
-> 板上验证流程见 `doc/board_bringup.md`。
+> [重点] **2026-09-25 已提频到 49.8927 MHz，并加了动态分支预测（BHT）**：
+> 每迭代 358,846 → **354,119** 周期（2.787 → **2.824 CoreMark/MHz**），
+> 时序 slack +2.812 → **+1.550 ns**（`All Constraints Met`）。
+> **但 49.89 MHz 版的板上实测还没做** —— 别把它写成已完成。
+> 当前待烧比特流 `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`（md5 `c4e2c4d2...`）。
+>
+> 板上验证流程见 `doc/board_bringup.md`；迁移记录见
+> `doc/reports/2026-09-25_49mhz_migration.md`。
 
 > 唯一 FAIL 是 `ma_data`（未对齐访存）。2026-09-21 曾据一次测量认为"取指重定向后
 > 它自动转为 PASS、说明是冲刷路径的潜在 bug"，**该结论已复核并撤回**：用改造

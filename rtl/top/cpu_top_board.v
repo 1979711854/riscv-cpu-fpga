@@ -5,7 +5,7 @@
 // 与 cpu_top 的区别：
 //   ① **不引出 pc[31:0] 和 done 这两个板级调试口**，并把 cpu_top 的 key[7:4]
 //      固定接 1（未按下）；
-//   ② 用 PLL 把板上 27MHz 晶振倍频到 **45MHz** 作为系统时钟；
+//   ② 用 PLL 把板上 27MHz 晶振倍频到 **49.89MHz** 作为系统时钟；
 //   ③ 用 DEBUG_LED 参数决定 led[1:0] 是调试信号还是 GPIO。
 //
 // 为什么要单独一层（踩过的坑）：
@@ -24,15 +24,15 @@
 // 已实测：从左到右依次按 key[0..3]，串口输出 0x01/0x02/0x04/0x08。
 //
 // ----------------------------------------------------------------------------
-// [!] 时钟：上板 45MHz，仿真仍是 27MHz —— 两套口径不要混
+// [!] 时钟：上板 49.89MHz，仿真仍是 27MHz —— 两套口径不要混
 // ----------------------------------------------------------------------------
 //   * 仿真：测试台例化的是 cpu_top（不是本文件），不传 UART_DIV → 234（27MHz），
 //     周期数与风险分析口径全部按 27MHz。本文件**不参与仿真**。
-//   * 上板：PLL 27MHz→45MHz，UART_DIV 传 390，CoreMark 的 EE_TICKS_PER_SEC=45e6。
-//   * 因此 **CPLD 板上的 CoreMark 时长 = Total ticks ÷ 45,000,000**
+//   * 上板：PLL 27MHz→49.89MHz，UART_DIV 传 433，CoreMark 的 EE_TICKS_PER_SEC=49892700。
+//   * 因此 **CPLD 板上的 CoreMark 时长 = Total ticks ÷ 49,892,700**
 //     （不再是 ÷27e6）。文档里所有"÷27e6"的说法仅适用于仿真/远程平台。
 //   * PLL 输出时钟约束由 PDS 从 IP 自动推导（`.fdc` 里只有 27MHz 的
-//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 45.0005 MHz）。
+//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 49.8927 MHz）。
 // ============================================================================
 module cpu_top_board #(
     // LED 映射开关（PDS 综合时取默认值，切换需重新综合 —— 或加 `-D` 宏）：
@@ -52,17 +52,17 @@ module cpu_top_board #(
     input  wire [3:0]  key          // KEY1..KEY4，按下 = 0
 );
 
-    // ---- PLL：27MHz 晶振 → 45MHz 系统时钟 ----
+    // ---- PLL：27MHz 晶振 → 49.89MHz 系统时钟 ----
     // 例化的是 Pango IP Compiler 生成的 pll（pds/RV32I_1/ipcore/pll/pll.v，
-    // 配置见同目录 pll.idf：CLKIN_FREQ=27.0、CLKOUT0_REQ_FREQ=45.0）。
+    // 配置见同目录 pll.idf：CLKIN_FREQ=27.0、CLKOUT0_REQ_FREQ=49.89）。
     // [!] 这个 IP 必须在 PDS 工程里以 IP 源文件形式引用（见 RV32I_1.pds 的
     //    wgt_my_ips_src），单纯把 pll.v 当普通源文件加进去综合会报黑盒。
-    wire clk_sys;        // PLL 输出系统时钟（45MHz）
+    wire clk_sys;        // PLL 输出系统时钟（49.89MHz）
     wire pll_locked;     // PLL 锁定指示
 
     pll u_pll (
         .clkin1 (clk),        // 27MHz 晶振输入
-        .clkout0(clk_sys),    // 45MHz 输出
+        .clkout0(clk_sys),    // 49.89MHz 输出
         .lock   (pll_locked)
     );
 
@@ -73,7 +73,7 @@ module cpu_top_board #(
     wire [7:0] led_gpio;    // CPU 的 GPIO LED 输出
     wire       done;        // CoreMark 完成标志（写 0x7FF8）
 
-    cpu_top #(.UART_DIV(10'd390)) u_soc (   // 45MHz → 115200 波特
+    cpu_top #(.UART_DIV(10'd433)) u_soc (   // 49.89MHz → 115200 波特
         .clk      (clk_sys),
         .resetn   (sys_resetn),
 
