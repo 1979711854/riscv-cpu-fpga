@@ -57,7 +57,9 @@ module cpu_top_board #(
     // 配置见同目录 pll.idf：CLKIN_FREQ=27.0、CLKOUT0_REQ_FREQ=49.89）。
     // [!] 这个 IP 必须在 PDS 工程里以 IP 源文件形式引用（见 RV32I_1.pds 的
     //    wgt_my_ips_src），单纯把 pll.v 当普通源文件加进去综合会报黑盒。
-    wire clk_sys;        // PLL 输出系统时钟（49.89MHz）
+    // [ILA] 时钟端口标记：DebugCore 的采样时钟必须接这根网线，
+    // 不是板载 27MHz 晶振（clk）。整块删除见 doc/ila_analysis.md §7.2。
+    wire clk_sys /* synthesis PAP_MARK_DEBUG="<0/c0/0>" syn_keep=1 */;  // PLL 输出系统时钟（49.89MHz）
     wire pll_locked;     // PLL 锁定指示
 
     pll u_pll (

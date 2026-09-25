@@ -48,16 +48,16 @@ module core (
     // 这里【只把声明提前】，逻辑一行未改。
     // ------------------------------------------------------------------
     // 冒险 / 除法
-    wire        stall /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+    wire        stall;
     wire [31:0] div_result;
     wire        div_busy, div_done;
-    wire        div_stall /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-    wire        ex_flush /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+    wire        div_stall;
+    wire        ex_flush;
     wire [31:0] ex_target;      // EX 级解析出的跳转目标（在 EX 段才被赋值）
     // 分支预测：ID 级重定向 / EX 级误判恢复（三段都在后文才被赋值）
-    wire        id_redirect /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;    // ID 级已按预测重定向（三处都要引用它）
+    wire        id_redirect;    // ID 级已按预测重定向（三处都要引用它）
     wire [31:0] id_target;      // ID 级算出的预测目标
-    wire        ex_mispred /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;     // 预测 taken 但实际 not-taken
+    wire        ex_mispred;     // 预测 taken 但实际 not-taken
     wire [31:0] ex_mispred_target;
 
     // ---- 异常 / 中断 ----
@@ -78,7 +78,7 @@ module core (
     // ID/EX
     reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_write;
     // 单独声明：要给它挂 ILA 调试属性，故从上面那行拆出
-    reg        id_ex_mem_read /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+    reg        id_ex_mem_read;
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
     reg        id_ex_pred_taken;   // 该指令在 ID 级是否【实际发生过】预测重定向
     // ID/EX 里是否真的有一条指令（不是气泡）。
@@ -258,10 +258,10 @@ module core (
     reg [255:0] bht_valid;
 
     wire [7:0] bht_idx   = if_id_pc[9:2];
-    wire       bht_hit /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
-    wire       bht_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_ctr[bht_idx][1];
+    wire       bht_hit   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
+    wire       bht_taken = bht_ctr[bht_idx][1];
 
-    wire        id_pred_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = (branch && bht_hit) ? bht_taken
+    wire        id_pred_taken = (branch && bht_hit) ? bht_taken
                                                     : ((branch && imm[31]) || jump);
     assign      id_target     = if_id_pc + imm;
 
@@ -288,12 +288,12 @@ module core (
         (ex_mem_wb_sel == 2'b10) ? (ex_mem_pc + 32'd4) :
         (ex_mem_wb_sel == 2'b11) ? ex_mem_imm :
         ex_mem_alu_result;
-    wire fwd_a_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+    wire fwd_a_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                     (ex_mem_rd == id_ex_rs1) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_a_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
-    wire fwd_b_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+    wire fwd_a_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
+    wire fwd_b_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                     (ex_mem_rd == id_ex_rs2) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_b_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
+    wire fwd_b_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
     wire [31:0] rs1_val = fwd_a_ex ? ex_mem_forward_val :
                           fwd_a_wb ? wb_data : id_ex_rdata1;
     wire [31:0] rs2_val = fwd_b_ex ? ex_mem_forward_val :
@@ -340,7 +340,7 @@ module core (
     wire equal         = (rs1_val == rs2_val);
     wire less_signed   = ($signed(rs1_val) < $signed(rs2_val));
     wire less_unsigned = (rs1_val < rs2_val);
-    reg branch_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+    reg branch_taken;
     always @(*) begin
         case (id_ex_funct3)
             3'b000: branch_taken = equal;          // BEQ
@@ -749,5 +749,150 @@ module core (
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
         end
     end
+
+    // ========================================================================
+    // [!] ILA 调试探针束（Fabric Inserter / DebugCore 专用）
+    // ------------------------------------------------------------------------
+    // 本块【只服务于硬件在环抓波形】，不参与任何 CPU 功能。
+    // 抓完波形、截图存档后必须【整块删除】—— 见 doc/ila_analysis.md §7.2。
+    //
+    // 每个探针都是本块【新建的 wire】（纯别名，综合后就是一根网线）。
+    // 之所以不直接标记原信号：Inserter 的网线树【不列出模块端口的网线】，
+    // 所以 pc / mem_we / mem_re 这类信号直接选不到（2026-09-25 实机验证）。
+    // 新建 wire 一并解决了这个问题，也让本块能被一次性删干净。
+    //
+    // 标记语法（精确标记，见 Fabric Inserter 手册 §4.1.2）：
+    //     PAP_MARK_DEBUG="<调试核号/端口/通道号>"
+    // 端口字母：t = Trigger Port，d = Data Port，c = Clock Port，r = Reset Port。
+    // 每个标记只作用于【1 位】—— 多比特 wire 上的标记会被综合丢弃（见下面 PC 段注释）。
+    // 同一信号要连多处时用逗号分隔，例如 "<0/d0/69>,<0/t0/0>"。
+    // PDS 工程里没有 .fic 时，打开 Inserter 会【按这些标记自动连线】。
+    // 时钟端口在 cpu_top_board.v 里标记（clk_sys，"<0/c0/0>"）。
+    //
+    // 通道分配（数据端口 0，共 86 位，清单见 doc/ila_analysis.md §7.1）：
+    //     [14:0]  pc          [29:15] if_id_pc     [44:30] id_ex_pc
+    //     [59:45] ex_mem_pc   [66:60] if_id_instr[6:0]
+    //     [67] stall          [68] div_stall       [69] ex_flush
+    //     [70] id_ex_mem_read [71] fwd_a_ex        [72] fwd_b_ex
+    //     [73] fwd_a_wb       [74] fwd_b_wb        [75] id_ex_branch
+    //     [76] branch_taken   [77] mem_we          [78] mem_re
+    //     [79] mem_wb_reg_write
+    //     [80] bht_hit        [81] bht_taken       [82] id_pred_taken
+    //     [83] id_redirect    [84] ex_mispred      [85] id_ex_pred_taken
+    //
+    // 触发端口另外挂 4 根候选触发信号，各占一个 1 位触发端口，
+    // 运行时在 Fabric Debugger 的 Trigger Setup 里选其一即可（不用重新综合）：
+    //     t0 = ex_flush    t1 = stall    t2 = bht_hit    t3 = ex_mispred
+    // ========================================================================
+
+    // ---- PC 低位：[!] 必须【逐位】标记，不能用总线 ----
+    // PDS 的综合不保留多比特 wire 上的 PAP_MARK_DEBUG（2026-09-25 实测：
+    // `wire [14:0] dbg_pc /* ... */` 的属性被整条丢弃，而 1 位 wire 的属性能原样
+    // 保留在网表里）。所以这里一位一根 wire，dbg_pc<N> 对应 pc[N]。
+    // 只取低 15 位：内存 32KB，CoreMark 的 .text 到 ~0x4200，PC < 0x8000。
+    wire dbg_pc0       /* synthesis PAP_MARK_DEBUG="<0/d0/0>" syn_keep=1 */ = pc[0];
+    wire dbg_pc1       /* synthesis PAP_MARK_DEBUG="<0/d0/1>" syn_keep=1 */ = pc[1];
+    wire dbg_pc2       /* synthesis PAP_MARK_DEBUG="<0/d0/2>" syn_keep=1 */ = pc[2];
+    wire dbg_pc3       /* synthesis PAP_MARK_DEBUG="<0/d0/3>" syn_keep=1 */ = pc[3];
+    wire dbg_pc4       /* synthesis PAP_MARK_DEBUG="<0/d0/4>" syn_keep=1 */ = pc[4];
+    wire dbg_pc5       /* synthesis PAP_MARK_DEBUG="<0/d0/5>" syn_keep=1 */ = pc[5];
+    wire dbg_pc6       /* synthesis PAP_MARK_DEBUG="<0/d0/6>" syn_keep=1 */ = pc[6];
+    wire dbg_pc7       /* synthesis PAP_MARK_DEBUG="<0/d0/7>" syn_keep=1 */ = pc[7];
+    wire dbg_pc8       /* synthesis PAP_MARK_DEBUG="<0/d0/8>" syn_keep=1 */ = pc[8];
+    wire dbg_pc9       /* synthesis PAP_MARK_DEBUG="<0/d0/9>" syn_keep=1 */ = pc[9];
+    wire dbg_pc10      /* synthesis PAP_MARK_DEBUG="<0/d0/10>" syn_keep=1 */ = pc[10];
+    wire dbg_pc11      /* synthesis PAP_MARK_DEBUG="<0/d0/11>" syn_keep=1 */ = pc[11];
+    wire dbg_pc12      /* synthesis PAP_MARK_DEBUG="<0/d0/12>" syn_keep=1 */ = pc[12];
+    wire dbg_pc13      /* synthesis PAP_MARK_DEBUG="<0/d0/13>" syn_keep=1 */ = pc[13];
+    wire dbg_pc14      /* synthesis PAP_MARK_DEBUG="<0/d0/14>" syn_keep=1 */ = pc[14];
+
+    // ---- ID 级 PC ----
+    wire dbg_ifidpc0   /* synthesis PAP_MARK_DEBUG="<0/d0/15>" syn_keep=1 */ = if_id_pc[0];
+    wire dbg_ifidpc1   /* synthesis PAP_MARK_DEBUG="<0/d0/16>" syn_keep=1 */ = if_id_pc[1];
+    wire dbg_ifidpc2   /* synthesis PAP_MARK_DEBUG="<0/d0/17>" syn_keep=1 */ = if_id_pc[2];
+    wire dbg_ifidpc3   /* synthesis PAP_MARK_DEBUG="<0/d0/18>" syn_keep=1 */ = if_id_pc[3];
+    wire dbg_ifidpc4   /* synthesis PAP_MARK_DEBUG="<0/d0/19>" syn_keep=1 */ = if_id_pc[4];
+    wire dbg_ifidpc5   /* synthesis PAP_MARK_DEBUG="<0/d0/20>" syn_keep=1 */ = if_id_pc[5];
+    wire dbg_ifidpc6   /* synthesis PAP_MARK_DEBUG="<0/d0/21>" syn_keep=1 */ = if_id_pc[6];
+    wire dbg_ifidpc7   /* synthesis PAP_MARK_DEBUG="<0/d0/22>" syn_keep=1 */ = if_id_pc[7];
+    wire dbg_ifidpc8   /* synthesis PAP_MARK_DEBUG="<0/d0/23>" syn_keep=1 */ = if_id_pc[8];
+    wire dbg_ifidpc9   /* synthesis PAP_MARK_DEBUG="<0/d0/24>" syn_keep=1 */ = if_id_pc[9];
+    wire dbg_ifidpc10  /* synthesis PAP_MARK_DEBUG="<0/d0/25>" syn_keep=1 */ = if_id_pc[10];
+    wire dbg_ifidpc11  /* synthesis PAP_MARK_DEBUG="<0/d0/26>" syn_keep=1 */ = if_id_pc[11];
+    wire dbg_ifidpc12  /* synthesis PAP_MARK_DEBUG="<0/d0/27>" syn_keep=1 */ = if_id_pc[12];
+    wire dbg_ifidpc13  /* synthesis PAP_MARK_DEBUG="<0/d0/28>" syn_keep=1 */ = if_id_pc[13];
+    wire dbg_ifidpc14  /* synthesis PAP_MARK_DEBUG="<0/d0/29>" syn_keep=1 */ = if_id_pc[14];
+
+    // ---- EX 级 PC ----
+    wire dbg_idexpc0   /* synthesis PAP_MARK_DEBUG="<0/d0/30>" syn_keep=1 */ = id_ex_pc[0];
+    wire dbg_idexpc1   /* synthesis PAP_MARK_DEBUG="<0/d0/31>" syn_keep=1 */ = id_ex_pc[1];
+    wire dbg_idexpc2   /* synthesis PAP_MARK_DEBUG="<0/d0/32>" syn_keep=1 */ = id_ex_pc[2];
+    wire dbg_idexpc3   /* synthesis PAP_MARK_DEBUG="<0/d0/33>" syn_keep=1 */ = id_ex_pc[3];
+    wire dbg_idexpc4   /* synthesis PAP_MARK_DEBUG="<0/d0/34>" syn_keep=1 */ = id_ex_pc[4];
+    wire dbg_idexpc5   /* synthesis PAP_MARK_DEBUG="<0/d0/35>" syn_keep=1 */ = id_ex_pc[5];
+    wire dbg_idexpc6   /* synthesis PAP_MARK_DEBUG="<0/d0/36>" syn_keep=1 */ = id_ex_pc[6];
+    wire dbg_idexpc7   /* synthesis PAP_MARK_DEBUG="<0/d0/37>" syn_keep=1 */ = id_ex_pc[7];
+    wire dbg_idexpc8   /* synthesis PAP_MARK_DEBUG="<0/d0/38>" syn_keep=1 */ = id_ex_pc[8];
+    wire dbg_idexpc9   /* synthesis PAP_MARK_DEBUG="<0/d0/39>" syn_keep=1 */ = id_ex_pc[9];
+    wire dbg_idexpc10  /* synthesis PAP_MARK_DEBUG="<0/d0/40>" syn_keep=1 */ = id_ex_pc[10];
+    wire dbg_idexpc11  /* synthesis PAP_MARK_DEBUG="<0/d0/41>" syn_keep=1 */ = id_ex_pc[11];
+    wire dbg_idexpc12  /* synthesis PAP_MARK_DEBUG="<0/d0/42>" syn_keep=1 */ = id_ex_pc[12];
+    wire dbg_idexpc13  /* synthesis PAP_MARK_DEBUG="<0/d0/43>" syn_keep=1 */ = id_ex_pc[13];
+    wire dbg_idexpc14  /* synthesis PAP_MARK_DEBUG="<0/d0/44>" syn_keep=1 */ = id_ex_pc[14];
+
+    // ---- MEM 级 PC ----
+    wire dbg_exmem_pc0 /* synthesis PAP_MARK_DEBUG="<0/d0/45>" syn_keep=1 */ = ex_mem_pc[0];
+    wire dbg_exmem_pc1 /* synthesis PAP_MARK_DEBUG="<0/d0/46>" syn_keep=1 */ = ex_mem_pc[1];
+    wire dbg_exmem_pc2 /* synthesis PAP_MARK_DEBUG="<0/d0/47>" syn_keep=1 */ = ex_mem_pc[2];
+    wire dbg_exmem_pc3 /* synthesis PAP_MARK_DEBUG="<0/d0/48>" syn_keep=1 */ = ex_mem_pc[3];
+    wire dbg_exmem_pc4 /* synthesis PAP_MARK_DEBUG="<0/d0/49>" syn_keep=1 */ = ex_mem_pc[4];
+    wire dbg_exmem_pc5 /* synthesis PAP_MARK_DEBUG="<0/d0/50>" syn_keep=1 */ = ex_mem_pc[5];
+    wire dbg_exmem_pc6 /* synthesis PAP_MARK_DEBUG="<0/d0/51>" syn_keep=1 */ = ex_mem_pc[6];
+    wire dbg_exmem_pc7 /* synthesis PAP_MARK_DEBUG="<0/d0/52>" syn_keep=1 */ = ex_mem_pc[7];
+    wire dbg_exmem_pc8 /* synthesis PAP_MARK_DEBUG="<0/d0/53>" syn_keep=1 */ = ex_mem_pc[8];
+    wire dbg_exmem_pc9 /* synthesis PAP_MARK_DEBUG="<0/d0/54>" syn_keep=1 */ = ex_mem_pc[9];
+    wire dbg_exmem_pc10 /* synthesis PAP_MARK_DEBUG="<0/d0/55>" syn_keep=1 */ = ex_mem_pc[10];
+    wire dbg_exmem_pc11 /* synthesis PAP_MARK_DEBUG="<0/d0/56>" syn_keep=1 */ = ex_mem_pc[11];
+    wire dbg_exmem_pc12 /* synthesis PAP_MARK_DEBUG="<0/d0/57>" syn_keep=1 */ = ex_mem_pc[12];
+    wire dbg_exmem_pc13 /* synthesis PAP_MARK_DEBUG="<0/d0/58>" syn_keep=1 */ = ex_mem_pc[13];
+    wire dbg_exmem_pc14 /* synthesis PAP_MARK_DEBUG="<0/d0/59>" syn_keep=1 */ = ex_mem_pc[14];
+
+    // ---- 指令 opcode ----
+    wire dbg_op0       /* synthesis PAP_MARK_DEBUG="<0/d0/60>" syn_keep=1 */ = if_id_instr[0];
+    wire dbg_op1       /* synthesis PAP_MARK_DEBUG="<0/d0/61>" syn_keep=1 */ = if_id_instr[1];
+    wire dbg_op2       /* synthesis PAP_MARK_DEBUG="<0/d0/62>" syn_keep=1 */ = if_id_instr[2];
+    wire dbg_op3       /* synthesis PAP_MARK_DEBUG="<0/d0/63>" syn_keep=1 */ = if_id_instr[3];
+    wire dbg_op4       /* synthesis PAP_MARK_DEBUG="<0/d0/64>" syn_keep=1 */ = if_id_instr[4];
+    wire dbg_op5       /* synthesis PAP_MARK_DEBUG="<0/d0/65>" syn_keep=1 */ = if_id_instr[5];
+    wire dbg_op6       /* synthesis PAP_MARK_DEBUG="<0/d0/66>" syn_keep=1 */ = if_id_instr[6];
+
+    // ---- 停顿 / 冲刷（ex_flush 与 stall 同时挂到触发端口）----
+    wire        dbg_stall     /* synthesis PAP_MARK_DEBUG="<0/d0/67>,<0/t1/0>" syn_keep=1 */ = stall;
+    wire        dbg_div_stall /* synthesis PAP_MARK_DEBUG="<0/d0/68>" syn_keep=1 */ = div_stall;
+    wire        dbg_ex_flush  /* synthesis PAP_MARK_DEBUG="<0/d0/69>,<0/t0/0>" syn_keep=1 */ = ex_flush;
+
+    // ---- load-use 停顿的成因 + 前递 ----
+    wire        dbg_idex_ld   /* synthesis PAP_MARK_DEBUG="<0/d0/70>" syn_keep=1 */ = id_ex_mem_read;
+    wire        dbg_fwd_a_ex  /* synthesis PAP_MARK_DEBUG="<0/d0/71>" syn_keep=1 */ = fwd_a_ex;
+    wire        dbg_fwd_b_ex  /* synthesis PAP_MARK_DEBUG="<0/d0/72>" syn_keep=1 */ = fwd_b_ex;
+    wire        dbg_fwd_a_wb  /* synthesis PAP_MARK_DEBUG="<0/d0/73>" syn_keep=1 */ = fwd_a_wb;
+    wire        dbg_fwd_b_wb  /* synthesis PAP_MARK_DEBUG="<0/d0/74>" syn_keep=1 */ = fwd_b_wb;
+
+    // ---- 分支解析 / 访存 / 写回 ----
+    wire        dbg_id_ex_br  /* synthesis PAP_MARK_DEBUG="<0/d0/75>" syn_keep=1 */ = id_ex_branch;
+    wire        dbg_btaken    /* synthesis PAP_MARK_DEBUG="<0/d0/76>" syn_keep=1 */ = branch_taken;
+    wire        dbg_mem_we    /* synthesis PAP_MARK_DEBUG="<0/d0/77>" syn_keep=1 */ = mem_we;
+    wire        dbg_mem_re    /* synthesis PAP_MARK_DEBUG="<0/d0/78>" syn_keep=1 */ = mem_re;
+    wire        dbg_mem_wb_we /* synthesis PAP_MARK_DEBUG="<0/d0/79>" syn_keep=1 */ = mem_wb_reg_write;
+
+    // ---- BHT 动态分支预测（高阶任务②的直观证据）----
+    wire        dbg_bht_hit   /* synthesis PAP_MARK_DEBUG="<0/d0/80>,<0/t2/0>" syn_keep=1 */ = bht_hit;
+    wire        dbg_bht_taken /* synthesis PAP_MARK_DEBUG="<0/d0/81>" syn_keep=1 */ = bht_taken;
+    wire        dbg_pred      /* synthesis PAP_MARK_DEBUG="<0/d0/82>" syn_keep=1 */ = id_pred_taken;
+    wire        dbg_redirect  /* synthesis PAP_MARK_DEBUG="<0/d0/83>" syn_keep=1 */ = id_redirect;
+    wire        dbg_mispred   /* synthesis PAP_MARK_DEBUG="<0/d0/84>,<0/t3/0>" syn_keep=1 */ = ex_mispred;
+    wire        dbg_pred_seen /* synthesis PAP_MARK_DEBUG="<0/d0/85>" syn_keep=1 */ = id_ex_pred_taken;
+
+    // ======================= ILA 调试探针束结束 =======================
 
 endmodule

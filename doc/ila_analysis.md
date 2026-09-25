@@ -549,74 +549,133 @@ cpu_top_board            <- 顶层（.pds 的 top module）
 > debug core 相连进行观测"。所以顶层端口本身（`clk`/`resetn`/`led`/`key`/`uart_*`）
 > 选不了 —— 要选它们**在内部对应的网线**（如 `clk_sys`）。
 
-**实测确认存在的网表名**（2026-09-25 在 `synthesize/cpu_top_board_syn.vm` 的
-`module core` 里逐个核对，24/24 全在）：
+**[!] 但"能选到"和"选得动"是两件事 —— 后者才是真麻烦。**
 
-| 计划探针 | 网表里的名字 | 备注 |
+2026-09-25 实机操作时连撞三次墙，根因都是同一个：
+
+| 试过的信号 | 结果 | 根因 |
 |---|---|---|
-| `pc[14:0]` | **`pc`** | **不是 `pc_r`**；顶层没有 |
-| `if_id_pc` / `id_ex_pc` / `ex_mem_pc` | 同名 | 流水线寄存器 |
-| `if_id_instr` | 同名 | |
-| `id_ex_branch` | 同名 | |
-| `mem_wb_reg_write` | 同名 | |
-| `id_ex_pred_taken` | 同名 | |
-| `mem_we` / `mem_re` | 同名 | |
-| §7.2 那 14 个（带 `PAP_MARK_DEBUG`）| 同名 | 属性保住的派生信号 |
+| `pc` | 搜不到 | 它在 `u_core` 里，且顶层 `cpu_top_board` 故意没有它 |
+| `pc_r` | 搜不到 | 网表里 PC 叫 `pc`（`assign pc = pc_r` 被合并）|
+| `mem_re` / `mem_we` | 搜不到 | **它们是 `module core` 的输出端口**，而 **Inserter 的网线树不列模块端口的网线** |
 
-> [!] **这些名字在网表里【不存在】，别去找**：`alu_result`、`mem_wb_data`、
-> `id_ex_instr`、`bht_ctr`、`bht_tag`、`bht_idx`。BHT 的三个数组被推断成 RAM 后
-> 内部信号没了，只剩派生出来的 `bht_hit` / `bht_taken` / `id_pred_taken` 是保住的
-> —— 这也正是当初要给它三个加属性的原因。
-> `ex_flush_d` 更是早已从 RTL 删除（见 §7.2 末尾）。
+`mem_we`/`mem_re` 在 `core.v` 里只是端口的别名（`assign mem_we = ex_mem_mem_write;`），
+综合后触发器 `.Q(mem_re)` 直接就叫这个名字 —— **根本没法和端口分开选**。
 
-### 7.2 抓取前必须加的防优化属性（两条路径都要）
+再加上一个更烦的：**选中整条 `pc[31:0]` 会一次占掉 32 个数据通道**，
+想只要低 15 位得展开总线逐位勾 —— 4 个 PC × 15 位 = 60 次点击。
 
-Fabric Inserter 是从**综合后的网表 `.adf`** 里挑信号的
-（见 §7.0 里 `.fic` 的 `designInputFile=..._syn.adf`）。
-所以**被综合优化掉的中间信号，在 Inserter 里根本选不到** ——
-必须在 RTL 里显式保住它们：
+### 7.2 探针束：把"手点连线"整个绕开
 
-**[!] 2026-09-25 修正：属性用错了 —— 必须带 `PAP_MARK_DEBUG`**
+**结论：不再手点连线，改成在 RTL 里放一个探针束，用【精确标记】直接指定通道。**
 
-查 Pango 自带例程发现两个属性的**分工不同**（`example/PG2L100H_adc_test/`）：
+依据：Fabric Inserter 手册 §4「RTL 级插核」——在 RTL 里标记信号，综合会保留它们，
+**"如果 PDS 工程中没有添加 fic 文件，或添加了空的 fic 文件，那么 Inserter 打开后，
+会根据 RTL 中标记的信息自动进行信号连接"**。
+
+属性分工（查 Pango 自带例程 `example/PG2L100H_adc_test/` 确认）：
 
 | 例程文件 | 属性 | 是否出现在 `.fic` 里 |
 |---|---|---|
 | `rtl/adc.v` | `wire prdata /* synthesis syn_keep = 1 */;` | **不在** |
 | `rtl/adc_crtl_demo.v` | `wire pdata/*synthesis PAP_MARK_DEBUG="1"*/;` | **在**（`triggerChannel<0><1>=pdata[0]`）|
 
-即 **`syn_keep` 只防优化，`PAP_MARK_DEBUG` 才是让 Fabric Inserter 把它列出来的那个**。
-只写 `syn_keep` 的话，信号活着但 Inserter 里**选不到**。
+即 **`syn_keep` 只防优化，`PAP_MARK_DEBUG` 才是让 Inserter 把它列出来的那个**。
+两个都写。
 
-**两个都写**（同一条 synthesis 注释里）：
+标记值有两种形式：
+
+| 形式 | 写法 | 含义 |
+|---|---|---|
+| 模糊 | `PAP_MARK_DEBUG="true"` / `="1"` | 只标记，Inserter 自动往 **Trigger Port** 上依次挂 |
+| **精确** | `PAP_MARK_DEBUG="<核号/端口/通道号>"` | **直接指定连到哪个端口的哪个 channel** |
+
+端口字母：`t` = Trigger Port、`d` = Data Port、`c` = Clock Port、`r` = Reset Port。
+同一信号连多处用逗号分隔（如 `"<0/d0/69>,<0/t0/0>"`）。
+
+> [!] **每个标记只能作用于【1 位】—— 多比特 wire 上的标记会被综合丢掉。**
+>
+> 手册的例子里有 `wire [7:0] debug_this_bus /* synthesis PAP_MARK_DEBUG="<0/t1/12>" */;`，
+> 看着像是"总线占连续 8 个 channel"。**在 PDS 2022.2-SP6.4 上实测这个不成立**：
+>
+> ```
+> (* PAP_KEEP="TRUE", PAP_MARK_DEBUG="<0/d0/77>" *)    wire dbg_mem_we;   <- 1 位：属性保留
+>     wire [14:0] dbg_pc;                                                <- 总线：属性整条丢失
+> ```
+>
+> **所以 PC / opcode 必须逐位标记。** 这是本项目踩到的第 4 个 Inserter 坑
+> （前三个：`pc` 搜不到、`pc_r` 名字不对、`mem_re`/`mem_we` 是端口选不到）。
+
+**当前实现**（分支 `feat/ila-probe`，全部在 `core.v` 末尾一个块里，共 86 个标记）：
 
 ```verilog
-// rtl/core/core.v —— 只加在要抓的信号上，不要全局加
-// 属性必须挂在【声明】上，且必须在【分号之前】
-wire        stall        /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        ex_flush     /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        div_stall    /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        id_redirect  /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        ex_mispred   /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        branch_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-wire        id_ex_mem_read /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
-// 带初始化的 wire：属性放在名字后、等号前
-wire fwd_a_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && ...;
-wire fwd_b_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && ...;
-wire fwd_a_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && ...;
-wire fwd_b_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && ...;
-// ---- 2026-09-25 新增：BHT 相关（抓动态预测的看点）----
-wire bht_hit      /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_valid[...] && ...;
-wire bht_taken    /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_ctr[...][1];
-wire id_pred_taken/* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = (branch && bht_hit) ? ...;
+// rtl/core/core.v 末尾（endmodule 之前）—— ILA 调试探针束
+// 每个探针都是本块【新建的 wire】，是原信号的纯别名。
+// 新建而不是直接标记原信号，是为了绕开"模块端口网线选不到"：
+// mem_we / mem_re / pc 都是 module core 的输出端口，直接标记照样选不到。
+//
+// [!] 总线必须拆成一位一根：多比特 wire 上的 PAP_MARK_DEBUG 会被综合丢弃。
+wire dbg_pc0      /* synthesis PAP_MARK_DEBUG="<0/d0/0>"  syn_keep=1 */ = pc[0];
+wire dbg_pc1      /* synthesis PAP_MARK_DEBUG="<0/d0/1>"  syn_keep=1 */ = pc[1];
+// ... dbg_pc0..dbg_pc14  -> <0/d0/0>  .. <0/d0/14>
+wire dbg_ifidpc0  /* synthesis PAP_MARK_DEBUG="<0/d0/15>" syn_keep=1 */ = if_id_pc[0];
+// ... dbg_ifidpc0..14 -> 15..29；dbg_idexpc0..14 -> 30..44；dbg_exmem_pc0..14 -> 45..59
+wire dbg_op0      /* synthesis PAP_MARK_DEBUG="<0/d0/60>" syn_keep=1 */ = if_id_instr[0];
+// ... dbg_op0..6 -> 60..66
+wire dbg_stall    /* synthesis PAP_MARK_DEBUG="<0/d0/67>,<0/t1/0>" syn_keep=1 */ = stall;
+wire dbg_ex_flush /* synthesis PAP_MARK_DEBUG="<0/d0/69>,<0/t0/0>" syn_keep=1 */ = ex_flush;
+wire dbg_mem_we   /* synthesis PAP_MARK_DEBUG="<0/d0/77>" syn_keep=1 */ = mem_we;
+// ... 19 个 1 位信号 -> 67..85，完整表见 core.v 里的块头注释或 §7.1
 ```
 
-> `id_ex_mem_read` 原本与另外 4 个信号挤在同一行 `reg a, b, c, ...;` 里，挂不上属性 ——
-> 需**单独拆出来声明**。`branch_taken` 是 `reg`，属性写法一样。
+外加时钟端口标记在 `cpu_top_board.v`：
 
-**已实测验证**（2026-09-25，`feat/ila-probe` 分支）：加完跑 PDS 综合，
-**14/14 信号在 `synthesize/cpu_top_board_syn.vm` 里全部存活**；
-同时 iverilog elaborate 通过、CoreMark **354,119 拍**与 riscv-tests **49/1/0** 都不变。
+```verilog
+wire clk_sys /* synthesis PAP_MARK_DEBUG="<0/c0/0>" syn_keep=1 */;
+```
+
+**这样做的三个好处**：
+
+1. **不用手点连线** —— 工程里没有 `.fic` 时打开 Inserter 会自动全部连好，
+   核对一眼存盘即可。所有"搜不到/选不动/弹 Select Page"的问题一次性消失。
+2. **端口网线问题被绕开** —— 探针全是内部 wire，不依赖端口是否可选。
+3. **清理变成删一块** —— 整块自包含，抓完直接删掉那一段（本节末尾有命令），
+   不用在 700 行里找散落的注释。
+
+**综合后已逐项核对通过**（2026-09-25，`synthesize/cpu_top_board_syn.vm`）：
+
+| 项 | 结果 |
+|---|---|
+| 数据通道 | **86/86**，正好 `0..85`，无缺口无重复 |
+| 触发端口 | `t0`/`t1`/`t2`/`t3` 各 1 位，分别对应 `ex_flush`/`stall`/`bht_hit`/`ex_mispred` |
+| 时钟端口 | `<0/c0/0>` 在，落在 `clk_sys` 上 |
+| 通道↔信号对应 | `d0/0→dbg_pc0`、`d0/14→dbg_pc14`、`d0/15→dbg_ifidpc0`、`d0/60→dbg_op0`、`d0/85→dbg_pred_seen` … 全部与设计一致 |
+
+> [!] **只剩一个待实机确认的点：触发端口的序号基准。**
+> 手册例子里 `t1` 写着"port 序号为 1"，而 Clock/Reset 又明确说"均标记为 0"，
+> 所以触发端口应是从 `t0` 起 —— 但这是推断。**第一次打开 Inserter 时核对
+> Channel View 的 `TRIGGER PORTS` 下是不是 4 个各 1 位的端口**；
+> 若是 1 个 4 位的端口，就把标记里的 `t0..t3` 改成同一个端口的不同 channel
+> （`t0/0`..`t0/3`）。
+
+**回归已实测不变**（2026-09-25，逐位核对）：
+
+| 回归项 | 结果 |
+|---|---|
+| CoreMark 计时区间 | **354,119 拍**（不变）|
+| 测试台总周期 | **1,457,776**（不变）|
+| 四个 CRC | `e9f5 / e714 / 1fd7 / 8e3a` **逐位一致** |
+| riscv-tests | **49 PASS / 1 FAIL / 0 TIMEOUT** |
+| `run_sim` 6 个单测台 | 全过 |
+| `run_own_tests` | `exceptions` + `timer_irq` **2/2** |
+
+**综合资源**（本次调试版综合，`synthesize/run.log`）：LUT **3,696** / 寄存器 **2,441** /
+DRM 16 / APM 11。生产版（P&R 后）是 **LUT 3,721 / slack +1.550 ns / All Constraints Met**，
+归档比特流 `bitstreams/coremark_iter1663_pll49mhz_localboard.sbit`（md5 `c4e2c4d2`）。
+> [!] **`multiseed_summary.csv` 被这次综合运行清成了 NA** —— 它是 **P&R** 的产物，
+> 只跑 `-run synthesize` 会把它重置。基线值（3,721 LUT / +1.550 ns）在
+> `bitstreams/README.md` 与 CLAUDE.md 里都有记录，下次 P&R 会重新生成。
+> 该文件本就在 `.gitignore` 里，不影响仓库。
 
 > [!] **`ex_flush_d` 已从设计里删除**（2026-09-21 取指重定向改造），别再给它写属性 ——
 > 综合会直接报 `Identifier ex_flush_d is not declared` 并中断整条流程。
@@ -749,11 +808,11 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 
 **A. 准备（本地 PDS）**
 
-1. 按 §7.2 在 `rtl/core/core.v` 给要抓的信号加
-   `/* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */`（**不是只写 `syn_keep`**；
-   清单含 BHT 的 5 个新信号）。**只加在要抓的信号上，不要全局加。**
-   > [OK] 这一步**已完成**（`feat/ila-probe`，14/14 实测存活）。除非要增删探针，
-   > 否则直接从第 3 步开始。
+1. 按 §7.2 在 `rtl/core/core.v` 末尾放好探针束
+   （`/* synthesis PAP_MARK_DEBUG="<0/d0/N>" syn_keep=1 */`，**不是只写 `syn_keep`**；
+   总线要一位一根，**多比特 wire 上的标记会被综合丢掉**）。
+   > [OK] 这一步**已完成**（`feat/ila-probe`，**86/86 标记实测存活**、通道号已逐个核对）。
+   > 除非要增删探针，否则直接从第 3 步开始。
 2. `scripts\build_bitstream.ps1 coremark -NoBuild` —— 只生成并同步固件，
    确认 PDS 工程里的 `mem.hex` 是 **ITER=1663**（别用旧镜像）。
 3. PDS 打开 `pds/RV32I_1/RV32I_1.pds` → **Compile → Synthesize**。
@@ -850,12 +909,16 @@ Clock/Reset 只有 1 个 channel，port 序号和 channel 序号都写 `0`。例
 ```verilog
 // 采样时钟：调试核 0 的 clock port
 wire clk_sys /* synthesis PAP_MARK_DEBUG="<0/c0/0>" */;
-// 数据通道：调试核 0 的 data port，从 channel 0 开始连续占 15 个
-wire [14:0] dbg_pc /* synthesis PAP_MARK_DEBUG="<0/d0/0>" */;
-assign dbg_pc = pc[14:0];
+// 数据通道：调试核 0 的 data port 的 channel 0
+wire dbg_pc0 /* synthesis PAP_MARK_DEBUG="<0/d0/0>" */ = pc[0];
 // 同一个信号要连多处时，用逗号分隔多个标记
-wire [7:0] some_bus /* synthesis PAP_MARK_DEBUG="<0/t1/0>,<0/d0/15>" */;
+wire dbg_ex_flush /* synthesis PAP_MARK_DEBUG="<0/t0/0>,<0/d0/69>" */ = ex_flush;
 ```
+
+> [!] **手册这条例子是错的，别照抄**：手册写的是
+> `wire [7:0] debug_this_bus /* synthesis PAP_MARK_DEBUG="<0/t1/12>" */;`，
+> 好像一个标记能给整条总线分配连续 channel。**实测 PDS 会把多比特 wire 上的
+> 这个属性整条丢弃**（见 §7.2）。**总线一律拆成一位一根。**
 
 手册明确：**"如果 PDS 工程中没有添加 fic 文件，或添加了空的 fic 文件，那么 Inserter
 打开后，会根据 RTL 中标记的信息自动进行信号连接"** —— 打开 Inserter 一点就自动连好，
