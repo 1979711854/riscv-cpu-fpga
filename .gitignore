@@ -84,6 +84,13 @@ $RECYCLE.BIN/
 /pds/**/*.plc
 /pds/**/*.csv
 /pds/**/impl.tcl
+# Fabric Inserter 的临时工程（打开 Inserter 就在工程目录生成 temp_<时间戳>，无内容）
+/pds/**/temp_*
+# [!] .fic 故意【不】忽略 —— 它是 ILA 探针的通道映射记录，小且有存档价值。
+#     但提交前必须确认 Project.device.designInputFile 指向的那份 .adf
+#     与它配套的 .sbit 是同一次综合（否则是过期文件，会误导人）。
+#     .sbit 无法入库（9MB/个，见 /pds/**/*.sbit），所以 .fic 一定是"孤儿"，
+#     用之前按 doc/ila_analysis.md §7.6 的办法核一遍。
 
 # ---- Vivado / AMD（若日后使用）----
 .Xil/

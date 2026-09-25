@@ -25,6 +25,17 @@
 
 ## 1. 分析口径：CoreMark 计时区间
 
+> [!] **口径提醒（2026-09-25 补）**：**§1 ~ §6 的全部数字都是 2026-09-23
+> 「BTB/BHT 之前」那一版的实测剖析结果，基准是 358,846 拍。**
+> 加 BHT 之后当前基准是 **354,119 拍**（`+PROF` 可复现，见 §8）。
+> 这两套数字**不要混用**：
+> * §1~§6 的分项（load-use 20,720 / 分支 50,070 等）是**旧版**的，
+>   它们精确闭合于 358,846 —— 想更新到 BHT 之后需要重跑一次 `+PROF`。
+> * §7 及本章末尾用的基线是**当前值 354,119**。
+>
+> 保留旧数字的理由：它是"加 BHT 省了 4,727 拍"这个结论的**对照基线**，
+> 删掉就没法复核了。CLAUDE.md「当前进度」里记的是新基线。
+
 CoreMark 的 `start_time()` / `stop_time()` 各是一次读 MMIO `0x7FF4`
 （`scripts/coremark_port/core_portme.c`）。对应的读指令在 ELF 里是
 **PC `0x2908`（start_time）/ `0x2920`（stop_time）的 `lw a5,0(a5)`**，
@@ -358,7 +369,7 @@ Project.unit<0>.triggerChannel<0><2>=pdata[1]
 
 | 通道位 | 信号 | 位宽 | 取法 / 说明 |
 |---|---|---|---|
-| `[14:0]` | `pc` / `pc_r[14:0]` | 15 | 取指 PC（`pc` 已是顶层端口；内存 32KB，PC < 0x8000） |
+| `[14:0]` | `pc[14:0]` | 15 | 取指 PC。**网表里叫 `pc`，不叫 `pc_r`**，且在 `u_core` 里（顶层 `cpu_top_board` 没有）；内存 32KB，PC < 0x8000 |
 | `[29:15]` | `if_id_pc[14:0]` | 15 | ID 级 PC |
 | `[44:30]` | `id_ex_pc[14:0]` | 15 | EX 级 PC |
 | `[59:45]` | `ex_mem_pc[14:0]` | 15 | MEM 级 PC |
@@ -400,16 +411,131 @@ Project.unit<0>.triggerChannel<0><2>=pdata[1]
 > **省位宽的关键**：PC 只取低 15 位。若按 32 位传，四个 PC 就吃掉 128 位，
 > 加上其他信号直接顶到 256 上限。地址总线是位宽预算里最贵的东西。
 
-采样深度取 **1024**（例程里的默认值）：**`1024 / 49.8927MHz = 20.5 µs`**
+采样深度取 **1024**：**`1024 / 49.8927MHz = 20.5 µs`**
 （27 MHz 时代 37.9 µs、45 MHz 时代 22.8 µs —— ILA 采的是系统时钟，
 PLL 提频后窗口按比例缩短）。若要看更长的窗口，把深度调到 4096（= 82 µs）。
 DebugCore 的缓存深度范围是 **64 ~ 128k**（2 的整数幂），要抓更长的窗口可以调大，
-但要注意 BRAM 占用。平台上另有 `triggerPosition` 参数，
-把它设在缓冲区中间，才能看到触发**之前**的流水线状态。
+但要注意 BRAM 占用。
 
-> [!] **ILA 的时钟域**：采样时钟要接 **PLL 输出的 `clk_sys`（49.8927MHz）**，
-> 不是板载 27MHz 晶振 —— 抓的是 CPU 那条流水线。若接错域，抓到的状态全是亚稳态。
-> 在 `cpu_top_board` 里这个信号叫 `clk_sys`（`pll u_pll` 的 `clkout0`）。
+### 7.1.1 [!] 三个设置项到底在哪个界面（2026-09-25 查官方手册更正）
+
+**这一节是实机操作时最容易卡住的地方。** 本章此前把"采样时钟 / 触发条件 / 触发位置"
+三样**都写在 Inserter 的 `Trigger Parameters` 里**，**那是错的** —— 依据后续实机反馈
+与官方手册更正（`D:\pango\PDS_2022.2-SP6.4\doc\Fabric_Inserter_User_Guide.pdf`、
+`Fabric_Debugger_User_Guide.pdf`）。
+
+**Fabric Inserter 的 DebugCore 对话框只有三个标签页**：
+`Trigger Parameters` / `Net Connections` / `PowerOn Init Parameters`。
+
+| 要配的东西 | 在哪个界面 | 说明 |
+|---|---|---|
+| **采样时钟** | **Net Connections → Modify Connection → Select Net → 右侧 Channel View 的 `Clock Port` 页签** | **不在 Trigger Parameters 里。** Channel View 每个页签 = 一个 Port：`Trigger Port`(256 ch) / `Data Port`(4096 ch) / **`Clock Port`(仅 1 ch)** / `Reset Port`(仅 1 ch)。手册明确：Clock/Reset "必须连接至对应的时钟信号和复位信号上，如果时钟端口和复位端口连接不正确将导致 debug Core 无法正常工作" |
+| 采样**沿** | Trigger Parameters → 数据捕获及存储设置 → `Sample On` | 这只是 **Rising / Falling**，是"沿"不是"源"，极易看错 |
+| **最大采样深度** | Trigger Parameters → 数据捕获及存储设置 → `Sample Depth` | 范围 **64 ~ 131072**（2 的整数幂）。这是**上限**，运行时只能调小、不能超过 |
+| 匹配单元数 / Match Type | Trigger Parameters → 触发端口及匹配单元设置 | `Match Type` 要选 **`Basic w/edges`** —— 只有带 edges 的才能在运行时把 Value 填成 **`R`（上升沿）**。选 `Basic` 只能比电平 |
+| **触发条件** | **Fabric Debugger → Trigger Setup（运行时）** | **不用在 Inserter 里配，也不用重新综合** |
+| **触发位置 `Position`** | **Fabric Debugger → Trigger Setup → Capture Settings** | 仅当 `Type = Windows` 时可用，取值 **0 ≤ N ≤ Depth−1** |
+
+> [重点] **官方手册原文**（`Fabric_Debugger_User_Guide.pdf` §5.3）："下载包含 Debugger Core
+> 位流的器件，双击器件栏中的 'Trigger Setup' 叶节点，打开 Debugger Core 图形配置对话框，
+> **实时配置 Debugger Core 无需重新编译**"。
+>
+> **所以触发条件、采样深度、触发位置这三样都是运行时配的** —— 改触发条件**不会**让你
+> 重跑综合/布线/烧板。调试时省下的时间非常可观：想换触发信号、想看触发前后的不同窗口，
+> 改了直接 Run。
+>
+> 只有 **通道连线**、**端口/匹配单元数量**、**Match Type**、**最大 Sample Depth**
+> 这几样是综合期定死的 —— 改了就得重走 Inserter → P&R → 出比特流 → 烧板。
+
+**运行时的 Trigger Setup 分三块**（与 Inserter 里那三块同名，别搞混）：
+
+* `Match Function` —— 给每个 Trigger Unit 定一个比较式。**信号的值在这里填**，
+  例如把 `ex_flush` 那一行的 Value 填 `R`（上升沿）。
+  Function 可选 `==` / `<>` / `>=` / `>` / `<` / `<=` / `In Range` / `Out of Range`；
+  Value 在 Binary 进制下可接受 `X`（不关心）、`0`、`1`、`R`（上升沿）、`F`（下降沿）、
+  `B`（任意翻转）、`N`（不翻转）。
+* `Trigger Condition` —— 多个 Trigger Unit 的与/或/非组合（Boolean 页签），
+  或顺序触发（Sequencer 页签，级数 ≤ 16）。表达式写法如 `!TU1&&TU2`。
+* `Capture Settings` —— **`Type`**（`Windows` / `N Samples`）、窗口数、每窗口深度、
+  **触发位置 `Position`**。手册：`Type=Windows` 时"每个窗口中捕捉的采样点数必须为 2 的幂，
+  触发点可以是窗口中的任何位置"。
+
+配好后点 **`Trigger Setup → Run`** 下发；强制触发用 **`Trigger Immediate`**
+（忽略触发条件，窗口从 sample 0 开始）；卸载用 **`Stop Acquisition`**。
+
+> [!] **`Position` 怎么理解**：它定义**触发点在窗口内的位置**，取值 `0 ~ Depth−1`。
+> `0` = 触发点在最前（只看得到触发**之后**），`Depth−1` = 触发点在最后
+> （只看得到触发**之前**）。**要看"前因后果"，取中点**（`Position = Depth/2`）。
+
+> [!] **`Enable Multi-windows and NSample` 保持【不使能】** —— 手册原文："使能该功能会对
+> Debug Core 的时序性能造成一定的影响，如果需要 Debug Core 工作在较高频率时，不建议使能
+> 该功能"。我们 slack 只有 **+1.550 ns**，别开。单窗口下 `Type` 仍可选 `Windows`
+> 并把窗口数填 **1**，`Position` 照样可用。
+
+> [!] **ILA 的时钟域**：`Clock Port` 要接 **PLL 输出的 `clk_sys`（49.8927 MHz）**，
+> 不是板载 27 MHz 晶振 —— 抓的是 CPU 那条流水线。接错域抓到的全是亚稳态。
+> 在网表里这个信号就叫 **`clk_sys`**，位于**顶层 `cpu_top_board`**
+> （是 `pll u_pll` 的 `clkout0`，实测网表 `cpu_top_board_syn.vm` 里有 `wire clk_sys;`）。
+
+### 7.1.2 信号在哪个模块里找（`cpu_top_board` → `u_soc` → `u_core`）
+
+Inserter 的 **Select Net** 对话框里：左上 `Schematic View`（图形）、右侧
+**`Channel View`**（要连的 channel，按 Port 分页签）、左下 **`Module View`**（层次树）、
+下中 **`Net View`**（当前选中模块的网线/总线）。设计的层次是：
+
+```
+cpu_top_board            <- 顶层（.pds 的 top module）
+ ├── u_pll  (pll)         <- 里面不用选任何信号
+ └── u_soc  (cpu_top)
+      └── u_core (core)   <- [重点] 探针信号全在这里
+```
+
+* **数据/触发信号全部在 `u_core` 里** —— §7.2 的 14 个探针属性都加在 `module core` 内，
+  实测综合后它们确实作为 `module core` 的局部网线存在。
+* **`Clock Port` 要在顶层 `cpu_top_board` 选 `clk_sys`** —— 它在 `u_core` 里看不到。
+
+**为什么搜不到 `pc` / `pc_r`（2026-09-25 实测）**：
+
+1. **顶层 `cpu_top_board` 里【故意没有】`pc`。** `cpu_top_board.v` 的设计目的就是把
+   `pc[31:0]` / `done` 挡在板外（原因见 CLAUDE.md 关键约定 16：PDS 会把未约束的输出
+   自动布到 BANKR5 的 SFP/HSST 真实引脚上）。所以在顶层搜 `pc` **必然搜不到**，
+   这是预期行为，不是 bug。
+2. **PC 在网表里的名字是 `pc`，不是 `pc_r`。** `core.v` 里是 `assign pc = pc_r;`，
+   综合后两者合并 —— 触发器实例名还是 `\pc_r[0]`，但**它输出的网线叫 `pc[0]`**
+   （实测网表 `synthesize/cpu_top_board_syn.vm`：
+   `GTP_DFF_CE /* \pc_r[0] */ ... .Q (pc[0])`）。所以要在 `u_core` 里找总线 **`pc[31:0]`**。
+
+**两个实用技巧**（都出自 Inserter 手册）：
+
+* 勾上 Filter ToolBar 左下方的 **`Show All Net In The Net Tree View`** —— 手册说勾上后
+  Module View 会被冻结，Net View 把**整个设计**的网线/总线全列出来，
+  "方便查找无法按模块定位的网线及总线"。找 `clk_sys` 这种顶层网线时用它最快。
+* Filter ToolBar 的 **`Key Word`** 框是**模糊匹配、不区分大小写**的
+  （模式下拉框选 `Net Name` 就只匹配网线名）。输入完按 **Enter** 才开始筛选。
+
+> [!] **"与用户设计端口相连的信号"连不上**：手册原文"与用户设计端口相连的信号无法与
+> debug core 相连进行观测"。所以顶层端口本身（`clk`/`resetn`/`led`/`key`/`uart_*`）
+> 选不了 —— 要选它们**在内部对应的网线**（如 `clk_sys`）。
+
+**实测确认存在的网表名**（2026-09-25 在 `synthesize/cpu_top_board_syn.vm` 的
+`module core` 里逐个核对，24/24 全在）：
+
+| 计划探针 | 网表里的名字 | 备注 |
+|---|---|---|
+| `pc[14:0]` | **`pc`** | **不是 `pc_r`**；顶层没有 |
+| `if_id_pc` / `id_ex_pc` / `ex_mem_pc` | 同名 | 流水线寄存器 |
+| `if_id_instr` | 同名 | |
+| `id_ex_branch` | 同名 | |
+| `mem_wb_reg_write` | 同名 | |
+| `id_ex_pred_taken` | 同名 | |
+| `mem_we` / `mem_re` | 同名 | |
+| §7.2 那 14 个（带 `PAP_MARK_DEBUG`）| 同名 | 属性保住的派生信号 |
+
+> [!] **这些名字在网表里【不存在】，别去找**：`alu_result`、`mem_wb_data`、
+> `id_ex_instr`、`bht_ctr`、`bht_tag`、`bht_idx`。BHT 的三个数组被推断成 RAM 后
+> 内部信号没了，只剩派生出来的 `bht_hit` / `bht_taken` / `id_pred_taken` 是保住的
+> —— 这也正是当初要给它三个加属性的原因。
+> `ex_flush_d` 更是早已从 RTL 删除（见 §7.2 末尾）。
 
 ### 7.2 抓取前必须加的防优化属性（两条路径都要）
 
@@ -482,17 +608,22 @@ wire id_pred_taken/* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = (branch && bht
 容易把编码搞坏）。用 Python 按字节替换最稳：
 
 ```powershell
-# 先看有哪些（条数应与 §7.2 的属性清单一致）
-Select-String -Path rtl\core\core.v -Pattern "synthesis syn_"
+# 先看有哪些（应为 14 条，与 §7.2 的属性清单一致）
+Select-String -Path rtl\core\core.v -Pattern "synthesis"
 
-# 一次性删除全部探针属性（含可能的 PAP_MARK_DEBUG）
-python -c "import io,re; p=r'rtl/core/core.v'; s=io.open(p,encoding='utf-8').read(); n=len(re.findall(r'/\* *synthesis +(?:syn_keep|syn_preserve) *=[^*/]*\*/', s)); s=re.sub(r' *?/\* *synthesis +(?:syn_keep|syn_preserve) *=[^*/]*\*/', '', s); io.open(p,'w',encoding='utf-8',newline='').write(s); print('removed', n)"
+# 一次性删除全部探针属性 —— 正则必须同时覆盖 PAP_MARK_DEBUG 和 syn_keep
+python -c "import io,re; p=r'rtl/core/core.v'; s=io.open(p,encoding='utf-8').read(); pat=r' */\* *synthesis +[^*]*\*/'; n=len(re.findall(pat,s)); s=re.sub(pat,'',s); io.open(p,'w',encoding='utf-8',newline='').write(s); print('removed',n)"
 
 # 复查：应为 0 条，且回归必须回到基线
-Select-String -Path rtl\core\core.v -Pattern "synthesis syn_" | Measure-Object | Select-Object -ExpandProperty Count
+(Select-String -Path rtl\core\core.v -Pattern "synthesis" | Measure-Object).Count
 scripts\run_riscv_tests.ps1             # 期望 49/1/0
 scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测试台总周期 1,457,776）
 ```
+
+> [!] **旧版这条删除命令只匹配 `syn_keep|syn_preserve`，删不掉 `PAP_MARK_DEBUG`** ——
+> 照它跑完会留下 14 条 `PAP_MARK_DEBUG`，重新综合后资源/时序对不上基线，
+> 而且比赛提交的工程里就留着调试标记了。2026-09-25 已改成匹配整条
+> `/* synthesis ... */`（`[^*]*` 避免跨注释贪婪匹配）。
 
 删完重新综合，再用 `pds/RV32I_1/multiseed_summary.csv` 核对 LUT 是否回到**基线**：
 当前 49.89 MHz 设计应为 **3,721**（45 MHz 时代的 3,030、27 MHz 时代的 2,316 都不是当前基线，别拿它们对照）。
@@ -504,13 +635,16 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 1. 按 §7.2 在 `rtl/core/core.v` 给要抓的信号加防优化属性。
 2. 在 PDS 里 **Compile → Synthesize**，产出网表 `.adf`
    （本工程在 `pds/RV32I_1/synthesize/cpu_top_syn.adf`）。
-3. PDS 菜单 **TOOL → Inserter** 打开 **Fabric Inserter**，在 **JtagHub** 目录下选 **DebugCore**，
-   配置三栏：
-   - **Trigger Parameters**：采样时钟选 `clk`；采样深度 `dataDepth=1024`；
-     触发条件设 `ex_flush`（或 `stall`）；触发位置设在缓冲区中间
-   - **Net Connections**：按 §7.1 的 80 位清单把设计信号连到通道上
-     （PC 记得只连低 15 位）
-   - **PowerOn Init Parameters**：默认即可
+3. PDS 菜单 **TOOL → Inserter** 打开 **Fabric Inserter**，在 **JtagHub** 目录下选 **DebugCore**。
+   各设置项**具体在哪个界面见 §7.1.1**（[!] 采样时钟在 `Net Connections` 里，不在
+   `Trigger Parameters`；触发条件/触发位置在运行时的 Fabric Debugger 里，这里配不了）：
+   - **Trigger Parameters**：`Match Type = Basic w/edges`、`Sample Depth = 1024`、
+     `Sample On = Rising`；`Enable Multi-windows and NSample` **保持不使能**；
+     `PowerOn Init Parameters` 默认
+   - **Net Connections → Modify Connection → Select Net**：
+     `Clock Port` 连顶层 `cpu_top_board` 的 **`clk_sys`**；
+     `Data Port` 按 §7.1 的 **86 位**清单连（信号都在 `u_core` 里，PC 只连低 15 位）；
+     `Trigger Port` 连 1 根 `ex_flush`
 4. **保存 Inserter 工程 → 这就是那个 `.fic` 文件**
    （PDS 例程里的命名是 `<顶层名>_syn.fic` / `<设计名>_debug.fic`，惯例放在布线输出目录）。
 [!] **务必把 `.fic` 和随后生成的 `.sbit` 放在一起成对保存**。
@@ -567,7 +701,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    文件过滤器按板卡型号切换。所以**先确认你预约的设备是不是紫光同创的板子**——
    如果是 Xilinx 板，本项目的 Pango `.fic` 用不上。
 3. 该设备的 `ilaChannelCount` / `ilaSampleDepth` 是多少（平台按设备下发这两个参数）。
-   若通道数少于 §7.1 的 80 位计划，需要再裁剪探针。
+   若通道数少于 §7.1 的 86 位计划，需要再裁剪探针。
 4. 截图分辨率与报告排版要求（建议原图，不要压缩到看不清信号名）。
 5. 抓完后**移除调试属性与调试核，重跑一次综合与回归**，确认
    `49/1/0`、计时区间 `354,119` 拍、**LUT / Fmax 都回到基线**（当前 49.89 MHz 设计：
@@ -576,26 +710,40 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 ### 7.6 本地板执行清单（2026-09-25，当前状态的推荐路径）
 
 > 前提：**RTL 已冻结**（49.89 MHz + BHT 都已验证通过、板上实测做过）。
-> **加 ILA 探针本身要改 RTL（`syn_keep`），所以这一步必须排在最后** ——
+> **加 ILA 探针属性和 DebugCore 本身都要改 RTL/网表，所以这一步必须排在最后** ——
 > 否则队友一改 RTL，`.fic` 与 `.sbit` 双双作废。
+>
+> 分支：**`feat/ila-probe`**（14 处探针属性已加好并实测存活，见 §7.2）。
 
 **A. 准备（本地 PDS）**
 
-1. 按 §7.2 在 `rtl/core/core.v` 给要抓的信号加 `/* synthesis syn_keep=1 */`
-   （清单已含 BHT 的 5 个新信号）。**只加在要抓的信号上，不要全局加。**
-2. `scriptsuild_bitstream.ps1 coremark -NoBuild` —— 只生成并同步固件，
+1. 按 §7.2 在 `rtl/core/core.v` 给要抓的信号加
+   `/* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */`（**不是只写 `syn_keep`**；
+   清单含 BHT 的 5 个新信号）。**只加在要抓的信号上，不要全局加。**
+   > [OK] 这一步**已完成**（`feat/ila-probe`，14/14 实测存活）。除非要增删探针，
+   > 否则直接从第 3 步开始。
+2. `scripts\build_bitstream.ps1 coremark -NoBuild` —— 只生成并同步固件，
    确认 PDS 工程里的 `mem.hex` 是 **ITER=1663**（别用旧镜像）。
 3. PDS 打开 `pds/RV32I_1/RV32I_1.pds` → **Compile → Synthesize**。
    产物：`pds/RV32I_1/synthesize/cpu_top_board_syn.adf`。
+   > 本工程**已停在"综合完成"状态**（2026-09-25 17:36），可直接进第 4 步。
 
-**B. 用 Fabric Inserter 生成 `.fic`**
+**B. 用 Fabric Inserter 生成 `.fic`（界面细节见 §7.1.1 / §7.1.2）**
 
 4. PDS 菜单 **TOOL → Inserter**，在 **JtagHub** 目录下选 **DebugCore**。
-5. 配三栏：
-   * **Trigger Parameters**：采样时钟选 **`clk_sys`**（不是 27MHz 晶振！
-     `cpu_top_board` 里 `pll u_pll` 的 `clkout0`）；`dataDepth = 1024`（≈20.5 µs）
-     或 4096（≈82 µs）；触发条件先设 `ex_flush`；触发位置设在缓存**中点**
-   * **Net Connections**：按 §7.1 的 **86 位**清单连信号（PC 只连低 15 位）
+5. 配三栏 —— **[!] 注意哪些在这里配、哪些要留到运行时**：
+   * **Trigger Parameters**：`Match Type` 选 **`Basic w/edges`**（不然运行时没法用
+     上升沿触发）；`Sample Depth = 1024`（≈20.5 µs，要看长窗口用 4096 ≈82 µs）；
+     `Sample On = Rising`；`Enable Multi-windows and NSample` **不勾**；
+     触发端口数/匹配单元数各 1
+     > **采样时钟、触发条件、触发位置都不在这一栏** —— 前者的位置见下一条，
+     > 后两者在 Fabric Debugger 里运行时配（§7.1.1），**不用重新综合**
+   * **Net Connections → Modify Connection → Select Net**：
+     * `Clock Port` 页签 ← 顶层 `cpu_top_board` 的 **`clk_sys`**
+       （不是 27 MHz 晶振，也不是 `clk` 端口；找不到就勾 `Show All Net In The Net Tree View`）
+     * `Data Port` 页签 ← 按 §7.1 的 **86 位**清单连，**信号都在 `u_core` 里**
+       （PC 只连低 15 位；`pc` 不叫 `pc_r`）
+     * `Trigger Port` 页签 ← 1 根 **`ex_flush`**（触发信号先接它，运行时随时能换）
    * **PowerOn Init Parameters**：默认
 6. **保存 Inserter 工程 —— 这个文件就是 `.fic`。**
    命名建议 `cpu_top_board_ila.fic`，**和随后的 `.sbit` 放一起成对保存**。
@@ -610,31 +758,106 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 **D. 抓波形（本地 PDS Debugger）**
 
 9. PDS **TOOL → Debugger** → **Scan JTAG**。能扫到器件与 `debug_core` 才可行。
-10. 设触发条件 → **点触发捕获** → 波形窗口把总线信号 **Bus radix 设为 Hex**（PC）。
-11. 至少抓这三种情形（对应 §3/§4 的分析）：
-    * (a) 一次**分支冲刷**（触发 `ex_flush`）
-    * (b) 一次 **BHT 命中且预测跳转**（触发 `bht_hit && bht_taken`）
-    * (c) 一次 **load-use 停顿**（触发 `stall`）
-12. 导出波形 / 截图，存到 `doc/figures/`，并在 `doc/ila_analysis.md` 里补索引。
+10. 双击器件栏里的 **`Trigger Setup`** 叶节点，配三块（**实时下发，不用重新综合**）：
+    * **Match Function**：给 `ex_flush` 那一行的 Value 填 **`R`**（上升沿）
+    * **Trigger Condition**：`Enable` 该 Trigger Unit
+    * **Capture Settings**：`Type = Windows`、窗口数 `1`、
+      **`Position = Depth/2`**（看到触发前后各一半）
+    然后 **`Trigger Setup → Run`**。
+11. 波形窗口把总线信号（`pc` / `id_ex_pc` 等）的 **Bus radix 设为 Hex**。
+12. 至少抓这四种情形（对应 §3/§4 的分析 + BHT 的证据）——
+    **每次只需回 Trigger Setup 改 Value，不用重烧板**：
+    * (a) 一次**分支冲刷** —— `ex_flush` 上升沿
+    * (b) 一次 **BHT 命中且预测跳转** —— 触发改成 `bht_hit` 上升沿，看同拍 `bht_taken`、
+      `id_redirect` 是否也为 1，且 EX 级**不冲刷**（这就是"预测对了省 1 拍"的直接证据）
+    * (c) 一次 **load-use 停顿** —— 触发改成 `stall` 上升沿
+    * (d) 一次 **BHT 误判恢复** —— 触发改成 `ex_mispred` 上升沿
+13. 导出波形 / 截图，存到 `doc/figures/`，并在 `doc/ila_analysis.md` 里补索引。
 
 **E. 收尾（重要，别忘）**
 
-13. **移除全部 `syn_keep` 属性与 DebugCore/JTAG Hub**，重新综合一次。
-14. 核对回到基线：`riscv-tests 49/1/0`、CoreMark **354,119 拍**、
+14. **移除全部 `PAP_MARK_DEBUG` / `syn_keep` 属性与 DebugCore/JTAG Hub**，重新综合一次。
+15. 核对回到基线：`riscv-tests 49/1/0`、CoreMark **354,119 拍**、
     **LUT 3,721 / 可达 54.0745 MHz / slack +1.550 ns**（§7.2 有删除命令）。
-15. **比赛提交的工程里绝不能留着调试核。**
+16. **比赛提交的工程里绝不能留着调试核。**
 
 **卡住了怎么办**
 
 | 现象 | 原因 |
 |---|---|
-| Inserter 里选不到某个信号 | 它被综合优化掉了 —— 回第 1 步确认 `syn_keep` 加了 |
+| Inserter 里选不到某个信号 | ① 找错模块了 —— 信号在 `u_core` 里，不在顶层（§7.1.2）；② 名字不对（PC 叫 `pc` 不叫 `pc_r`）；③ 真被综合优化掉了 —— 回第 1 步确认 `PAP_MARK_DEBUG` 加了（**只加 `syn_keep` 不够**）|
+| 找不到"采样时钟" | **它不在 `Trigger Parameters` 里** —— 在 `Net Connections → Modify Connection → Select Net → Channel View → Clock Port` 页签（§7.1.1）|
+| 找不到"触发条件"/"触发位置" | 这两个**不在 Inserter 里**，在 **Fabric Debugger 的 `Trigger Setup`** 里运行时配（§7.1.1），不用重新综合 |
 | Debugger Scan JTAG 扫不到器件 | JTAG 通路问题。本板 Jtag 是 **FTDI**（枚举成两个 COM 口），确认那根 USB 线插了 |
 | 波形"有信号但全不对" | **`.fic` 与 `.sbit` 不是同一次综合的** —— 这是头号坑，重做第 3~7 步 |
-| 触发一直不满足 | 触发信号选错域（接成 27MHz 晶振了），或触发位置没设在中点 |
+| 触发一直不满足 | ① Clock Port 接错域（接成 27 MHz 晶振了，应接 `clk_sys`）；② Value 填成了电平 `1` 而 `ex_flush` 长期为高 —— 用 `R`（上升沿）；③ `Match Type` 当初选了 `Basic`，运行时没法填 `R` |
 
 > 远程平台那条路（§7.0/§7.3）**仍然有效**，作为备选：平台出 JTAG 与波形界面，
 > `.fic` 还是本地 PDS 生成。但既然本地板在手，走上面这条更直接。
+
+### 7.7 完全脚本化的备选路径（RTL 精确标记 + Inserter TCL）
+
+**2026-09-25 查手册时发现的**：Fabric Inserter 有一条**不用点 GUI**的路径，
+对"要反复重做、要进版本库"的场合明显更好。记在这里备选，
+**当前仍建议先走 §7.6 的 GUI 路径**（一次做通、心里有数），再考虑切换。
+
+依据：`Fabric_Inserter_User_Guide.pdf` §4「RTL 级插核」与 §5「TCL 命令」。
+
+**路子一：RTL 里用【精确标记】直接指定 channel**
+
+`PAP_MARK_DEBUG` 的值有两种形式：
+
+| 形式 | 写法 | 含义 |
+|---|---|---|
+| 模糊 | `PAP_MARK_DEBUG="true"` 或 `="1"` | 只标记；Inserter 自动依次往 Trigger Port 上挂 |
+| **精确** | `PAP_MARK_DEBUG="<核号/port类型+序号/channel号>"` | **直接指定连到哪个 channel** |
+
+port 类型字母：`t` = trigger port、`d` = data port、`c` = clock port、`r` = reset port；
+Clock/Reset 只有 1 个 channel，port 序号和 channel 序号都写 `0`。例如：
+
+```verilog
+// 采样时钟：调试核 0 的 clock port
+wire clk_sys /* synthesis PAP_MARK_DEBUG="<0/c0/0>" */;
+// 数据通道：调试核 0 的 data port，从 channel 0 开始连续占 15 个
+wire [14:0] dbg_pc /* synthesis PAP_MARK_DEBUG="<0/d0/0>" */;
+assign dbg_pc = pc[14:0];
+// 同一个信号要连多处时，用逗号分隔多个标记
+wire [7:0] some_bus /* synthesis PAP_MARK_DEBUG="<0/t1/0>,<0/d0/15>" */;
+```
+
+手册明确：**"如果 PDS 工程中没有添加 fic 文件，或添加了空的 fic 文件，那么 Inserter
+打开后，会根据 RTL 中标记的信息自动进行信号连接"** —— 打开 Inserter 一点就自动连好，
+只需确认再保存。
+
+> [!] 手册也提醒：对 **port** 标记时，**标记必须写在 `,` 之前**，否则会标到下一个 port 上。
+
+**路子二：用 Inserter TCL 命令生成 `.fic`**
+
+Inserter 支持一整套 TCL。关键几条：
+
+```
+ins_set_file -input <绝对路径>/cpu_top_board_syn.adf
+ins_add_core 1
+ins_operate -core 0 -trig 0 -unit 0
+ins_set_core  -core 0 -data_depth 1024 -clock_edge 1 -trig_num 1 -multi_windows 0
+ins_set_trig  -core 0 -trig 0 -unit_num 1 -type 1        ;# type 1 = Basic W/Edges
+ins_set_unit  -core 0 -unit 0 -func == -value 1 -cnt_type 0
+ins_set_condition -core 0 -trigger "TU0"
+ins_set_capture   -core 0 -type windows -windows 1 -position 512
+ins_list_nets                                            ;# 先把可连的 net 和它们的序号打出来
+ins_set_net -core 0 -data -clock -reset "1 2 3 4 5 6"    ;# 参数是 net 的【序号】不是名字
+ins_save <绝对路径>/cpu_top_board_ila.fic
+```
+
+> [!] `ins_set_net` **不接受网线名字做参数**（手册理由：有些 net 名含特殊字符会让 TCL
+> 解析混乱，且名字过长不便输入），只接受 `ins_list_nets` 打印出来的**序号** ——
+> 所以这条路要么先跑 `ins_list_nets` 抄序号，要么干脆用上面的"路子一"精确标记
+> 让它自动连。
+>
+> `-value` 只接受**二进制**串，且**位数必须等于该 Trigger Port 的宽度**。
+
+**什么时候值得切到这条路**：需要反复重建 `.fic`（比如探针清单还在改）、
+或者想让 `.fic` 的生成过程可复现/可进版本库。**现在不必。**
 
 ---
 
@@ -660,9 +883,11 @@ python scripts\trace2svg.py sim\programs\trace_r1.txt doc\figures\pipeline_hazar
 # 5) 反汇编（确认循环里是什么代码）
 riscv-none-elf-objdump -d --start-address=0x0cd8 --stop-address=0x0d18 sim\programs\coremark.elf
 
-# 6) 上板用固件：ITER 必须按"每迭代 358,846 拍 ÷ 板上时钟"重算，然后同步进 PDS 工程
-#    （本地盘古板 45 MHz（PLL）→ 1500，约 11.96 s；远程平台 27 MHz（无 PLL）→ 820）
-scripts\run_coremark.ps1 -Iter 1500 -SkipSim
+# 6) 上板用固件：ITER 必须按"每迭代 354,119 拍 ÷ 板上时钟"重算，然后同步进 PDS 工程
+#    （本地盘古板 49.8927 MHz（PLL）→ 1663，实测 11.8031 s；
+#      远程平台 27 MHz（无 PLL）→ 重新按 270,000,000 ÷ 354,119 = 762 算，并改回 EE_TICKS_PER_SEC）
+#    [!] 更省事的做法是直接用 scripts\build_bitstream.ps1 coremark（它把这几步串起来并校验）
+scripts\run_coremark.ps1 -Iter 1663 -SkipSim
 scripts\sync_firmware.ps1
 ```
 
@@ -674,7 +899,8 @@ scripts\sync_firmware.ps1
 `scripts/trace2svg.py` 里。`+PROF` / `+TRACE_*` **默认关闭**、不参与仿真，
 所以开关它不会改变周期数，对照组之间可比。
 
-当前基线：riscv-tests **49/1/0**；CoreMark 计时区间 **358,846** 拍
-（测试台总周期 **1,462,898**）。
-> RTL 侧同时做过一次与观测无关的改动（2026-09-21 取指重定向），
-> 它**目的就是改变周期数** —— 所以旧基线 1,529,499 不再适用。
+当前基线：riscv-tests **49/1/0**；CoreMark 计时区间 **354,119** 拍
+（测试台总周期 **1,457,776**）。
+> 这是 **2026-09-25 BTB/BHT 之后**的基线（此前 358,846 / 1,462,898）。
+> 再往前：420,070（基线）→ 382,972（取指重定向）→ 358,846（ID 级静态预测）
+> → **354,119**（BHT 动态预测）。**改了流水线就重算 ITER，否则 CoreMark 判 invalid。**
