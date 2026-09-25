@@ -772,7 +772,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
      > 后两者在 Fabric Debugger 里运行时配（§7.1.1），**不用重新综合**
    * **Net Connections → Modify Connection → Select Net**：
      * `Clock Port` 页签 ← 顶层 `cpu_top_board` 的 **`clk_sys`**
-       （不是 27 MHz 晶振，也不是 `clk` 端口；找不到就勾 `Show All Net In The Net Tree View`）
+       （不是 27 MHz 晶振，也不是 `clk` 端口；找不到就勾 `Show All Nets In The Net Tree View`）
      * `Data Port` 页签 ← 按 §7.1 的 **86 位**清单连，**信号都在 `u_core` 里**
        （PC 只连低 15 位；`pc` 不叫 `pc_r`）
      * `Trigger Port` 页签 ← 1 根 **`ex_flush`**（触发信号先接它，运行时随时能换）
