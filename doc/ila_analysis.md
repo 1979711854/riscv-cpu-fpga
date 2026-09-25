@@ -651,12 +651,14 @@ wire clk_sys /* synthesis PAP_MARK_DEBUG="<0/c0/0>" syn_keep=1 */;
 | 时钟端口 | `<0/c0/0>` 在，落在 `clk_sys` 上 |
 | 通道↔信号对应 | `d0/0→dbg_pc0`、`d0/14→dbg_pc14`、`d0/15→dbg_ifidpc0`、`d0/60→dbg_op0`、`d0/85→dbg_pred_seen` … 全部与设计一致 |
 
-> [!] **只剩一个待实机确认的点：触发端口的序号基准。**
-> 手册例子里 `t1` 写着"port 序号为 1"，而 Clock/Reset 又明确说"均标记为 0"，
-> 所以触发端口应是从 `t0` 起 —— 但这是推断。**第一次打开 Inserter 时核对
-> Channel View 的 `TRIGGER PORTS` 下是不是 4 个各 1 位的端口**；
-> 若是 1 个 4 位的端口，就把标记里的 `t0..t3` 改成同一个端口的不同 channel
-> （`t0/0`..`t0/3`）。
+> [OK] **触发端口序号基准已实机确认（2026-09-25）**：确实是 **4 个各 1 位的端口**，
+> 序号从 `t0` 起。Inserter 自动连线生成的 `.fic` 里
+> `triggerPortCount=4`、`triggerPortWidth<0..3>=1`、
+> `triggerChannel<0><0>=dbg_ex_flush` / `<1><0>=dbg_stall` / `<2><0>=dbg_bht_hit` /
+> `<3><0>=dbg_mispred` —— 与 RTL 标记**逐条吻合**，不需要改。
+>
+> 顺带确认 `Match Type` 也按预期落成了 **`Basic W/Edges`**（`triggerMatchType<0..3>=1`），
+> 运行时可以在 Trigger Setup 里把 Value 填成 **`R`（上升沿）**。
 
 **回归已实测不变**（2026-09-25，逐位核对）：
 
