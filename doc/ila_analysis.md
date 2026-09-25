@@ -934,6 +934,34 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    > `Configure Bitstream File` 下载一次**最稳 —— 它既保证设计对，又会顺带
    > 触发 .fic 的自动导入。
 
+   > [!] **GUI 的 `File → Import sample data` 会报 `please select a unit`** ——
+   > 那个对话框要求先选中一个 **unit（= DebugCore 核）**，而**列表是空的**
+   > 就选不了。列表空本身就说明 **Debugger 没看到核**，还是第 (2) 步的问题。
+   >
+   > **绕开办法：用 Debugger 自带的 TCLConsole**（就是底部信息打印区那个窗格，
+   > `View → Console` 可显示/隐藏；输入的命令会记到 `log/TclCmd.tcl`）。
+   > 里面的 `dbg_import_fic` **不需要选 unit**：
+   >
+   > ```tcl
+   > dbg_list                                                    # 先看有没有核
+   > dbg_scan_chain                                              # 扫 JTAG 链
+   > dbg_program -help                                           # 看下载位流怎么传参
+   > dbg_import_fic -file D:/riscv-cpu-fpga/pds/RV32I_1/cpu_top_board.fic
+   > dbg_run                                                     # 配好触发后抓
+   > ```
+   >
+   > **`dbg_list` 是这里最好用的诊断**：不带选项就会列出所有核及其 data_port /
+   > trig_port / trig_unit。**什么都不列 = FPGA 里没有 DebugCore**，回去做第 (2) 步。
+   >
+   > 一整套命令都有：`dbg_scan_chain` / `dbg_program` / `dbg_run` / `dbg_stop` /
+   > `dbg_trig_immd` / `dbg_set_unit` / `dbg_set_condition` / `dbg_set_capture` /
+   > `dbg_get_cur_core` / `dbg_set_cur_core` / `dbg_add_all_to_waveform` /
+   > `dbg_add_bus` / `dbg_add_to_bus` / `dbg_set_bus_radix` / `dbg_export_fic`。
+   > **每条都支持 `-help`**（如 `dbg_program -help`），不确定就查。
+   >
+   > 另外 `dbg_add_bus` / `dbg_add_to_bus` / `dbg_set_bus_radix` 说明
+   > **PC 那 15 根按位合成的总线也能用脚本建**，不用手点。
+
    > [!] **`.fic` 的自动导入有命名约定**（Debugger 手册 §3.5）：
    > 它会搜索**位流文件所在目录 + 上一层目录**，找与**位流文件同名**的 `.fic`
    > 或 `<位流名>_trs.fic`。位流叫 `cpu_top_board.sbit`，所以它找的是
