@@ -72,7 +72,8 @@ seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 1. **`rtl/core/csr_file.v` 从未加入工程源文件列表** —— 而 `core.v:431` 例化了它。
    直接 Compile 会报模块找不到。异常/中断那次改动之后一直没同步过工程。
 2. **`.pds` 里残留 `wgt_my_fic_src → cpu_top_syn.fic`** —— 综合会插回 ILA 调试核
-   （LUT 从干净值涨到 3,058）。已摘除，调试产物归档到 `pds/RV32I_1/bak_2026-09-21_ila/`。
+   （LUT 从干净值涨到 3,058）。已摘除，调试产物归档到 `pds/RV32I_1/bak_2026-09-21_ila/`
+   （**该目录已于 2026-09-25 收尾时删除** —— 它指向 PLL 之前的旧顶层 `cpu_top`，是个误用陷阱）。
 3. **`device_map/cpu_top.pcf` 是陈旧放置约束**（还写着 `uart_tx=AB26`/`done=U16`）。
 
 顺带确认 **PDS 可以命令行驱动**（`pds_shell.exe -project X.pds -run <action>`），

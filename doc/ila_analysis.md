@@ -967,14 +967,17 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 9. 截图至少覆盖三种情形：(a) 一次完整的分支冲刷，(b) 一次 load-use 停顿，
    (c) 一次前递生效。存到 `doc/reports/`。
 
-> [!] **仓库里现在躺着两份【过期】的 .fic，别误用**：
-> * `pds/RV32I_1/synthesize/cpu_top_syn.fic` —— 2026-09-21 生成，指向旧的
->   `cpu_top_syn.adf`（**那时顶层还是 `cpu_top`，也还没有 PLL**）
-> * `pds/RV32I_1/bak_2026-09-21_ila/cpu_top_syn.fic` —— 同一份的归档
+> [!] **认 .fic 只看一个判据：`Project.device.designInputFile` 指向的 `.adf`。**
+> 必须指向**本次**综合产出的 `synthesize/cpu_top_board_syn.adf`
+> （注意是 `cpu_top_board`，**不是** `cpu_top`）。名字对不上就是过期的，重做 B 段。
 >
-> 判据：打开 .fic 看 `Project.device.designInputFile` 指向的 `.adf` 是不是**本次**
-> 综合产出的 `synthesize/cpu_top_board_syn.adf`（注意是 `cpu_top_board`，不是 `cpu_top`）。
-> 名字对不上就是过期的，重做 B 段。
+> 2026-09-21 那次失败的 ILA 尝试留下过两份指向旧 `cpu_top_syn.adf` 的过期 `.fic`
+> （`synthesize/` 里那份 + `bak_2026-09-21_ila/` 里的归档副本），
+> **已随 2026-09-25 的收尾一并清除**。现在仓库里唯一的探针描述文件是
+> **`pds/RV32I_1/cpu_top_board.fic`**（md5 `178d8aad`）。
+>
+> 但仍要防同类问题：**`synthesize/` 会被每次综合清空重建**，里面的同名 `.fic`
+> 是当时的产物；要归档就复制出来，别指望它一直在。
 
 > **最大的坑**：`.fic` 与 `.sbit` **必须来自同一次综合布线**。
 > 改了 RTL 重新生成比特流后，旧的 `.fic` 就作废了 —— 通道映射会整体错位，
@@ -1025,7 +1028,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 > 否则队友一改 RTL，`.fic` 与 `.sbit` 双双作废。
 >
 > 分支：**`feat/ila-probe`**。探针束已加好并**实测 86/86 存活 + 通道号逐个核对**（见 §7.2）；
-> `.fic` 也已生成并核对通过（`pds/RV32I_1/cpu_top_board_ila.fic`，md5 `178d8aad`）——
+> `.fic` 也已生成并核对通过（`pds/RV32I_1/cpu_top_board.fic`，md5 `178d8aad`）——
 > 剩下的就是**把它登记进 PDS 工程**（第 6b 步，这一步最容易漏）然后跑 P&R。
 
 **A. 准备（本地 PDS）**
@@ -1059,7 +1062,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
      * `Trigger Port` 页签 ← 1 根 **`ex_flush`**（触发信号先接它，运行时随时能换）
    * **PowerOn Init Parameters**：默认
 6. **保存 Inserter 工程 —— 这个文件就是 `.fic`。**
-   命名建议 `cpu_top_board_ila.fic`，**和随后的 `.sbit` 放一起成对保存**。
+   命名建议 `cpu_top_board.fic`，**和随后的 `.sbit` 放一起成对保存**。
    > [!] **`synthesize/` 目录会被下次综合整个清掉**（PDS 只管把它挪进 `synthesize/bak/`）。
    > 保存完**立刻复制一份到 `pds/RV32I_1/` 下**，别留在 `synthesize/` 里。
 
@@ -1076,7 +1079,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    ```
    (_widget wgt_my_fic_src
        (_input
-           (_file "cpu_top_board_ila.fic"
+           (_file "cpu_top_board.fic"
                (_format text)
                (_timespec "2026-09-25T18:22:55")
            )
@@ -1086,7 +1089,7 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 
    登记方法（二选一）：
    * **PDS 的 TCL 控制台**里敲（最省事，一条命令）：
-     `add_fic d:/riscv-cpu-fpga/pds/RV32I_1/cpu_top_board_ila.fic`
+     `add_fic d:/riscv-cpu-fpga/pds/RV32I_1/cpu_top_board.fic`
      （见《PDS User Guide》§9.3 `add_fic` 指定约束文件；
      也可用 `add_sources -fic <文件>`）
    * 或在 PDS 里**添加资源文件**，把 `.fic` 作为 **FIC / 约束文件**加进去。
@@ -1221,13 +1224,13 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    > 或 `<位流名>_trs.fic`。位流叫 `cpu_top_board.sbit`，所以它找的是
    > **`cpu_top_board.fic`**（或 `cpu_top_board_trs.fic`）。
    >
-   > 我们原来叫 `cpu_top_board_ila.fic` —— **名字对不上，自动导入找不到**。
-   > 所以 `pds/RV32I_1/` 下同时放了两份同内容的：
-   > * `cpu_top_board.fic` —— **给 Debugger 自动导入用**（与位流同名）
-   > * `cpu_top_board_ila.fic` —— **`.pds` 的 `wgt_my_fic_src` 登记的那份**
+   > 我们一开始叫 `cpu_top_board.fic` —— **名字对不上，自动导入找不到**。
+   > 所以最终只用一份 **`pds/RV32I_1/cpu_top_board.fic`**（md5 `178d8aad`），
+   > 它**同时满足两个用途**：与位流同名（Debugger 自动导入）+ 需要时用于
+   > `.pds` 登记（`add_fic <该路径>`）。
    >
-   > 两份内容必须一致（目前 md5 都是 `178d8aad`）。手工导入也用
-   > `File → Import sample data` 选任意一份即可。
+   > 手工导入用 `File → Import sample data` 选它即可。
+   > **别再另存一份别的名字** —— 上一步那个"名字对不上"的坑就是这么来的。
 10. 双击器件栏里的 **`Trigger Setup`** 叶节点，配三块（**实时下发，不用重新综合**）：
     * **Match Function**：给 `ex_flush` 那一行的 Value 填 **`R`**（上升沿）
     * **Trigger Condition**：`Enable` 该 Trigger Unit
@@ -1343,7 +1346,7 @@ ins_set_condition -core 0 -trigger "TU0"
 ins_set_capture   -core 0 -type windows -windows 1 -position 512
 ins_list_nets                                            ;# 先把可连的 net 和它们的序号打出来
 ins_set_net -core 0 -data -clock -reset "1 2 3 4 5 6"    ;# 参数是 net 的【序号】不是名字
-ins_save <绝对路径>/cpu_top_board_ila.fic
+ins_save <绝对路径>/cpu_top_board.fic
 ```
 
 > [!] `ins_set_net` **不接受网线名字做参数**（手册理由：有些 net 名含特殊字符会让 TCL

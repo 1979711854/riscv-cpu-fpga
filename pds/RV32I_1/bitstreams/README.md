@@ -60,7 +60,7 @@ scripts\build_bitstream.ps1 demo        # 演示程序版
 > 换触发信号记得**改两处**：`dbg_set_unit -unit N ...` 改 TU 的值，
 > 还要 `dbg_set_condition -select 0 -set "TUN"` 把条件公式指过去 ——
 > 只改 `-unit` 的话条件仍指向 TU0（2026-09-25 实踩，见 `doc/ila_analysis.md` §7.6）。
-| `pds/RV32I_1/cpu_top_board_ila.fic`（**已入库**）| `178d8aad` | 探针通道映射。`clockChannel=clk_sys`，dataChannel 86 条（0..85），4 个 1 位触发端口 = `ex_flush`/`stall`/`bht_hit`/`mispred` |
+| `pds/RV32I_1/cpu_top_board.fic`（**已入库**）| `178d8aad` | 探针通道映射。`clockChannel=clk_sys`，dataChannel 86 条（0..85），4 个 1 位触发端口 = `ex_flush`/`stall`/`bht_hit`/`mispred` |
 
 > [!] **这两份必须同批用**。重新综合/布线后旧 `.fic` 作废 —— 通道映射会整体错位，
 > 现象是"有信号但全不对"。`.sbit` 是调试版、**别拿去当比赛提交版**。

@@ -179,7 +179,6 @@
                  `ipcore/pll/` **Pango PLL IP**（27MHz→49.89MHz，`RATIO0=23`）。`pll.v` 是 IP 生成产物，
                  **必须经 `.pds` 的 `wgt_my_ips_src` 引用**，不能当普通源文件加（见关键约定 24）
                  `bitstreams/` 归档的 `.sbit`（`.sbit` 被 gitignore，只入库 README）
-                 `bak_2026-09-21_ila/` 09-21 那次 ILA 调试版的产物归档（`.fic`/`timing`/`impl.tcl`）
 - `pds/riscv_cpu/` 早期 LED 练习工程
 - `third_party/coremark/`  官方 CoreMark 源码（含 LICENSE）
 - `third_party/riscv-tests-elf/`    50 个**预编译基线 ELF**（回归金标准）
