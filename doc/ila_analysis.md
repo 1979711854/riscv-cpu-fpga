@@ -915,6 +915,42 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 
 **D. 抓波形（本地 PDS Debugger）**
 
+9. PDS **TOOL → Debugger**。
+
+   **[!] 第一件事是先连 JTAG Server，否则什么命令都跑不了。**
+   （2026-09-25 实踩：不连就敲 `dbg_list`，报
+   `Debugger-0015: ... the connection is disconnected, please connect to server first`；
+   而器件栏那行 `device - jtag chain` 只是**空树的标题**，不是扫描结果 ——
+   很容易误以为已经扫到了。）
+
+   手册 §3.1：点工具栏 **`Connect to server`** 按钮 → 弹连接 Cable 的向导，三步：
+
+   ```
+   (1) IP + 端口：本地板填 127.0.0.1 + 65420，直接点连接
+   (2) 选 Cable：列出当前可用电缆，选接板子那个；TCK 用默认
+   (3) 总结页 → 点 Next 把配置下发给服务端
+   ```
+
+   > `65420` 是 Debugger 默认的 server 端口（`bin/cdt_dbg.exe` 里的默认值，
+   > 与手册示例 `dbg_connect -ip 192.29.103.191 -port 65420` 一致）。
+   > **本机 IP 时服务端由 PDS 负责**；万一连不上，手动起：
+   > 到 `D:\pango\PDS_2022.2-SP6.4in\` 下开命令行跑 **`cdt_js.exe -port 65420`**。
+   >
+   > TCL 等价命令：`dbg_connect -ip 127.0.0.1 -port 65420`
+   > （手册：`-ip`/`-port` 任一为空则用界面设置连）。
+
+9b. **连上之后**再扫链、下位流。`dbg_list` 这时才有意义（见第 9 步下面的四步表）。
+
+9c. **下载调试位流**（对应 GUI 的 `Configure Bitstream File`）：
+
+   ```tcl
+   dbg_scan_chain
+   dbg_program -file D:/riscv-cpu-fpga/pds/RV32I_1/generate_bitstream/cpu_top_board.sbit -device 0
+   ```
+
+   > [!] `dbg_program -help` 明确警告：路径**可以用 `\` 或 `/` 分隔，
+   > `\` 不能单独用** —— **一律用正斜杠 `/`**，否则路径解析会出问题。
+
 9. PDS **TOOL → Debugger**。**注意 Debugger 不是"扫一下就有波形"** ——
    器件栏里那个 FPGA **只有在里面真的载入了 DebugCore 时才会展开出叶节点**。
    正确顺序是四步：
