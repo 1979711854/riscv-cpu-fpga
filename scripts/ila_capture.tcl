@@ -37,6 +37,12 @@ dbg_clear_all_to_waveform
 # -----------------------------------------------------------------------------
 dbg_import_fic -file $FIC
 
+# [!!] 如果报 "bus name:PC already exists"，说明总线【已经建过了】——
+#      dbg_clear_all_to_waveform 只清波形显示，不清信号树里的总线定义。
+#      这时【别重建】，直接跳到第 3 步的 dbg_add_all_to_waveform 即可。
+#      想确认已有哪些：dbg_get_buses（它会列出每条总线含哪些通道，正好用来核对）
+#      确实要重建某条：先 dbg_del_bus -name PC
+
 # -----------------------------------------------------------------------------
 # 第 2 步：先把 PC 那几组通道【合成总线】—— [!] 必须在 add_all_to_waveform 之前
 #
