@@ -804,7 +804,9 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 > **加 ILA 探针属性和 DebugCore 本身都要改 RTL/网表，所以这一步必须排在最后** ——
 > 否则队友一改 RTL，`.fic` 与 `.sbit` 双双作废。
 >
-> 分支：**`feat/ila-probe`**（14 处探针属性已加好并实测存活，见 §7.2）。
+> 分支：**`feat/ila-probe`**。探针束已加好并**实测 86/86 存活 + 通道号逐个核对**（见 §7.2）；
+> `.fic` 也已生成并核对通过（`pds/RV32I_1/cpu_top_board_ila.fic`，md5 `178d8aad`）——
+> 剩下的就是**把它登记进 PDS 工程**（第 6b 步，这一步最容易漏）然后跑 P&R。
 
 **A. 准备（本地 PDS）**
 
@@ -838,6 +840,42 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
    * **PowerOn Init Parameters**：默认
 6. **保存 Inserter 工程 —— 这个文件就是 `.fic`。**
    命名建议 `cpu_top_board_ila.fic`，**和随后的 `.sbit` 放一起成对保存**。
+   > [!] **`synthesize/` 目录会被下次综合整个清掉**（PDS 只管把它挪进 `synthesize/bak/`）。
+   > 保存完**立刻复制一份到 `pds/RV32I_1/` 下**，别留在 `synthesize/` 里。
+
+6b. **[!] 必须把 `.fic` 加进 PDS 工程，否则 DebugCore 根本不会被插进去。**
+
+   已保存 ≠ 已生效。`.fic` 是 **synthesis 任务的输入**（`.pds` 里的
+   `wgt_my_fic_src` 部件），**没登记进去的话，综合/布线照跑、比特流照出，
+   但里面一个调试核都没有** —— 症状是 Debugger「Scan JTAG」扫不到 `debug_core`，
+   极难往"少登记了一个文件"上想。
+
+   检查：打开 `.pds` 看 `wgt_my_fic_src`，对照 Pango 自带例程
+   （`example/PG2L100H_adc_test/pnr/adc_module.pds`）的正确形态应该是：
+
+   ```
+   (_widget wgt_my_fic_src
+       (_input
+           (_file "cpu_top_board_ila.fic"
+               (_format text)
+               (_timespec "2026-09-25T18:22:55")
+           )
+       )
+   )
+   ```
+
+   登记方法（二选一）：
+   * **PDS 的 TCL 控制台**里敲（最省事，一条命令）：
+     `add_fic d:/riscv-cpu-fpga/pds/RV32I_1/cpu_top_board_ila.fic`
+     （见《PDS User Guide》§9.3 `add_fic` 指定约束文件；
+     也可用 `add_sources -fic <文件>`）
+   * 或在 PDS 里**添加资源文件**，把 `.fic` 作为 **FIC / 约束文件**加进去。
+
+6c. **验证调试核真的进去了**（跑完 P&R 再看）：
+   调试核的采集 RAM 是实打实占 BRAM 的 —— 1024 采样 × 86 位 = 88,064 bit，
+   约 3 块 DRM36K。所以 **DRM 用量应该从 16 涨到 ~19-20**。
+   **DRM 一点没变 = 调试核没插进去**，回第 6b 步。
+   （基线：生产版 LUT 3,721 / DRM 16 / slack +1.550 ns / All Constraints Met）
 
 **C. 出比特流并烧写**
 
