@@ -131,19 +131,31 @@ dbg_set_capture -type 0 -windows 1 -position 512
 dbg_run
 
 # -----------------------------------------------------------------------------
-# 换别的触发（不用重烧板，只改这两行再 dbg_run 即可）：
-#   BHT 命中且预测跳转：
-#       dbg_set_unit -unit 2 -func "==" -value R -radix 2
-#       dbg_set_condition -select 1 -set "TU2"
+# 换别的触发 —— [!] 必须【改两处】，只改 -unit 是不够的：
+#     ① dbg_set_unit  改哪个 TU 的值
+#     ② dbg_set_condition 把触发条件的公式指到那个 TU
+#   2026-09-25 实踩：只改了 -unit，条件公式还是 TU0，结果抓回来的还是 ex_flush
+#   （三份 VCD 在触发点全都是 ex_flush=1，文件名叫 stall/bhthit 却名不符实）。
+#
+#   [!] 条件索引是 0（`dbg_set_condition` 裸跑会显示 "TriggerCondition0"），
+#       不是 1。先裸跑确认再改。
+#
+#   load-use 停顿（TU1 = dbg_stall）：
+#       dbg_set_unit -unit 1 -func "==" -value 1
+#       dbg_set_condition -select 0 -set "TU1"
 #       dbg_run
-#   load-use 停顿：
-#       dbg_set_unit -unit 1 -func "==" -value R -radix 2
-#       dbg_set_condition -select 1 -set "TU1"
+#   BHT 命中（TU2 = dbg_bht_hit）：
+#       dbg_set_unit -unit 2 -func "==" -value 1
+#       dbg_set_condition -select 0 -set "TU2"
 #       dbg_run
-#   预测误判恢复：
-#       dbg_set_unit -unit 3 -func "==" -value R -radix 2
-#       dbg_set_condition -select 1 -set "TU3"
+#   预测误判恢复（TU3 = dbg_mispred）：
+#       dbg_set_unit -unit 3 -func "==" -value 1
+#       dbg_set_condition -select 0 -set "TU3"
 #       dbg_run
+#
+#   每次 dbg_run 之后都要【按板上的 KEY1】让 CoreMark 重跑（见 §7.2 的说明）。
+#   抓完核对判据：波形里【采样 512】那一拍，对应的触发信号必须是 1
+#   （Position=512 居中，所以触发点就在正中）。不是 1 就说明触发没换成功。
 #
 # 停抓并卸掉触发条件：  dbg_stop
 # 导出这次波形设置：    dbg_export_fic -file D:/riscv-cpu-fpga/pds/RV32I_1/ila_captured.fic

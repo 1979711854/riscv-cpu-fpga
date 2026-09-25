@@ -881,8 +881,29 @@ DRM 16 / APM 11。生产版（P&R 后）是 **LUT 3,721 / slack +1.550 ns / All 
 > 所以不影响仿真，也不会破坏 `1,457,776` 的回归探针。但为保险，
 > 改完仍应跑一次回归确认。
 
-**抓完之后怎么安全地删干净**（`core.v` 是 UTF-8 带中文注释，别用 sed / 别用文本编辑器批量替换，
-容易把编码搞坏）。用 Python 按字节替换最稳：
+**抓完之后怎么安全地删干净 —— 推荐用 git 精确还原，不要用正则删注释。**
+
+> [!] **首选：`git checkout <探针之前的 commit> -- rtl/`**
+>
+> 探针只由 `feat/ila-probe` 上的两个 commit 引入（`4bd5353`、`b3697d6`），
+> 它们之前的 **`b8edd43`** 就是干净版。所以：
+>
+> ```bash
+> # 探针之前那次提交（49.89 MHz 板上实测通过的那版 RTL）
+> git checkout b8edd43 -- rtl/core/core.v rtl/top/cpu_top_board.v
+> # 复查：应为 0，且与 b8edd43 逐字节一致
+> grep -c "PAP_MARK_DEBUG\|dbg_pc" rtl/core/core.v rtl/top/cpu_top_board.v
+> git diff --stat b8edd43 -- rtl/          # 空 = 一致
+> ```
+>
+> **2026-09-25 实机验证**：还原后 CoreMark **354,119 拍 / 总时长 1,457,776**、
+> 四个 CRC 逐位一致 —— 与加探针前完全相同。
+>
+> 好处：**精确、可复现、不碰编码**。RTL 里那两处被探针改写的声明
+> （`id_ex_mem_read` 从合并声明里拆出、`clk_sys` 加属性）也一并还原。
+
+**备选：正则删注释**（`core.v` 是 UTF-8 带中文注释，别用 sed / 别用文本编辑器批量替换，
+容易把编码搞坏）。用 Python 按字节替换：
 
 ```powershell
 # 先看有哪些（应为 14 条，与 §7.2 的属性清单一致）
@@ -901,6 +922,19 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 > 照它跑完会留下 14 条 `PAP_MARK_DEBUG`，重新综合后资源/时序对不上基线，
 > 而且比赛提交的工程里就留着调试标记了。2026-09-25 已改成匹配整条
 > `/* synthesis ... */`（`[^*]*` 避免跨注释贪婪匹配）。
+
+**[!] 还有一步不能漏：撤掉 `.pds` 里的 `.fic` 登记。**
+
+只还原 RTL 是不够的 —— `.pds` 的 `wgt_my_fic_src` 还指向那份 `.fic`，
+而 `.fic` 里的通道名（`dbg_pc0` 等）在没了探针的网表里**不存在**，
+综合会直接报错。把那一节清空回：
+
+```
+(_widget wgt_my_fic_src
+)
+```
+
+（Pango 自带例程 `example/PG2L100H_lvds4to1/pnr/lvds4to1.pds` 就是这个形态。）
 
 删完重新综合，再用 `pds/RV32I_1/multiseed_summary.csv` 核对 LUT 是否回到**基线**：
 当前 49.89 MHz 设计应为 **3,721**（45 MHz 时代的 3,030、27 MHz 时代的 2,316 都不是当前基线，别拿它们对照）。

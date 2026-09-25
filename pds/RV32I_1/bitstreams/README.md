@@ -49,7 +49,16 @@ scripts\build_bitstream.ps1 demo        # 演示程序版
 
 | 文件 | md5 | 说明 |
 |---|---|---|
-| `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`（本机，不入库）| `96ee7877` | **调试版**：含 DebugCore + JTAG Hub + 86 位探针。LUT 4,200 / FF 3,394 / DRM 19 / APM 11，slack **+1.329 ns**，`All Constraints Met`。综合 2026-09-25 18:30 |
+| **`debug_ila_86probe_localboard.sbit`**（**已归档**）| `96ee7877` | **调试版**：含 DebugCore + JTAG Hub + 86 位探针。LUT 4,200 / FF 3,394 / DRM 19 / APM 11，slack **+1.329 ns**，`All Constraints Met`。综合 2026-09-25 18:30 |
+
+> [重点] **想再抓波形，直接烧 `debug_ila_86probe_localboard.sbit` 就行，不用重跑 Inserter/P&R。**
+> 调试核和 86 个探针都在这个比特流里，配合 `pds/RV32I_1/cpu_top_board.fic` 使用。
+> RTL 里的探针束已经删掉了（收尾时删的），但**这不影响补抓** —— 探针是固化在
+> 这份比特流里的。
+>
+> 换触发信号记得**改两处**：`dbg_set_unit -unit N ...` 改 TU 的值，
+> 还要 `dbg_set_condition -select 0 -set "TUN"` 把条件公式指过去 ——
+> 只改 `-unit` 的话条件仍指向 TU0（2026-09-25 实踩，见 `doc/ila_analysis.md` §7.6）。
 | `pds/RV32I_1/cpu_top_board_ila.fic`（**已入库**）| `178d8aad` | 探针通道映射。`clockChannel=clk_sys`，dataChannel 86 条（0..85），4 个 1 位触发端口 = `ex_flush`/`stall`/`bht_hit`/`mispred` |
 
 > [!] **这两份必须同批用**。重新综合/布线后旧 `.fic` 作废 —— 通道映射会整体错位，

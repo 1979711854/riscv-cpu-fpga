@@ -64,6 +64,10 @@ dbg_add_all_to_waveform
 #     排好序后（工具栏 MoveUp/MoveDown）就是报告用的那张图：
 #       PC -> IFID_PC -> IDEX_PC -> EXMEM_PC -> OPCODE -> 冲刷/预测 -> 停顿
 #
+# [!] 换触发信号要【改两处】：dbg_set_unit 改 TU 的值，
+#     还要 dbg_set_condition -select 0 -set "TU<N>" 把条件公式指过去。
+#     只改 -unit 的话条件仍指向 TU0，抓回来的还是上一个触发信号。
+#
 # [!] 整理完立刻 File -> Save Project As 存一份 .dprj ——
 #     存了之后下次 File -> Open Project 能把【波形 + 总线 + 全部设置】
 #     一次性恢复，不用再跑这个脚本。
