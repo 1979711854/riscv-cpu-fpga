@@ -58,7 +58,7 @@
 | └ M 扩展（rv32um 8 项） | mul / mulh / mulhsu / mulhu / div / divu / rem / remu **全部 PASS** |
 | **CoreMark v1.0（本地盘古板实测，45 MHz，ITER=1500）** | `Total ticks 538,285,445` ÷ 45,000,000 = **实际 11.9619 秒** → **125.40 CoreMark**，`Correct operation validated` [OK] 达标，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致。<br>原始串口日志：`doc/board/uart_20260925_005201.txt`。**上板教程：`doc/board_bringup.md`**<br>27 MHz 时代（板载 27 MHz，ITER=820，`Total ticks 294,262,913` → 10.898 秒 / 75.24 CoreMark）的实测记录保留在 `doc/board/uart_20260923_201540.txt`；**提频后 +66.7%** |
 | **CoreMark 效率（当前设计，仿真）** | 每迭代 **354,119** 周期（`+PROF` 读 CoreMark `Total ticks`）→ **2.824 CoreMark/MHz**。<br>**四轮演进**：2.380 → 2.611 → 2.787 → **2.824**（最后一轮是 2026-09-25 的 BHT）|<br>BHT 之前板上实测 358,857 拍/迭代，与仿真 358,846 差 **+0.0031%**，且**两个时钟下逐位相同**（与时钟无关）|
-| **CoreMark 实际得分**（= CoreMark/MHz × 系统时钟） | 27 MHz 板测 **75.24** → 45 MHz 板测 **125.40**（+66.7%）→ **49.89 MHz 预期 140.89**（推算，**尚未上板**）<br>口径见 `doc/resource_efficiency.md` §2 / §11 |
+| **CoreMark 实际得分**（= CoreMark/MHz × 系统时钟） | 27 MHz 板测 **75.24** → 45 MHz 板测 **125.40** → **49.89 MHz 板测 140.89**（**均已板上实测**，累计 **+87.3%**）<br>口径见 `doc/resource_efficiency.md` §2 / §11 |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **逐位一致**（**`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`） |

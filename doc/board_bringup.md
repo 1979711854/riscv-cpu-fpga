@@ -213,21 +213,22 @@ KEY=0x00 LED=0x00
 
 **约 12 秒后**打印。
 
-**当前设计（49.89 MHz / ITER=1663）的预期输出**（下述数字**尚未上板**，
-`Total ticks` 为推算值 —— 板上实测请以实际抓到的为准）：
+**当前设计（49.8927 MHz / ITER=1663）的板上实测原始输出**
+（日志 `doc/board/uart_20260925_172318.txt`，2026-09-25 17:23）：
 
 ```
 CoreMark Size    : 666
-Total ticks      : <约 588900000>
+Total ticks      : 588890651
 Total time (secs): 11
-Iterations/Sec   : <约 140>
+Iterations/Sec   : 151
 Iterations       : 1663
 Compiler flags   : -O2 -march=rv32im -mabi=ilp32
 seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 Correct operation validated.
 ```
 
-预期：588,900,000 ÷ 49,892,700 = **11.80 s** → **约 140.9 CoreMark**（满足赛题 ≥10 s）。
+实测：588,890,651 ÷ 49,892,700 = **11.8031 s** → **140.89 CoreMark**（满足赛题 ≥10 s）。
+推算值 588,900,000 / 140.89 与实测**分毫不差**。
 
 **45 MHz 版（ITER=1500）的板上实测原始输出**（已确认，留作对照，
 日志 `doc/board/uart_20260925_005201.txt`）：
