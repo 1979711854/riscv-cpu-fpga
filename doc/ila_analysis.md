@@ -418,30 +418,50 @@ Fabric Inserter 是从**综合后的网表 `.adf`** 里挑信号的
 所以**被综合优化掉的中间信号，在 Inserter 里根本选不到** ——
 必须在 RTL 里显式保住它们：
 
+**[!] 2026-09-25 修正：属性用错了 —— 必须带 `PAP_MARK_DEBUG`**
+
+查 Pango 自带例程发现两个属性的**分工不同**（`example/PG2L100H_adc_test/`）：
+
+| 例程文件 | 属性 | 是否出现在 `.fic` 里 |
+|---|---|---|
+| `rtl/adc.v` | `wire prdata /* synthesis syn_keep = 1 */;` | **不在** |
+| `rtl/adc_crtl_demo.v` | `wire pdata/*synthesis PAP_MARK_DEBUG="1"*/;` | **在**（`triggerChannel<0><1>=pdata[0]`）|
+
+即 **`syn_keep` 只防优化，`PAP_MARK_DEBUG` 才是让 Fabric Inserter 把它列出来的那个**。
+只写 `syn_keep` 的话，信号活着但 Inserter 里**选不到**。
+
+**两个都写**（同一条 synthesis 注释里）：
+
 ```verilog
 // rtl/core/core.v —— 只加在要抓的信号上，不要全局加
-wire stall          /* synthesis syn_keep=1 */;
-wire ex_flush       /* synthesis syn_keep=1 */;
-wire div_stall      /* synthesis syn_keep=1 */;
-wire fwd_a_ex       /* synthesis syn_keep=1 */;
-wire fwd_b_ex       /* synthesis syn_keep=1 */;
-wire fwd_a_wb       /* synthesis syn_keep=1 */;
-wire fwd_b_wb       /* synthesis syn_keep=1 */;
-wire branch_taken   /* synthesis syn_keep=1 */;
-wire id_ex_mem_read /* synthesis syn_keep=1 */;
+// 属性必须挂在【声明】上，且必须在【分号之前】
+wire        stall        /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        ex_flush     /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        div_stall    /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        id_redirect  /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        ex_mispred   /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        branch_taken /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+wire        id_ex_mem_read /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */;
+// 带初始化的 wire：属性放在名字后、等号前
+wire fwd_a_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && ...;
+wire fwd_b_ex /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = ex_mem_reg_write && ...;
+wire fwd_a_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && ...;
+wire fwd_b_wb /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = mem_wb_reg_write && ...;
 // ---- 2026-09-25 新增：BHT 相关（抓动态预测的看点）----
-wire bht_hit        /* synthesis syn_keep=1 */;
-wire bht_taken      /* synthesis syn_keep=1 */;
-wire id_pred_taken  /* synthesis syn_keep=1 */;
-wire id_redirect    /* synthesis syn_keep=1 */;
-wire ex_mispred     /* synthesis syn_keep=1 */;
-// 注意：id_ex_pred_taken 是 reg，属性写在声明处；实在选不到就用 id_redirect。
-//
-// 注意：ex_flush_d 已从设计里删除（取指重定向改造），别再给它写属性 ——
-//       综合会直接报 "Identifier ex_flush_d is not declared" 并中断整条流程。
-// 也可用 Pango 专用属性（Inserter 会自动识别并列出）：
-// wire stall /* synthesis PAP_MARK_DEBUG="true" */;
+wire bht_hit      /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_valid[...] && ...;
+wire bht_taken    /* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = bht_ctr[...][1];
+wire id_pred_taken/* synthesis PAP_MARK_DEBUG="1" syn_keep=1 */ = (branch && bht_hit) ? ...;
 ```
+
+> `id_ex_mem_read` 原本与另外 4 个信号挤在同一行 `reg a, b, c, ...;` 里，挂不上属性 ——
+> 需**单独拆出来声明**。`branch_taken` 是 `reg`，属性写法一样。
+
+**已实测验证**（2026-09-25，`feat/ila-probe` 分支）：加完跑 PDS 综合，
+**14/14 信号在 `synthesize/cpu_top_board_syn.vm` 里全部存活**；
+同时 iverilog elaborate 通过、CoreMark **354,119 拍**与 riscv-tests **49/1/0** 都不变。
+
+> [!] **`ex_flush_d` 已从设计里删除**（2026-09-21 取指重定向改造），别再给它写属性 ——
+> 综合会直接报 `Identifier ex_flush_d is not declared` 并中断整条流程。
 
 **重要：这些属性和 DebugCore/JTAG Hub 两个 IP 都只能用于调试版本。**
 
@@ -501,6 +521,15 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 8. 设触发条件 → **启动** → 抓波形 → 用 **导出** 按钮把波形存下来。
 9. 截图至少覆盖三种情形：(a) 一次完整的分支冲刷，(b) 一次 load-use 停顿，
    (c) 一次前递生效。存到 `doc/reports/`。
+
+> [!] **仓库里现在躺着两份【过期】的 .fic，别误用**：
+> * `pds/RV32I_1/synthesize/cpu_top_syn.fic` —— 2026-09-21 生成，指向旧的
+>   `cpu_top_syn.adf`（**那时顶层还是 `cpu_top`，也还没有 PLL**）
+> * `pds/RV32I_1/bak_2026-09-21_ila/cpu_top_syn.fic` —— 同一份的归档
+>
+> 判据：打开 .fic 看 `Project.device.designInputFile` 指向的 `.adf` 是不是**本次**
+> 综合产出的 `synthesize/cpu_top_board_syn.adf`（注意是 `cpu_top_board`，不是 `cpu_top`）。
+> 名字对不上就是过期的，重做 B 段。
 
 > **最大的坑**：`.fic` 与 `.sbit` **必须来自同一次综合布线**。
 > 改了 RTL 重新生成比特流后，旧的 `.fic` 就作废了 —— 通道映射会整体错位，
