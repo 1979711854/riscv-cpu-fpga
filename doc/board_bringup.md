@@ -101,22 +101,54 @@ scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LE
 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit
 ```
 
-然后烧它：
+然后烧它。
+
+**Programmer = Pango 的「Fabric Configuration」工具**（`bin\cdt_cfg.exe`），
+PDS 里 **TOOL → Programmer** 打开的就是它。**烧录是三步，不是一步**：
 
 ```
-PDS → TOOL → Programmer（下载）
-  器件：PG2L200H
-  配置文件：<上面那个路径>
+1) Operations → Scan Device          扫描 JTAG 链，认出 PG2L200H
+2) Operations → Assign New Configuration File   ← 这一步就是"Browse"
+     选中要烧的 .sbit
+3) Operations → Program...            真正烧写
 ```
 
-### [!] 为什么必须用脚本，而不是"直接烧 generate_bitstream 里现成的"
+> [!] **第 2 步每次都要重做，这就是"要重新 Browse"的意思。**
+> Fabric Configuration **会把上次分配的那份文件记在器件节点上**，而且是在
+> **分配时**读进内存的，不是烧写时现读。所以如果你只点第 3 步 `Program...`，
+> 烧的是**上次分配的那份**，跟你刚生成的那份无关。
+>
+> 换句话说：**改了比特流之后，"Scan Device + Program" 是不够的，中间那次
+> `Assign New Configuration File` 不能省。**
+>
+> **2026-09-23 实踩**：想烧 CoreMark 跑分版，只点了 Program、没重新分配文件，
+> 结果烧成了上一版的**演示程序**。现象：烧完按按键有反应，串口打印
+> `KEY=0x.. LED=0x..`，完全没有跑分输出。文件名都叫 `cpu_top_board`，
+> 看着像"当前设计"，**完全看不出来是哪个固件**。
 
-**那个文件名看不出里面是哪个固件** —— 它只代表「最后一次综合的那版」。
+### 根治办法：把烧录录成 TCL 脚本
 
-> **2026-09-23 实踩**：想烧 CoreMark 跑分版，在 Programmer 里**只点了 Program、
-> 没重新浏览文件**（它沿用了上次的路径 `generate_bitstream\cpu_top_board.sbit`），
-> 而那份是上一版的**演示程序**。现象：烧完按按键有反应，串口打印 `KEY=0x.. LED=0x..`，
-> 完全没有跑分输出。文件名叫 `cpu_top_board` 看着像"当前设计"，**完全看不出来是哪个固件**。
+Fabric Configuration **自带操作录制与 TCL 执行**（官方手册《Fabric Configuration
+User Guide》第 4 章）：
+
+| 界面操作 | 对应 TCL 命令 |
+|---|---|
+| Scan Device | `cfg_add_device` |
+| **Assign New Configuration File** | **`cfg_assign_file`** |
+| **Program...** | **`cfg_program`** |
+| Verify / Erase / Readback | `cfg_verify` / `cfg_flash_erase` / `cfg_readback` |
+
+**用法**：
+
+1. 先在 GUI 里正常烧一次，同时用 **`Operations → Create Tcl Record File...`**
+   把操作录下来 —— 它会生成一个 `.tcl`，**并把比特流复制到它旁边的
+   `tcl_bit_file\` 目录**，所以录出来的脚本可以整体搬走，路径不会失效。
+2. 此后每次烧板，只要 **`Operations → Execute Tcl File...`** 选那个 `.tcl` 就行 ——
+   文件路径写在脚本里，**不可能再烧错版本**。
+
+> 这也是个无头路径：`bin\cdt_cfg_shell.exe` 能直接跑 tcl
+> （`-file <目录|*.tcl>`，`-args {参数}` 可做参数替换，手册 §4）。
+> 想做成 `scripts\flash.ps1` 一条命令烧板的话，先录一份 `.tcl` 出来做底子。
 
 还有一个更隐蔽的：**PDS 不检查 `mem.hex` 的时间戳**。固件没同步过去（或同步的是别的程序），
 它照样综合出一个"能烧、但板上跑的是旧程序"的比特流，全程零报错。
