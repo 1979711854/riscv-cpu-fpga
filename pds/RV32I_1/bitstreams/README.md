@@ -34,7 +34,8 @@ scripts\build_bitstream.ps1 demo        # 演示程序版
 
 | 文件 | 固件 / 时钟 | 用途 |
 |---|---|---|
-| `coremark_iter1663_pll49mhz_localboard.sbit` | CoreMark v1.0，ITER=1663，**49.8927 MHz**（PLL）+ BTB/BHT | **当前跑分版**。md5 `c4e2c4d2…`，综合 2026-09-25 14:29，slack +1.550 ns。**[OK] 已板上实测通过**：`Total ticks 588,890,651` ÷ 49,892,700 = 11.8031 s / **140.89 CoreMark**（日志 `doc/board/uart_20260925_172318.txt`）|
+| `coremark_iter1663_pll49mhz_localboard.sbit` | CoreMark v1.0，ITER=1663，**49.8927 MHz**（PLL）+ BTB/BHT | **提交用跑分版**。md5 `c4e2c4d2…`，综合 2026-09-25 14:29，slack +1.550 ns。**[OK] 已板上实测通过**：`Total ticks 588,890,651` ÷ 49,892,700 = 11.8031 s / **140.89 CoreMark**（日志 `doc/board/uart_20260925_172318.txt`）|
+| `coremark_iter1663_pll49mhz_rebuild.sbit` | 同上，**ILA 收尾后重出的一版** | md5 `8a4943de…`，综合 2026-09-25 19:46。**RTL / LUT 3,721 / FF 2,441 / DRM 16 / APM 11 / slack +1.550 ns / 54.0745 MHz 全部与上一行逐项相同**，只是 P&R 布线结果不同（非确定性）所以 md5 变了。**没有板上日志** —— 要它也有证据就烧一次跑 12 秒串口 |
 | `coremark_iter1500_pll45mhz_localboard.sbit` | CoreMark v1.0，ITER=1500，45 MHz（PLL） | 上一版跑分。md5 `36d2687d…`，slack +2.812 ns。**已板上实测通过**：`Total ticks 538,285,445` ÷ 45e6 = 11.9619 s / 125.40 CoreMark（日志 `doc/board/uart_20260925_005201.txt`）|
 | `coremark_iter820_localboard.sbit` | CoreMark v1.0，ITER=820，27 MHz | 跑分（板上 10.898 s，见 `doc/board/uart_20260923_201540.txt`）。**旧时钟口径，留着做对照** |
 | `demo_led_remap_localboard.sbit` | 演示程序（LED 已按开关位置重排），27 MHz | 现场演示、录像。**注意也是 27 MHz 版** |

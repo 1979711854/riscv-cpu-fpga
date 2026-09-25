@@ -1246,10 +1246,33 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测�
 
 **E. 收尾（重要，别忘）**
 
-14. **移除全部 `PAP_MARK_DEBUG` / `syn_keep` 属性与 DebugCore/JTAG Hub**，重新综合一次。
-15. 核对回到基线：`riscv-tests 49/1/0`、CoreMark **354,119 拍**、
-    **LUT 3,721 / 可达 54.0745 MHz / slack +1.550 ns**（§7.2 有删除命令）。
+14. **移除探针与 `.fic` 登记**，重新综合一次。做法见 §7.2 —— 首选
+    `git checkout b8edd43 -- rtl/...` 精确还原，别用正则删注释。
+15. 核对回到基线。
 16. **比赛提交的工程里绝不能留着调试核。**
+
+> [OK] **2026-09-25 收尾已执行并逐项验证通过**（分支 `feat/ila-probe`，commit `435c2ac`）：
+>
+> | 项 | 结果 | 基线 |
+> |---|---|---|
+> | RTL 还原 | 与 `b8edd43` **逐字节一致**；`PAP_MARK_DEBUG` / `dbg_*` 残留 **0** | — |
+> | CoreMark | **354,119 拍 / 1,457,776 总周期**，四个 CRC 逐位一致 | 同 |
+> | riscv-tests | **49 PASS / 1 FAIL / 0 TIMEOUT** | 同 |
+> | 综合资源 | **LUT 3,721 / FF 2,441 / DRM 16 / APM 11** | LUT 3,721 / DRM 16 / APM 11 |
+> | 时序 | **slack +1.550 ns / 可达 54.0745 MHz / `All Constraints Met`** | 同 |
+> | `.fic` 登记 | 已从 `.pds` 的 `wgt_my_fic_src` 撤除 | 应为空 |
+> | 探针残留 | 网表里 `PAP_MARK_DEBUG` / `dbg_*` 计数 **0** | 0 |
+>
+> 重出的生产比特流 `coremark_iter1663_pll49mhz_rebuild.sbit`（md5 `8a4943de`）
+> 与板上实测过的 `coremark_iter1663_pll49mhz_localboard.sbit`（md5 `c4e2c4d2`）
+> **RTL / 资源 / 时序逐项相同**，只是 P&R 布线非确定性导致 md5 不同。
+> **提交比赛时用 `c4e2c4d2` 那份**（它有板上日志
+> `doc/board/uart_20260925_172318.txt`）；要用 `8a4943de` 就烧一次跑 12 秒串口补个日志。
+>
+> **调试版比特流已归档**（`bitstreams/debug_ila_86probe_localboard.sbit`，md5 `96ee7877`）——
+> **想补抓波形直接烧它 + 用 `cpu_top_board.fic` 即可，不用重做 Inserter/P&R。**
+> 换触发记得**改两处**（`dbg_set_unit` 改 TU 的值 + `dbg_set_condition -select 0 -set "TUN"`），
+> 判据是波形里**采样 512** 那拍对应触发信号为 1。
 
 **卡住了怎么办**
 
