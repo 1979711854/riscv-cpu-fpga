@@ -278,6 +278,11 @@ cyc 335230: v_wb=1   ← 分支指令自身提交，同拍 fl=1（冲刷拍）
 
 ## 7. 硬件在环 ILA 抓取方案（待执行）
 
+> [!] **本章 2026-09-25 更新**：原来按"远程 FPGA 平台"写的，
+> 现在**比赛已确认用本地盘古板**，所以**本地 PDS Debugger 那条路变成主路径**
+> （原 §7.3 的"备选路径"升为主路径），远程平台那条降为备选。
+> 另：时钟已到 49.8927 MHz、RTL 加了 BHT，探针清单与采窗都相应更新。
+
 ### 7.0 结论：平台出 JTAG 和波形界面，PDS 出 `.fic` 和比特流
 
 **查证结果（2026-09-21，实读远程平台前端 + 本机 PDS 安装目录）**
@@ -371,7 +376,22 @@ Project.unit<0>.triggerChannel<0><2>=pdata[1]
 | `[77]` | `mem_we` | 1 | 访存写使能 |
 | `[78]` | `mem_re` | 1 | 访存读使能 |
 | `[79]` | `mem_wb_reg_write` | 1 | WB 是否回写寄存器 |
-| **合计** | | **80 位** | 远低于 256，余量充足 |
+| `[80]` | `bht_hit` | 1 | **BHT 查表命中**（2026-09-25 新增，下同）|
+| `[81]` | `bht_taken` | 1 | BHT 预测的方向（计数器高位）|
+| `[82]` | `id_pred_taken` | 1 | ID 级最终预测：跳 or 不跳 |
+| `[83]` | `id_redirect` | 1 | ID 级**实际生效**的重定向（与 `id_pred_taken` 在 stall/flush 时会分叉）|
+| `[84]` | `ex_mispred` | 1 | 预测 taken 但实际 not-taken（误判恢复）|
+| `[85]` | `id_ex_pred_taken` | 1 | 该指令在 ID 级**实际发生过**预测重定向（寄存的是 `id_redirect`）|
+| **合计** | | **86 位** | 远低于 256，余量充足 |
+
+> [重点] **`[80]`~`[85]` 这 6 位是本次（BHT 之后）新增的**，也是抓波形的**新看点**：
+> 加 BHT 之前分支只有"冲刷/不冲刷"两种状态，现在能直接看到
+> **查表命中、预测方向、实际重定向、误判恢复**这四件事的先后关系 ——
+> 这正是"动态分支预测"这个评分项最直观的证据。
+>
+> ⚠️ 抓 `[83]`/`[85]` 时注意：**必须看 `id_redirect`，不能看 `id_pred_taken`**
+> （`core.v` 有注释：两者在 stall / `ex_flush` / `div_stall` 时会分叉，
+> 寄存错了会让 EX 级误判"预测正确"而不冲刷）。
 
 > [!] **`ex_flush_d` 已从设计中删除**（2026-09-21 取指重定向改造），探针里不能再引用它
 > —— 旧版本文档的 `[70]` 原本就是它。这一位改接 `id_ex_mem_read`，位宽预算不变。
@@ -380,14 +400,16 @@ Project.unit<0>.triggerChannel<0><2>=pdata[1]
 > **省位宽的关键**：PC 只取低 15 位。若按 32 位传，四个 PC 就吃掉 128 位，
 > 加上其他信号直接顶到 256 上限。地址总线是位宽预算里最贵的东西。
 
-采样深度取 **1024**（例程里的默认值）：**`1024 / 45MHz = 22.8 µs`**
-（27 MHz 时代是 37.9 µs —— ILA 采的是系统时钟，改 PLL 后窗口按比例缩短）。
+采样深度取 **1024**（例程里的默认值）：**`1024 / 49.8927MHz = 20.5 µs`**
+（27 MHz 时代 37.9 µs、45 MHz 时代 22.8 µs —— ILA 采的是系统时钟，
+PLL 提频后窗口按比例缩短）。若要看更长的窗口，把深度调到 4096（= 82 µs）。
 DebugCore 的缓存深度范围是 **64 ~ 128k**（2 的整数幂），要抓更长的窗口可以调大，
 但要注意 BRAM 占用。平台上另有 `triggerPosition` 参数，
 把它设在缓冲区中间，才能看到触发**之前**的流水线状态。
 
-> [!] **ILA 的时钟域**：采样时钟要接 **PLL 输出的 `clk_sys`（45MHz）**，
-> 不是板载晶振 —— 抓的是 CPU 那条流水线。若接错域，抓到的状态全是亚稳态。
+> [!] **ILA 的时钟域**：采样时钟要接 **PLL 输出的 `clk_sys`（49.8927MHz）**，
+> 不是板载 27MHz 晶振 —— 抓的是 CPU 那条流水线。若接错域，抓到的状态全是亚稳态。
+> 在 `cpu_top_board` 里这个信号叫 `clk_sys`（`pll u_pll` 的 `clkout0`）。
 
 ### 7.2 抓取前必须加的防优化属性（两条路径都要）
 
@@ -407,6 +429,14 @@ wire fwd_a_wb       /* synthesis syn_keep=1 */;
 wire fwd_b_wb       /* synthesis syn_keep=1 */;
 wire branch_taken   /* synthesis syn_keep=1 */;
 wire id_ex_mem_read /* synthesis syn_keep=1 */;
+// ---- 2026-09-25 新增：BHT 相关（抓动态预测的看点）----
+wire bht_hit        /* synthesis syn_keep=1 */;
+wire bht_taken      /* synthesis syn_keep=1 */;
+wire id_pred_taken  /* synthesis syn_keep=1 */;
+wire id_redirect    /* synthesis syn_keep=1 */;
+wire ex_mispred     /* synthesis syn_keep=1 */;
+// 注意：id_ex_pred_taken 是 reg，属性写在声明处；实在选不到就用 id_redirect。
+//
 // 注意：ex_flush_d 已从设计里删除（取指重定向改造），别再给它写属性 ——
 //       综合会直接报 "Identifier ex_flush_d is not declared" 并中断整条流程。
 // 也可用 Pango 专用属性（Inserter 会自动识别并列出）：
@@ -416,15 +446,16 @@ wire id_ex_mem_read /* synthesis syn_keep=1 */;
 **重要：这些属性和 DebugCore/JTAG Hub 两个 IP 都只能用于调试版本。**
 
 - 它们会保留本可优化掉的逻辑，**LUT 用量会变化**，会破坏
-  `doc/resource_efficiency.md` 中记录的**基线数据**（**当前 45 MHz 设计：3,030 LUT / 51.52 MHz**；
-  27 MHz 时代的历史基线：2,316 LUT / 47.81 MHz）
+  `doc/resource_efficiency.md` 中记录的**基线数据**（**当前 49.89 MHz 设计：3,721 LUT /
+  可达 54.0745 MHz / slack +1.550 ns**；历史基线：45 MHz 时代 3,030 LUT / 51.52 MHz，
+  27 MHz 时代 2,316 LUT / 47.81 MHz）
 - `ips_debug_core`（含 256 位比较器 + `data_capture_mem`）与 `ips_jtag_hub` 自身也占 LUT 与 BRAM
 
 **抓完波形、截图存档后必须移除，并重新综合一次，确认资源与时序回到原值。**
 比赛提交的工程里绝不能留着调试核。
 
 > 这些属性是**注释形式**（`/* synthesis ... */`），iverilog 会直接忽略，
-> 所以不影响仿真，也不会破坏 `1,462,898` 的回归探针。但为保险，
+> 所以不影响仿真，也不会破坏 `1,457,776` 的回归探针。但为保险，
 > 改完仍应跑一次回归确认。
 
 **抓完之后怎么安全地删干净**（`core.v` 是 UTF-8 带中文注释，别用 sed / 别用文本编辑器批量替换，
@@ -440,11 +471,11 @@ python -c "import io,re; p=r'rtl/core/core.v'; s=io.open(p,encoding='utf-8').rea
 # 复查：应为 0 条，且回归必须回到基线
 Select-String -Path rtl\core\core.v -Pattern "synthesis syn_" | Measure-Object | Select-Object -ExpandProperty Count
 scripts\run_riscv_tests.ps1             # 期望 49/1/0
-scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 358,846 拍（测试台总周期 1,462,898）
+scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 354,119 拍（测试台总周期 1,457,776）
 ```
 
 删完重新综合，再用 `pds/RV32I_1/multiseed_summary.csv` 核对 LUT 是否回到**基线**：
-当前 45 MHz 设计应为 **3,030**（27 MHz 时代的 2,316 已不是当前基线，别拿它对照）。
+当前 49.89 MHz 设计应为 **3,721**（45 MHz 时代的 3,030、27 MHz 时代的 2,316 都不是当前基线，别拿它们对照）。
 
 ### 7.3 操作步骤
 
@@ -490,6 +521,9 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 358,846 拍（测�
 | 分支惩罚 | `ex_flush == 1` | `ex_flush` 拉高 1 拍，`IF/ID` 清空；**同拍**取指地址已变成跳转目标。`EX` 级随后**连续 2 拍为空**（冲刷拍 + 1 拍取指延迟） |
 | load-use | `stall == 1` | `stall` 拉高拍 `pc_r` 保持不动，下一拍 `ID/EX` 为气泡；同拍 `id_ex_mem_read` 应为 1 |
 | 前递生效 | `fwd_a_ex == 1` | EX 级运算数取自 EX/MEM 而非寄存器堆 |
+| **BHT 命中且预测跳转** | `bht_hit == 1 && bht_taken == 1` | ID 级提前重定向，`id_redirect` 同拍拉高；EX 级解析后**不冲刷** —— 这就是"预测对了省 1 拍"的直接证据 |
+| **BHT 误判恢复** | `ex_mispred == 1` | 预测 taken 但实际 not-taken，EX 级把流水线拉回 fall-through（`ex_mispred_target = id_ex_pc + 4`）|
+| **BHT 未命中** | `bht_hit == 0` 且 `id_ex_branch == 1` | 退回静态规则（后向才预测），可对照 `[82] id_pred_taken` 看兜底是否生效 |
 
 触发位置建议设在缓冲区中点：这样触发条件满足**之前**的流水线状态也能看到，
 才有"前因后果"而不只是"结果"。
@@ -507,8 +541,71 @@ scripts\run_coremark.ps1 -Iter 1        # 期望计时区间 358,846 拍（测�
    若通道数少于 §7.1 的 80 位计划，需要再裁剪探针。
 4. 截图分辨率与报告排版要求（建议原图，不要压缩到看不清信号名）。
 5. 抓完后**移除调试属性与调试核，重跑一次综合与回归**，确认
-   `49/1/0`、计时区间 `358,846` 拍、**LUT / Fmax 都回到基线**（当前 45 MHz 设计：
-   **3,030 LUT / 51.5198 MHz / slack +2.812 ns**；27 MHz 时代的 2,316 LUT / 47.81 MHz 是历史值）。
+   `49/1/0`、计时区间 `354,119` 拍、**LUT / Fmax 都回到基线**（当前 49.89 MHz 设计：
+   **3,721 LUT / 可达 54.0745 MHz / slack +1.550 ns**；更早的值都是历史）。
+
+### 7.6 本地板执行清单（2026-09-25，当前状态的推荐路径）
+
+> 前提：**RTL 已冻结**（49.89 MHz + BHT 都已验证通过、板上实测做过）。
+> **加 ILA 探针本身要改 RTL（`syn_keep`），所以这一步必须排在最后** ——
+> 否则队友一改 RTL，`.fic` 与 `.sbit` 双双作废。
+
+**A. 准备（本地 PDS）**
+
+1. 按 §7.2 在 `rtl/core/core.v` 给要抓的信号加 `/* synthesis syn_keep=1 */`
+   （清单已含 BHT 的 5 个新信号）。**只加在要抓的信号上，不要全局加。**
+2. `scriptsuild_bitstream.ps1 coremark -NoBuild` —— 只生成并同步固件，
+   确认 PDS 工程里的 `mem.hex` 是 **ITER=1663**（别用旧镜像）。
+3. PDS 打开 `pds/RV32I_1/RV32I_1.pds` → **Compile → Synthesize**。
+   产物：`pds/RV32I_1/synthesize/cpu_top_board_syn.adf`。
+
+**B. 用 Fabric Inserter 生成 `.fic`**
+
+4. PDS 菜单 **TOOL → Inserter**，在 **JtagHub** 目录下选 **DebugCore**。
+5. 配三栏：
+   * **Trigger Parameters**：采样时钟选 **`clk_sys`**（不是 27MHz 晶振！
+     `cpu_top_board` 里 `pll u_pll` 的 `clkout0`）；`dataDepth = 1024`（≈20.5 µs）
+     或 4096（≈82 µs）；触发条件先设 `ex_flush`；触发位置设在缓存**中点**
+   * **Net Connections**：按 §7.1 的 **86 位**清单连信号（PC 只连低 15 位）
+   * **PowerOn Init Parameters**：默认
+6. **保存 Inserter 工程 —— 这个文件就是 `.fic`。**
+   命名建议 `cpu_top_board_ila.fic`，**和随后的 `.sbit` 放一起成对保存**。
+
+**C. 出比特流并烧写**
+
+7. 继续 **Place & Route → Generate Bitstream**，得到含 DebugCore 的 `.sbit`。
+   > [!] 这份是**调试版**，不是比赛提交用的那份。别覆盖 `generate_bitstream/` 里
+   > 已经归档好的生产比特流 —— 建议先把它改名或归档到 `bitstreams/`。
+8. PDS **TOOL → Programmer** 烧这份调试版。
+
+**D. 抓波形（本地 PDS Debugger）**
+
+9. PDS **TOOL → Debugger** → **Scan JTAG**。能扫到器件与 `debug_core` 才可行。
+10. 设触发条件 → **点触发捕获** → 波形窗口把总线信号 **Bus radix 设为 Hex**（PC）。
+11. 至少抓这三种情形（对应 §3/§4 的分析）：
+    * (a) 一次**分支冲刷**（触发 `ex_flush`）
+    * (b) 一次 **BHT 命中且预测跳转**（触发 `bht_hit && bht_taken`）
+    * (c) 一次 **load-use 停顿**（触发 `stall`）
+12. 导出波形 / 截图，存到 `doc/figures/`，并在 `doc/ila_analysis.md` 里补索引。
+
+**E. 收尾（重要，别忘）**
+
+13. **移除全部 `syn_keep` 属性与 DebugCore/JTAG Hub**，重新综合一次。
+14. 核对回到基线：`riscv-tests 49/1/0`、CoreMark **354,119 拍**、
+    **LUT 3,721 / 可达 54.0745 MHz / slack +1.550 ns**（§7.2 有删除命令）。
+15. **比赛提交的工程里绝不能留着调试核。**
+
+**卡住了怎么办**
+
+| 现象 | 原因 |
+|---|---|
+| Inserter 里选不到某个信号 | 它被综合优化掉了 —— 回第 1 步确认 `syn_keep` 加了 |
+| Debugger Scan JTAG 扫不到器件 | JTAG 通路问题。本板 Jtag 是 **FTDI**（枚举成两个 COM 口），确认那根 USB 线插了 |
+| 波形"有信号但全不对" | **`.fic` 与 `.sbit` 不是同一次综合的** —— 这是头号坑，重做第 3~7 步 |
+| 触发一直不满足 | 触发信号选错域（接成 27MHz 晶振了），或触发位置没设在中点 |
+
+> 远程平台那条路（§7.0/§7.3）**仍然有效**，作为备选：平台出 JTAG 与波形界面，
+> `.fic` 还是本地 PDS 生成。但既然本地板在手，走上面这条更直接。
 
 ---
 
