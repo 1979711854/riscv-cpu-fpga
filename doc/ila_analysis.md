@@ -717,6 +717,33 @@ DRM 16 / APM 11。生产版（P&R 后）是 **LUT 3,721 / slack +1.550 ns / All 
 > **建议流程**：先导 VCD 存档并逐拍核对，确认无误**再**截图进报告 ——
 > 免得截完写进报告才发现某处对不上。
 
+> [!] **波形里会同时出现总线和 86 根裸位 —— 这是设计使然，不是 bug。**
+> 手册 §5.2.1：组合成总线后"**一条新的总线被加入到 DataPort 的最上面**"，
+> **原来的信号并不会被移除**，信号与总线在 SignalTree 里**并存**。
+> 所以 `Add All to View` / `dbg_add_all_to_waveform` 会把两者都塞进波形。
+>
+> **正解：清空后只加要看的**（TCL 没有"只加某一根"的命令，这一步得在 GUI 点）：
+> 1. 右键 SignalTree 的 **`DataPorts`** 节点 → **`Clear All`** → 选 `Waveform`
+> 2. 在 SignalTree 里 **ctrl 点选**（或 shift 连续选）真正要看的信号
+> 3. 任选中项右键 → **`Add to View`** → `Waveform`
+>
+> **建议只加这些**（13 根 + 5 条总线，其余 70 多根裸位不加）：
+>
+> | 用途 | 信号（通道）|
+> |---|---|
+> | 四条 PC + opcode | `PC` `IFID_PC` `IDEX_PC` `EXMEM_PC` `OPCODE`（总线）|
+> | 冲刷（图 1）| `dbg_ex_flush`(69) `dbg_id_ex_br`(75) `dbg_btaken`(76) |
+> | 停顿（图 3）| `dbg_stall`(67) `dbg_idex_ld`(70) |
+> | BHT 证据（图 2/4）| `dbg_bht_hit`(80) `dbg_bht_taken`(81) `dbg_redirect`(83) `dbg_mispred`(84) |
+>
+> 加信号**不用重新抓**（`data.wf` 里数据都在），随时补看随时加。
+>
+> **总线的位序规则**（手册 §5.2.1 c，也把 TCL 的行为钉死了）：
+> * GUI：**shift 选**→ 最上面的信号是**最低位**；**ctrl 选**→ **第一根被选的**是最低位
+> * TCL `dbg_add_bus -channel 0-14`：`dbg_pc0` 在前 → 也是**第一根 = 最低位**
+>   （实测证据：PC = `0x0018` 而不是 `0x1800`，位序正确）
+> * 反了就**在总线节点上右键 `Reverse Bus Order`** —— 会同步更新所有窗口并重算数值
+
 > [!] **抓 CoreMark 的波形必须先按复位键，否则永远等不到触发。**
 > CoreMark 是**一次性程序**：板上电后跑 11.8 秒就结束，之后 CPU 进空闲循环。
 > 而空闲循环里的跳转（`jal` 或向后分支）**全都是被预测中的** ——
