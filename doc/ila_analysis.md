@@ -505,13 +505,45 @@ cpu_top_board            <- 顶层（.pds 的 top module）
    （实测网表 `synthesize/cpu_top_board_syn.vm`：
    `GTP_DFF_CE /* \pc_r[0] */ ... .Q (pc[0])`）。所以要在 `u_core` 里找总线 **`pc[31:0]`**。
 
-**两个实用技巧**（都出自 Inserter 手册）：
+**实用技巧**（界面文字摘自 Inserter 程序自身的 UI 字符串表，比手册准确）：
 
-* 勾上 Filter ToolBar 左下方的 **`Show All Net In The Net Tree View`** —— 手册说勾上后
-  Module View 会被冻结，Net View 把**整个设计**的网线/总线全列出来，
-  "方便查找无法按模块定位的网线及总线"。找 `clk_sys` 这种顶层网线时用它最快。
+* 勾上 Filter ToolBar 左下方的 **`Show All Nets In The Net Tree View`**
+  （提示文字："Show all nets in the Net Tree View without classifying according to module"）
+  —— 勾上后 Module View 会被冻结，Net View 把**整个设计**的网线/总线全列出来，
+  找 `clk_sys` 这种顶层网线时用它最快。
+* 勾上 **`Show Complete Net Name`**
+  （提示文字："Show complete net name in the format: **top_module/sub_module/sub_module/net**"）
+  —— **强烈建议一直开着**：网线名会显示成 `cpu_top_board/u_soc/u_core/pc` 这种全路径，
+  一眼就能看出它在哪一层，不用猜自己在看哪个模块。
 * Filter ToolBar 的 **`Key Word`** 框是**模糊匹配、不区分大小写**的
   （模式下拉框选 `Net Name` 就只匹配网线名）。输入完按 **Enter** 才开始筛选。
+* **Channel View 的实际结构**（手册只说"页签"，实际是带分组节点的树）：
+  顶层分组节点是 **`TRIGGER PORTS`** / **`CLOCK PORT`** / **`RESET PORT`** / **`DATA PORT`**；
+  通道条目的显示格式是 `CH0:<网线名>`（单通道端口）和 `CH<序号>:<网线名>`（数据端口），
+  总线显示为 `Bus:<名字>`。
+
+> [!] **连线时别点 `Schematic View` 那张图 —— 会弹 `Select Page`。**
+> Select Net 对话框左上角默认勾着 **`Show Schematic Graph`**，它打开的是一个
+> **分页（page）的原理图查看器**（菜单里有 `View → Page Up / Page Down`、
+> `Descend` / `Return to Top`、`Mark Debug...`、`Flatten...`）。
+> 因为设计是分页画的，**点击不在当前页上的网线时，查看器会弹 `Select Page`
+> 让你先选页**，点击就被打断了 —— 症状是"点一下就弹框，连不上"。
+>
+> **两个解法**：
+> 1. **把 `Show Schematic Graph` 取消勾选**（推荐）—— 整块图直接隐藏，
+>    只用 `Module View` + `Net View` + `Channel View`，再不会弹页选择框。
+> 2. 或把 `Select Page` 选成 **`u_core` 所在的那一页**再点。
+>
+> **正确连线姿势**（不依赖原理图）：在 `Channel View` 里**单击选中目标 channel 行**
+> → 在 `Net View` 里**单击选中网线**（多选用 Shift / Ctrl）→ 按 **`Make Connections`**
+> （快捷键 **Ctrl+M**）。「选中 + 按钮」是主路径；拖放是备选（拖放是**插入**，
+> 按钮是**覆盖**，手册明确区分过）。
+>
+> [!] 数据端口的 channel **必须连续填**（程序里有
+> "The data ports must be connected in sequence" 的检查）。
+> 另外选中整条 `pc[31:0]` 会一次吃掉 32 个 channel ——
+> 要只连低 15 位，得在 `Net View` 里**展开总线**再逐位选，
+> 或者干脆在 RTL 里做一个 15 位的专用调试总线（见 §7.7）。
 
 > [!] **"与用户设计端口相连的信号"连不上**：手册原文"与用户设计端口相连的信号无法与
 > debug core 相连进行观测"。所以顶层端口本身（`clk`/`resetn`/`led`/`key`/`uart_*`）
