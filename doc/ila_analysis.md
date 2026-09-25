@@ -691,6 +691,18 @@ DRM 16 / APM 11。生产版（P&R 后）是 **LUT 3,721 / slack +1.550 ns / All 
 - `ips_debug_core`（含 256 位比较器 + `data_capture_mem`）与 `ips_jtag_hub` 自身也占 LUT 与 BRAM
 
 **抓完波形、截图存档后必须移除，并重新综合一次，确认资源与时序回到原值。**
+
+> [OK] **2026-09-25 18:50 —— 硬件在环抓取首次跑通。** 全链路验证记录：
+>
+> | 步 | 证据 |
+> |---|---|
+> | 认核 | `dbg_list` → `Data sample width = 86` / `Sample buffer depth = 1024` / `Number of trigger ports = 4` / `TU0..TU3 Width=1 Type=Basic W/Edges` —— 与 Inserter 里配的逐项一致 |
+> | 导探针 | `dbg_import_fic -file .../cpu_top_board.fic` → `Import Core: 0 OK` |
+> | 触发 | `dbg_trig_immd` → `Core 0 trigger successful at Fri Sep 25 18:50:36 2026` |
+>
+> **唯一卡住过一次的地方是"没连 JTAG Server"** —— 那时器件栏只有
+> `device - jtag chain` 这个空树标题，看着像已经扫到了，其实什么都没连。
+> 详见 §7.6 第 9 步。
 比赛提交的工程里绝不能留着调试核。
 
 > 这些属性是**注释形式**（`/* synthesis ... */`），iverilog 会直接忽略，
