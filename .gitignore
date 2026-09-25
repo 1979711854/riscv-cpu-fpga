@@ -114,3 +114,9 @@ $RECYCLE.BIN/
 # 新增：gen_bit_stream 流程会生成这两个目录
 /pds/**/generate_netlist/
 /pds/**/report_power/
+
+# ---- [!] 例外：ILA 硬件在环抓的波形是【板上实测证据】，不是仿真产物 ----
+# 上面的 *.vcd 是给 Icarus/GTKWave 的仿真输出用的；硬件抓的 VCD 与
+# doc/board/uart_*.txt 同类（都是板上证据），要入库。
+# 命名约定见 doc/ila_analysis.md §7.6：ila_hw_<触发信号>_<代码区>.vcd
+!doc/board/*.vcd
