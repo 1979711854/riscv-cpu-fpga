@@ -102,7 +102,15 @@ dbg_trig_immd
 #       -unit 2  -> t2 = bht_hit     （BHT 查表命中）
 #       -unit 3  -> t3 = ex_mispred  （预测 taken 但实际 not-taken）
 # -----------------------------------------------------------------------------
-dbg_set_unit -unit 0 -func "==" -value R -radix 2
+# [!] `-radix` 的编号手册标错了（它的两个例子自相矛盾：一个明显是二进制却配
+#     -radix 0，另一个明显是十进制却配 -radix 2），实机也报过
+#     "value is illegal"。所以：
+#       用边沿：先试 -radix 0（按手册例1 推断 0 才是 Binary）——
+#               dbg_set_unit -unit 0 -func "==" -value R -radix 0
+#       嫌麻烦：干脆【用电平触发】—— '1' 在任何进制下都合法，而 ex_flush 是
+#               单拍脉冲，电平触发与上升沿效果几乎一样（Position 居中时看不出差别）
+#       都不行：dbg_set_unit -help  看这个版本的实际参数说明（权威）
+dbg_set_unit -unit 0 -func "==" -value 1
 
 # 触发条件：先看现有的（不带选项就是列出全部），再建一个用 TU0 的
 dbg_set_condition
