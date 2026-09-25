@@ -14,6 +14,7 @@
 | 了解架构 | `doc/spec.md`（当前实现的权威描述） |
 | 了解基础任务达标情况 | `doc/base_task_status.md` |
 | 了解测试结果与基线 | `doc/test_report_riscv-tests.md` |
+| 看板上实测证据 / ILA 硬件波形 | `doc/board/`（`uart_2026*.txt` + `ila_hw_*.vcd`，索引见其 `README.md`） |
 | 跑回归 | `scripts/run_riscv_tests.ps1`（不带参数即可，不需联网） |
 
 >  **不要从 `riscv32-FPGA-pds/RV32I_1/` 打开。** 那是你交接时的原始副本，里面的 RTL
@@ -24,16 +25,16 @@
 ## 二、交付状态（一句话）
 
 **基础任务三条全部达标，赛题硬指标（CoreMark ≥10s）已在远程平台与本地盘古板实测通过。**
-（2026-09-25 起本地板时钟迁到 **49.8927 MHz** 并加**动态分支预测**：**仿真与综合已通过**；
-板上实测 **45 MHz 版已闭环，49.89 MHz 版待做**，见下表。）
+（2026-09-25 起本地板时钟迁到 **49.8927 MHz** 并加**动态分支预测**：**仿真、综合与板上实测
+全部通过** —— `Total ticks 588,890,651` ÷ 49,892,700 = **11.8031 s / 140.89 CoreMark**，见下表。）
 
 | 赛题要求 | 状态 | 证据 |
 |---|---|---|
 | ① 支持 RV32I 基础整数指令集 | [OK] 全覆盖 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（含 M 扩展 8 项；唯一 FAIL 是未对齐访存，规范允许） |
-| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | [OK] | 5 级流水线；2026-09-21 做取指重定向，分支惩罚 3 拍 → **2 拍** |
+| ② ≥3 级流水线 + 数据冲突 + 分支跳转 | [OK] | 5 级流水线 + 前递 + load-use 停顿；分支惩罚 **1 拍**（2026-09-21 取指重定向 3→2 拍，2026-09-25 ID 级静态预测 + BHT 后 **2→1 拍**） |
 | ③ 集成 UART / GPIO 用于系统控制与结果输出 | [OK] | 总线 + GPIO + UART 收发；演示程序仿真端到端 7/7 PASS |
-| 测评：CoreMark 运行 ≥10s | [OK] **45 MHz 版（ITER=1500）板上实测通过**（2026-09-25）；27 MHz 版（ITER=820）亦已实测（历史记录） | 45 MHz 实测：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 秒** → **125.40 CoreMark**，`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致（日志 `doc/board/uart_20260925_005201.txt`）<br>27 MHz 历史实测：`Total ticks 294,888,440` → **10.92 秒**<br>[!] 这个 `Total ticks` 与 `doc/base_task_status.md` 记的 **294,262,913 对不上**：按 `770 × 382,972` 反算恰等于本值，推测它其实是 **382,972 时代的 ITER=770** 实测（标题里的 ITER=820 待核） |
-| 测评：CoreMark/MHz | [OK] | **2.824**（当前设计，每迭代 **354,119** 周期，仿真）<br>四轮演进：2.380 → 2.611 → 2.787 → **2.824**<br>实际得分：27 MHz 板测 **75.24** → 45 MHz 板测 **125.40（+66.7%）** → **49.89 MHz 预期 140.89（推算，待上板）** |
+| 测评：CoreMark 运行 ≥10s | [OK] **49.8927 MHz 版（ITER=1663）板上实测通过**（2026-09-25 17:23）；45 MHz 版（ITER=1500）与 27 MHz 版（ITER=820）亦已实测（历史记录） | **当前**：`Total ticks 588,890,651` ÷ 49,892,700 = **11.8031 秒** → **140.89 CoreMark**，`Correct operation validated`，`seedcrc/crclist/crcmatrix/crcstate` 逐位一致（日志 `doc/board/uart_20260925_172318.txt`）<br>45 MHz 历史：`Total ticks 538,285,445` ÷ 45e6 = **11.9619 秒** → **125.40 CoreMark**（日志 `doc/board/uart_20260925_005201.txt`）<br>27 MHz 历史（本地板）：`Total ticks 294,262,913` ÷ 27e6 = **10.898 秒 / 75.24 CoreMark**（日志 `doc/board/uart_20260923_201540.txt`）<br>[!] 另有一条远程平台记录 `Total ticks 294,888,440` → **10.92 秒**，与 `doc/base_task_status.md` 记的 **294,262,913 对不上**：按 `770 × 382,972` 反算恰等于本值，推测它其实是 **382,972 时代的 ITER=770** 实测（标题里的 ITER=820 待核） |
+| 测评：CoreMark/MHz | [OK] | **2.824**（当前设计，每迭代 **354,119** 周期，仿真）<br>四轮演进：2.380 → 2.611 → 2.787 → **2.824**<br>实际得分：27 MHz 板测 **75.24** → 45 MHz 板测 **125.40（+66.7%）** → **49.89 MHz 板测 140.89（+12.36%，累计 +87.3%）** |
 
 > [!] **下面这一节是 45 MHz 时代（2026-09-25 下午）的记录，留作对照。**
 > **当前状态是 49.8927 MHz + BHT** —— 数字见上面两张表与 §六/§七；
@@ -44,7 +45,7 @@
 > **输入晶振**，45 MHz 由 PDS 从 PLL IP **自动推导**（不是手写的约束）。
 > **仿真与远程 FPGA 平台仍是 27 MHz** —— 测试台例化的是 `cpu_top`，不经过 PLL。
 >
-> | 指标 | 27 MHz 版 | **45 MHz 版（当前）** |
+> | 指标 | 27 MHz 版 | **45 MHz 版** |
 > |---|---|---|
 > | 时钟约束 | 27 MHz | **45.0005 MHz** |
 > | 估计可达 | 47.8126 MHz | **51.5198 MHz** |
@@ -170,7 +171,8 @@ compile → synthesize → device map → place & route → generate bitstream
 ### 4.3 已知的无害告警
 
 - `C: Bitstream-2001: SCBV has not been set.` —— 配置 bank 电压提醒，**实测不影响上板运行**
-- `W: Port 'key[*]' / 'uart_rx' is not constrained` —— 见 §7 待办
+- `W: Port 'key[*]' / 'uart_rx' is not constrained` —— 早期未分配 GPIO 引脚时会打印；
+  2026-09-23 起 `.fdc` 已给 `led[7:0]` / `key[3:0]` / `uart_rx` 分配 LOC（见 §7）
 
 ---
 
@@ -210,12 +212,22 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 - rv32um 的 8 项（mul/mulh/mulhsu/mulhu/div/divu/rem/remu）**一次全过**，
   给 M 扩展补上了官方测试背书（此前只有手写单测）
 
-**CoreMark（45 MHz 版板上实测，2026-09-25；49.89 MHz 版待做）**
+**CoreMark（49.8927 MHz 版板上实测 —— 当前口径，2026-09-25）**
+```
+Total ticks      : 588890651     → 实际 11.8031 秒（÷ 49,892,700）→ 140.89 CoreMark
+Iterations       : 1663
+seedcrc/crclist/crcmatrix/crcstate 逐位一致（crcfinal 随 ITER 变，不比）
+Correct operation validated.
+```
+原始日志：`doc/board/uart_20260925_172318.txt`。
+（30 秒内跑 2 轮，`Total ticks` 逐位相同；每迭代 588,890,651 ÷ 1663 = **354,113** 拍，
+仿真 354,119，差 **−0.0016%**。）
+
+**CoreMark（45 MHz 时代的板上实测 —— 历史记录）**
 ```
 Total ticks      : 538285445     → 实际 11.9619 秒（÷ 45,000,000）→ 125.40 CoreMark
-（49.89 MHz 版预期：Total ticks 约 588,900,000 -> 11.80 秒（/ 49,892,700）-> 140.89 CoreMark）
 Iterations       : 1500
-seedcrc/crclist/crcmatrix/crcstate 逐位一致（crcfinal 随 ITER 变，不比）
+seedcrc/crclist/crcmatrix/crcstate 逐位一致
 Correct operation validated.
 ```
 原始日志：`doc/board/uart_20260925_005201.txt`。
@@ -230,18 +242,19 @@ Correct operation validated.
 
 > 这块日志属于**取指重定向之后、第三轮优化之前（382,972）** 的镜像：`Total ticks`
 > 与 `Iterations: 770` 自洽（`770 × 382,972 = 294,888,440`），**标题里的 ITER=820 疑为笔误，待核**。
-> 当前设计（358,857 拍/迭代）的 27 MHz 板上实测（ITER=820，10.898 s / 75.24 CoreMark）
-> 记在 `doc/base_task_status.md`；**45 MHz 版（ITER=1500）已上板实测，见上**。
+> **27 MHz 时代的本地板实测**（ITER=820，当时 358,857 拍/迭代）是 `Total ticks 294,262,913`
+> → 10.898 s / 75.24 CoreMark，记在 `doc/base_task_status.md`；
+> **45 MHz 版（ITER=1500）与 49.89 MHz 版（ITER=1663）均已上板实测，见上**。
 
 **时序（当前：49.8927 MHz 约束 + `addr_result` + BHT，2026-09-25）**
 ```
-Requested Frequency  : 45.0005 MHz      （周期 22.2220 ns）
+Requested Frequency  : 49.8927 MHz      （周期 20.0430 ns）
 Estimated Frequency  : 54.0745 MHz      （周期 18.4930 ns）
-Setup(Slow) 最差裕量 : +2.812 ns       失败端点 : 0
+Setup(Slow) 最差裕量 : +1.550 ns       失败端点 : 0
 ```
 报告文件：**`report_timing/cpu_top_board.rtr`**（上板顶层是 `cpu_top_board`，
-不再是 `cpu_top.rtr`）。裕量 2.812ns / 周期 22.222ns → 关键路径约 19.41ns，
-时序余量 **14.5%**（27 MHz 时代是 77%）。
+不再是 `cpu_top.rtr`）。裕量 1.550ns / 周期 20.043ns → 关键路径约 18.49ns，
+时序余量 **7.7%**（45 MHz 时代 14.5%，27 MHz 时代 77%），`All Constraints Met`。
 
 > [!] `.fdc` 里约束的是 **27 MHz 输入晶振**，PLL 输出（当前 49.8927 MHz）由 PDS 从 **PLL IP 自动推导** ——
 > 看到约束写 27 MHz 别以为没生效。
@@ -278,22 +291,22 @@ Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 
 ---
 
-## 七、还没做的（截至 2026-09-21）
+## 七、待办清单（截至 2026-09-25；标 [OK] 的是已闭环、留档备查的项）
 
 ### 高优先级
 
 | 项目 | 说明 |
 |---|---|
 | `ma_data` 未对齐访问 | **唯一的 FAIL**（testnum 1，确定性）。规范允许实现不支持未对齐访存，属架构取舍。未对齐通路仍无专门测试覆盖（见 `doc/base_task_status.md` §已知限制） |
-| **演示程序上板** | 目前**只在仿真里验证过**。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得换本地盘古板 |
-| **GPIO 引脚未分配** | `cpu_top` 的 `led[7:0]` / `key[7:0]` / `uart_rx` 共 17 个端口**没有位置约束**（`.fdc` 里被注释掉了）。跑 CoreMark 无影响，但 P&R 只做时序告警就放过去了 |
+| **演示程序上板** | [OK] **已在本地盘古板跑通**（2026-09-23：读按键 → 写 LED → 串口打印 + 回显，日志 `doc/board/uart_20260923_200337.txt`）。远程平台约束只有 `clk/resetn/uart_tx/done` 四个信号，大概没有按键和 LED，要现场演示得用本地盘古板 |
+| **GPIO 引脚分配** | [OK] **已按盘古板实测引脚分配**（2026-09-23）：`led[7:0]` / `key[3:0]` / `uart_rx` 的 LOC 全在 `.fdc` 里，两张对应表见该文件头部注释。板上 `key[7:4]` 由 `cpu_top_board` 恒定接 1（板级调试口已裁掉，见 §4.2） |
 | **资源效率** | 见 `doc/resource_efficiency.md`：LUT **3,721**，主口径 A = **0.759** CoreMark/MHz 每千 LUT；口径 B（完整得分/千 LUT）= **37.86**。<br>比 27 MHz 版的 2,316 / 1.127 低，但这不是退步 —— 分母因 PLL、`addr_result` 与 BHT 表变大，本质是「用面积换频率」。<br>**两种口径结论相反，报告里都要给**：A 度量「每 LUT 换多少流水线效率」（降了），B 度量「每 LUT 换多少完整得分」（涨了）|
 
 ### 中优先级
 
 | 项目 | 说明 |
 |---|---|
-| **ILA 波形抓取** | 分析部分已完成（`doc/ila_analysis.md`）。硬件抓取待做：平台出 JTAG 与波形界面，**探针描述文件 `.fic` 要本地 PDS 用 Fabric Inserter 生成**，步骤见该文档 §7。注意 `.fic` 与 `.sbit` 必须同批成对 |
+| **ILA 波形抓取** | [OK] **已完成**（2026-09-25）：86 探针调试版比特流 `bitstreams/debug_ila_86probe_localboard.sbit`（md5 `96ee7877`），硬件波形 `doc/board/ila_hw_*.vcd`（CoreMark 分支冲刷、停机自旋），三种分支预测行为的逐拍证据在 `doc/ila_analysis.md`。生产版是另一份（md5 `c4e2c4d2`）。**`.fic` 与 `.sbit` 必须同批成对**，`.fic` 一变旧 `.sbit` 即作废 —— 步骤见该文档 §7 |
 | **riscv-arch-test** | RISC-V 官方合规套件，用签名文件逐字节比对，比 riscv-tests 更严格 |
 | **应用场景构建** | 目前只有"读按键→写 LED→串口"雏形，赛题有独立评分项 |
 
@@ -302,7 +315,7 @@ Hold(Slow)  最差裕量 : +0.147 ns      失败端点 : 0
 | 方向 | 状态 |
 |---|---|
 | **完整异常/中断** | [OK] **已完成**：CSR + 6 条 CSR 指令 + `mret` + 六类同步异常 + 定时器中断。测试 `sim/tests/` |
-| BHT / BTB 动态分支预测 | [ ] 未做。已实现 ID 级**静态**后向预测 + jal（命中惩罚 **1 拍**）。实测区域内后向分支 25,664 条中 **90.8% 都跳转**，静态规则已覆盖绝大部分；前向 taken + jalr 的剩余空间约 **2.3%** |
+| BHT / BTB 动态分支预测 | [OK] **已完成**（2026-09-25）：`core.v` 里 **256 项、2 位饱和计数器、带 tag 的 BHT**（索引 `PC[9:2]`、tag `PC[31:8]`），**只预测条件分支方向** —— `jal` 仍走 ID 级静态预测、`jalr` 不预测（两者仍走 EX 冲刷）。EX 级训练。**358,846 → 354,119 拍（-1.32%），捕获率 56%**。<br>残余空间来自 256 项表偏小、别名冲突（341 个静态条件分支中 **149 个冲突**）；扩到 1024/4096 项预计还能回收约 **1%** —— **可优化项，不是缺陷** |
 | 2 路组相联 I/D Cache | [ ] 未做，**且经分析是负收益** —— 存储器是单周期 BRAM，访存恒 1 拍、无缺失惩罚，加 Cache 只会引入缺失惩罚。注意届时 `fence.i` 必须从 NOP 升级为"冲刷 I-Cache" |
 | 边缘 AI 加速 | [ ] 未做，32KB BRAM 是硬墙 |
 

@@ -36,7 +36,7 @@
 | 立即数高（lui/auipc） | [OK] |
 | M 扩展（mul/mulh/mulhsu/mulhu + div/divu/rem/remu） | [OK]（超出基础要求） |
 | **FENCE / FENCE.I** | [OK] 显式译码为 NOP，依据见下 |
-| **ECALL / EBREAK** | [OK] ECALL = NOP；EBREAK = 停机钩子（置 `done`，为将来接异常机制留口） |
+| **ECALL / EBREAK** | [OK] **均已实现为同步异常**（2026-09-23）：ECALL = mcause=11、EBREAK = mcause=3（顶层 `done` 停机钩子从 trap 事件取） |
 
 ### 4 条指令的实现依据（写进报告用）
 
@@ -61,7 +61,7 @@
 | **CoreMark 实际得分**（= CoreMark/MHz × 系统时钟） | 27 MHz 板测 **75.24** → 45 MHz 板测 **125.40** → **49.89 MHz 板测 140.89**（**均已板上实测**，累计 **+87.3%**）<br>口径见 `doc/resource_efficiency.md` §2 / §11 |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
 | 历史：改造前效率 | 每迭代 420,070（仿真）/ 420,094（板上），差 0.0057% → 2.380 CoreMark/MHz |
-| 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **逐位一致**（**`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`） |
+| 真机正确性 | seedcrc / crclist / crcmatrix / crcstate **逐位一致**（**`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=1 → `0xe714`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`、ITER=1663 → `0x81c9`） |
 | 演示程序端到端（`run_demo.ps1`） | 7/7 PASS：上电状态、按下/松开 KEY1、按下 KEY4、串口回显两例、done 状态 |
 | 单元测试 | `tb_alu_inst` `tb_alu_div` `tb_uart_fifo` `tb_control` `tb_gpio` `tb_uart_rx` 全部 PASS |
 
@@ -84,9 +84,8 @@
 
 | 方向 | 状态 |
 |---|---|
-| **完整异常/中断** | [OK] **已完成**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret` + 六类同步异常（非法指令 / EBREAK / 未对齐 load+store / ECALL / 写只读 CSR）+ 定时器中断（CLINT）。自写汇编测试在 `sim/tests/`，一键 `scripts
-un_own_tests.ps1` |
-| BTB 动态分支预测 | [ ] 未做。已实现的是 **ID 级静态后向预测 + jal**（零状态）。实测前向 taken + jalr 的剩余空间只有约 **2.3%**，见 `doc/ila_analysis.md` §6 |
+| **完整异常/中断** | [OK] **已完成**（2026-09-23）：CSR 文件 + 6 条 CSR 指令 + `mret` + 六类同步异常（非法指令 / EBREAK / 未对齐 load+store / ECALL / 写只读 CSR）+ 定时器中断（CLINT）。自写汇编测试在 `sim/tests/`，一键 `scripts\run_own_tests.ps1` |
+| BTB 动态分支预测 | [OK] **已完成**（2026-09-25）：`core.v` 里 **256 项、2 位饱和计数器、带 tag 的 BHT**（`bht_tag/bht_ctr/bht_valid`，索引 `PC[9:2]`、tag `PC[31:8]`），**只预测条件分支方向**（`jal` 走静态后向预测、`jalr` 不预测）。收益 358,846 → **354,119** 拍（省 1.32%）。<br>残余：256 项表偏小、别名冲突（实测 341 个静态条件分支里 **149 个冲突**），扩到 1024/4096 项预计还能回收约 1% —— **可优化项，不是缺陷** |
 | 外部中断 MEIP | [!] 只做了接口（`cpu_top` 接了 UART RX 非空），**没有测试**，不得当作已验证能力 |
 | 2 路组相联 I/D Cache | [ ] 未做。**且经分析是负收益** —— 存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、无结构冲突，Cache 只会引入缺失惩罚 |
 | 边缘 AI 加速 | [ ] 未做。32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行 |
@@ -98,7 +97,8 @@ un_own_tests.ps1` |
 
 1. **未对齐访存不提供正确结果，但会正确地陷入异常**（mcause 4/6，2026-09-23 起）。
    规范要求"要么支持、要么陷入异常"，本设计取后者。`ma_data` 因此仍是唯一 FAIL，
-   但失败形态已变：`FAIL (testnum 668)`（此前是 testnum 1）。
+   失败形态是 `FAIL (testnum 668)`（与迁移前实测相同 —— "此前是 testnum 1"的说法已勘误，
+   见 `doc/test_report_riscv-tests.md` §1）。
    真正要支持未对齐访存需在 MEM 级加多拍访问，未做。
 2. **按键无硬件消抖** —— `gpio.v` 只做 2 级同步；去抖放在演示程序里
    （采样—延时 10ms—再采样），这样更容易验证。

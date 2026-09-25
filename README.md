@@ -10,12 +10,13 @@
 | 项目 | 结果 |
 |---|---|
 | riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT** |
-| 动态分支预测 | [OK] **已实现**（256 项、2 位饱和计数器、带 tag 的 BHT，2026-09-25）—— 高阶任务② 补齐 |
+| 动态分支预测 | [OK] **已实现**（256 项、2 位饱和计数器、带 tag 的 BHT，只预测条件分支方向，2026-09-25）—— 高阶任务②（动态分支预测 + 完整异常/中断）**已完整** |
 | CoreMark 效率 | **2.824 CoreMark/MHz**（每迭代 354,119 周期，与时钟无关） |
-| CoreMark **板上实测** | **49.8927 MHz / ITER=1663 → 11.8031 秒**（140.89 CoreMark）<br>45 MHz / ITER=1500 时为 11.9619 秒；27 MHz / ITER=820 时为 10.898 秒 |
+| CoreMark **板上实测** | **49.8927 MHz / ITER=1663 → 11.8031 秒**（140.89 CoreMark）<br>历史：45 MHz / ITER=1500 → 11.9619 秒；27 MHz / ITER=820 → 10.898 秒 |
 | 时序（49.8927 MHz，PLL 倍频） | 约束 **49.8927 MHz** / Estimated **54.0745 MHz**，Setup +1.550ns，**失败端点 0** |
 | 资源（新设计） | LUT **3,721**（2.33%，PDS 显示 3%）、FF 2,441、DRM 16、APM 11、分布式 RAM 336 |
-| 实际得分 | **140.89 CoreMark** @49.8927 MHz（**板上实测**）<br>45 MHz 板测 125.40；27 MHz 板测 75.24 —— **累计 +87.3%** |
+| 实际得分 | **140.89 CoreMark** @49.8927 MHz（**板上实测**）<br>历史：45 MHz 板测 125.40；27 MHz 板测 75.24 —— **累计 +87.3%** |
+| ILA 硬件波形 | [OK] **已抓齐**（`doc/board/ila_hw_*.vcd`，86 探针调试版比特流 md5 `96ee7877`）—— 逐拍证据见 `doc/ila_analysis.md` |
 
 > [OK] **49.8927 MHz 版已板上实测通过**（2026-09-25 17:23）：
 > `Total ticks 588,890,651` ÷ 49,892,700 = **11.8031 s**，`Iterations 1663`，
@@ -31,11 +32,13 @@
 > [重点] **2026-09-25 已提频到 49.8927 MHz，并加了动态分支预测（BHT）**：
 > 每迭代 358,846 → **354,119** 周期（2.787 → **2.824 CoreMark/MHz**），
 > 时序 slack +2.812 → **+1.550 ns**（`All Constraints Met`）。
-> **但 49.89 MHz 版的板上实测还没做** —— 别把它写成已完成。
-> 当前待烧比特流 `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`（md5 `c4e2c4d2...`）。
+> **49.89 MHz 版的板上实测已完成**（11.8031 s / 140.89 CoreMark），见上。
+> 生产比特流 `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`（md5 `c4e2c4d2...`）；
+> ILA 调试版是 `pds/RV32I_1/bitstreams/debug_ila_86probe_localboard.sbit`（md5 `96ee7877`）。
 >
 > 板上验证流程见 `doc/board_bringup.md`；迁移记录见
-> `doc/reports/2026-09-25_49mhz_migration.md`。
+> `doc/reports/2026-09-25_49mhz_migration.md`；**ILA 硬件抓波形已抓齐**
+> （`doc/board/ila_hw_*.vcd`），逐拍分析见 `doc/ila_analysis.md`。
 
 > 唯一 FAIL 是 `ma_data`（未对齐访存）。2026-09-21 曾据一次测量认为"取指重定向后
 > 它自动转为 PASS、说明是冲刷路径的潜在 bug"，**该结论已复核并撤回**：用改造
@@ -77,7 +80,8 @@ compile → synthesize → device map → place & route → generate bitstream
 
 **已知无害告警**（可以忽略）：
 - `C: Bitstream-2001: SCBV has not been set` —— 配置 bank 电压提醒，不影响上板
-- `W: Port 'key[*]' / 'uart_rx' is not constrained` —— GPIO 引脚未分配，跑 CoreMark 无影响
+- `W: Port 'key[*]' / 'uart_rx' is not constrained` —— 早期未分配 GPIO 引脚时会打印
+  （2026-09-23 起 `.fdc` 已分配 LOC），跑 CoreMark 无影响
 
 ---
 
@@ -99,14 +103,14 @@ Python 3:    用于把 ELF 拆成 hex
 
 ```powershell
 # 上板唯一入口（一条命令：生成固件 → 同步并校验 → 综合出 .sbit，约 5 分钟）
-scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=1500，板上约 12.0 秒）
+scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=1663，板上约 11.8 秒）
 scripts\build_bitstream.ps1 demo        # 演示版（读按键 → 写 LED → 串口打印）
 ```
 
 想分步走也可以（**但别漏第 2 步**）：
 
 ```powershell
-scripts\run_coremark.ps1 -Iter 1500 -SkipSim  # 跑分用：45MHz 下约 12.0 秒，满足 ≥10s
+scripts\run_coremark.ps1 -Iter 1663 -SkipSim  # 跑分用：49.89MHz 下约 11.8 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用
 scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目录
 ```
@@ -117,11 +121,12 @@ scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
 >
 > **ITER 的分子是你往哪儿烧的那个时钟，改流水线或换平台都要重算。**
-> 当前设计每迭代 **358,846** 周期（与时钟无关）：
-> * **板上 45 MHz：ITER=1500 → 11.96 秒**（余量 19.6%）
-> * 仿真 / 远程平台 27 MHz：ITER=820 → 10.90 秒（余量 9.0%）
+> 当前设计每迭代 **354,119** 周期（与时钟无关）：
+> * **板上 49.8927 MHz：ITER=1663 → 11.80 秒**（余量 18%）
+> * 仿真 / 远程平台 27 MHz：`270,000,000 ÷ 354,119 ≈ 762`；27 MHz 时代用的是 **ITER=820**
+>   （当时每迭代 358,857 → 实测 10.898 秒；按当前 354,119 折算为 10.75 秒，余量 7.5%）
 >
-> **用错分子的后果**：ITER=820 在 45 MHz 板上只有 6.54 秒 ——
+> **用错分子的后果**：ITER=820 在 49.89 MHz 板上只有 5.82 秒 ——
 > **CoreMark 要求 ≥10 秒，会判 invalid。**
 
 > **`mem.hex` 缺失时 PDS 不会拦住你！** 它只报一行
@@ -148,12 +153,12 @@ riscv-cpu-fpga/
 │   ├── bus/                 addr_map.vh + mem_bus.v（唯一的地址译码处）
 │   ├── periph/              uart_tx / uart_rx / gpio
 │   ├── top/cpu_top.v        SoC 顶层（仿真用）
-│   └── top/cpu_top_board.v [重点] 上板顶层（PDS 的 top）：PLL 27→45MHz + 裁剪调试端口
+│   └── top/cpu_top_board.v [重点] 上板顶层（PDS 的 top）：PLL 27→49.89MHz + 裁剪调试端口
 │
 ├── pds/RV32I_1/ [重点] PDS 工程（源文件指向 ../../rtl/**）
 │   ├── RV32I_1.pds          工程文件
-│   ├── RV32I_1.fdc          引脚/时钟约束（只有 27MHz 输入晶振；45MHz 由 PLL IP 推导）
-│   ├── ipcore/pll/          Pango PLL IP（27MHz→45MHz），必须以 IP 源形式引用
+│   ├── RV32I_1.fdc          引脚/时钟约束（只有 27MHz 输入晶振；49.89MHz 由 PLL IP 推导）
+│   ├── ipcore/pll/          Pango PLL IP（27MHz→49.89MHz），必须以 IP 源形式引用
 │   ├── mem.hex              固件快照（BRAM 初值）
 │   └── README.md            工程交接说明（含 7 条踩过的坑，建议先读）
 │
@@ -197,7 +202,8 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 **回归纪律**：改动 RTL 后，下面两条必须同时保持不变（除非本次改动就是要改变某一项）：
 
 1. riscv-tests 的 **49/1/0**
-2. CoreMark 计时区间 **358,846 拍**（测试台总周期 1,462,898）← "没碰坏流水线"最灵敏的探针
+2. CoreMark 计时区间 **354,119 拍**（测试台总周期 1,457,776）← "没碰坏流水线"最灵敏的探针
+   （历史基线：358,846 / 1,462,898 → 382,972 → 420,070）
 
 工具链（scoop 安装）：`scoop install iverilog gtkwave`
 
@@ -212,7 +218,8 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 | `doc/base_task_status.md` | 基础任务三条逐条核对 |
 | `doc/test_report_riscv-tests.md` | 回归结果、CoreMark 口径推导、板上验证证据 |
 | `doc/resource_efficiency.md` | 赛题三个性能指标成文（CoreMark/MHz、Fmax、CoreMark/LUTs） |
-| `doc/ila_analysis.md` | 流水线效率剖析 + ILA 抓取方案（含 `.fic` 生成流程） |
+| `doc/ila_analysis.md` | 流水线效率剖析 + ILA 抓取方案（含 `.fic` 生成流程）；**硬件波形已抓齐**，三种分支预测行为的逐拍证据在此 |
+| `doc/board/` | 板上实测证据：串口原始日志 + ILA 硬件波形（`ila_hw_*.vcd`） |
 | `doc/reports/` | 单次改动的验证记录（如取指重定向改造） |
 | `doc/plan.md` | 开发计划 |
 

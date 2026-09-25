@@ -1,6 +1,6 @@
 # riscv-tests 回归报告（RV32IM 五级流水线 CPU）
 
-最近更新：2026-09-21
+最近更新：2026-09-25
 方法：不改 CPU、不改 riscv-tests 仓库；`scripts/elf2mem.py` 把 ELF 拆成
      `imem.hex` / `dmem.hex`（另出合并的 `mem.hex`），`sim/tb_riscv.v` 监控
      core 对 tohost 的 store，判定 PASS / FAIL / TIMEOUT。
@@ -27,7 +27,7 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 |------|------|------|
 | PASS（rv32ui） | 42 | add addi and andi auipc beq bge bgeu blt bltu bne **fence_i** jal jalr lb lbu ld_st lh lhu lui lw **ma_data** or ori sb sh simple sll slli slt slti sltiu sltu sra srai srl srli st_ld sub sw xor xori |
 | PASS（rv32um） | 8 | **div divu mul mulh mulhsu mulhu rem remu** |
-| FAIL | 1 | `ma_data`（未对齐访存，testnum 1；规范允许不支持的架构取舍，见 §1） |
+| FAIL | 1 | `ma_data`（未对齐访存，testnum 668；规范允许不支持的架构取舍，见 §1） |
 | TIMEOUT | 0 | —— |
 
 > **rv32um 这 8 项是 2026-09-15 补上的。** 本 CPU 实现了 M 扩展、CoreMark 也是用
@@ -47,7 +47,9 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 - `lw` 从未对齐地址会跨字，无法重拼
 
 **RISC-V 规范允许实现不处理未对齐访问（§2.6 明确列为可选）**，所以这项 FAIL
-判定为"架构取舍、预期失败"。失败是**确定性**的，testnum 恒为 1。
+判定为"架构取舍、预期失败"。失败是**确定性**的，**testnum 恒为 668**
+（2026-09-25 二次勘误：迁移前（HEAD）与迁移后两份 RTL 各跑一遍都是 668，
+见下；判回归只认 49/1/0 这个组合，别去对 testnum）。
 
 > [!] **勘误（2026-09-21）**：本报告曾有一个版本写着"取指重定向改造后 `ma_data`
 > 自动转为 PASS，说明它此前更可能是冲刷路径上的潜在 bug"——**该结论无法复现，
@@ -65,6 +67,11 @@ scripts\run_riscv_tests.ps1 -ElfDir third_party\riscv-tests-elf
 >
 > 仍需诚实记录：**未对齐通路没有专门测试覆盖**，`ma_data` 是唯一的哨兵，
 > 不对外承诺这个能力。
+>
+> [!] **二次勘误（2026-09-25）**：上面复核查到的 `testnum` 也记错了 —— 实测**不是 1**。
+> 用迁移前（HEAD）和迁移后两份 RTL 各跑一遍，**都是 `testnum 668`**，与
+> `addr_result` 那类改动无关。所以本报告与 `doc/base_task_status.md`、`doc/spec.md`
+> 里的 testnum 一律以 **668** 为准；**判回归只认 49/1/0 这个组合**，别去对 testnum。
 
 ## 2. fence_i —— 已由 TIMEOUT 转为 PASS（2026-09-15）
 
@@ -153,9 +160,30 @@ Correct operation validated. See README.md for run and reporting rules.
   （`Total time (secs): 10` 是整数截断；`Iterations/Sec: 70` = 700 ÷ 10 也是按截断后的 10 算的）
 - **`Correct operation validated`** = CoreMark 自己判定 CRC 全部通过
 - `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 与仿真**逐位一致** → **CPU 在真实硬件上算得对的最强证据**
-  （[!] **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`）
+  （[!] **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`、ITER=1663 → `0x81c9`）
 
-### 板上实测结果（本地盘古板，45 MHz，ITER=1500）—— **当前设计**（2026-09-25）
+### 板上实测结果（本地盘古板，49.8927 MHz，ITER=1663）—— **当前设计**（2026-09-25）
+
+```
+CoreMark Size    : 666
+Total ticks      : 588890651
+Total time (secs): 11            ← 整数截断，实际 11.8031 s
+Iterations/Sec   : 151           ← 废数（= 1663/11），实际 140.89
+Iterations       : 1663
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0x81c9        （随 ITER 变，不比）
+Correct operation validated. See README.md for run and reporting rules.
+```
+
+- **588,890,651 ÷ 49,892,700 = 11.8031 秒** [OK] 满足赛题 ≥10s → **140.89 CoreMark**（= 1663 ÷ 11.8031）
+- 每迭代 **354,113** 周期（588,890,651 ÷ 1663）—— 与仿真 354,119 差 **−0.0016%**（板上略快）
+- `seedcrc / crclist / crcmatrix / crcstate` 与仿真**逐位一致**
+- 原始日志：`doc/board/uart_20260925_172318.txt`（30 秒内跑了 2 轮，`Total ticks` 逐位相同）
+
+### 板上实测结果（本地盘古板，45 MHz，ITER=1500）—— 历史（2026-09-25 上午）
 
 ```
 CoreMark Size    : 666
@@ -173,7 +201,7 @@ Correct operation validated. See README.md for run and reporting rules.
 
 - **538,285,445 ÷ 45 MHz = 11.9619 秒** [OK] 满足赛题 ≥10s → **125.40 CoreMark**（= 1500 ÷ 11.9619）
 - 每迭代 **358,857** 周期（538,285,445 ÷ 1500）—— **与 27 MHz 板上实测逐位相同**
-  （时钟翻倍而周期数不变 → 证明周期数与时钟无关，仿真的 358,846 也可外推到板上）
+  （时钟翻倍而周期数不变 → 证明周期数与时钟无关，仿真数据可外推到板上）
 - `seedcrc / crclist / crcmatrix / crcstate` 与仿真**逐位一致**
 - 原始日志：`doc/board/uart_20260925_005201.txt`（30 秒内跑了 2 轮，`Total ticks` 逐位相同）
 
@@ -185,24 +213,25 @@ Correct operation validated. See README.md for run and reporting rules.
 ITER=200 → Total ticks  84,018,579 / 200 = 420,093 周期/迭代   ← 改造前设计
 ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造前设计
 仿真（ITER=1，改造前）                    420,070 周期/迭代
-仿真（ITER=1，改造后，当前设计）          358,846 周期/迭代
+仿真（ITER=1，BHT 之前）                  358,846 周期/迭代   ← 历史（ID 级静态预测时代）
+仿真（ITER=1，当前设计，BHT 之后）        354,119 周期/迭代
 ```
 
 **改造前真机与仿真只差 0.0057%** → 仿真模型可信，仿真数据可以放心写进报告。
 **改造前 CoreMark/MHz = 1,000,000 / 420,094 ≈ 2.38**
-**改造后（当前设计，仿真）= 1,000,000 / 358,846 ≈ 2.787**
+**当前设计（仿真，BHT 之后）= 1,000,000 / 354,119 ≈ 2.824**（BHT 之前是 358,846 → 2.787）
 
-> 仿真的 420,070（改造前）与 382,972（改造后）都是 2026-09-21 用 `+PROF` 直接读
-> CoreMark 的 `Total ticks` 得到的。逐拍 trace 复核：`stop_time` 的读指令
+> 历史（2026-09-21 那轮）：仿真的 420,070（改造前）与 382,972（改造后）都是当时用 `+PROF`
+> 直接读 CoreMark 的 `Total ticks` 得到的。逐拍 trace 复核：`stop_time` 的读指令
 > （PC `0x2920` 的 `lw a5,0(a5)`，读 MMIO `0x7FF4`）在第 **402,182** 拍进入 MEM 级；
 > 区间的**长度** 358,846 拍与 CoreMark 自报的 `Total ticks` 逐位一致。
 > （起点在本次 trace 窗口之前，未实测，所以这里不给起点值。）
 > 此前的文档写「仿真 ≈ 420,414」，该值无法复现，已更正。
-> 注意改造前后 `ITER=1` 的测试台总周期不是同一个值（1,529,499 → 1,488,333）——
-> 因为本次改造的目的就是减少周期数；但区域内提交指令数、停顿数、前递数、访存数
+> 注意 2026-09-21 那次改造前后 `ITER=1` 的测试台总周期不是同一个值（1,529,499 → 1,488,333）——
+> 因为改造的目的就是减少周期数；但区域内提交指令数、停顿数、前递数、访存数
 > **完全相同**，说明只改了时序、没改行为。
 
-> [!] **别用 ITER=1 的测试台总周期（当前 1,462,898）当"每迭代成本"。** 那是**仿真
+> [!] **别用 ITER=1 的测试台总周期（当前 1,457,776）当"每迭代成本"。** 那是**仿真
 > 测试台**的总周期，含约 108 万周期的一次性 UART 打印开销；而 CoreMark 自己的
 > `Total ticks` 计时在打印**之前**就停了、**不含**打印。两个口径不同，混用会把
 > 迭代成本算错。
@@ -211,20 +240,22 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 
 ### 迭代次数的选取
 
-**当前设计每迭代 358,846 周期**。ITER 的分子是**你往哪儿烧**的那个时钟频率：
+**当前设计每迭代 354,119 周期**。ITER 的分子是**你往哪儿烧**的那个时钟频率：
 
 ```
-本地盘古板（45 MHz）: 450,000,000 / 358,846 ≈ 1254  → 取 ITER=1500（11.96s，余量 19.6%）
-                                                     → **已板上实测 11.9619 s / 125.40 CoreMark**
-仿真 / 远程平台(27MHz): 270,000,000 / 358,846 ≈  752  → 取 ITER=820 （10.90s，余量 9.0%）
+本地盘古板（49.8927MHz）: 498,927,000 / 354,119 ≈ 1409 → 取 ITER=1663（11.80s，余量 18%）
+                                                     → **已板上实测 11.8031 s / 140.89 CoreMark**
+仿真 / 远程平台(27MHz): 270,000,000 / 354,119 ≈  762  → 取 ITER=820 （10.75s，余量 7.5%）
 ```
 
 > [!] **改了流水线、或换了平台时钟，都必须重算这个数。**
-> 两条独立的历史教训：
+> 三条独立的历史教训：
 > ① 旧设计 420,094 周期/迭代时用 700 正合适（10.89s）；降到 358,846 后
 > **ITER=700 只剩 9.93s，会被判 invalid**。
 > ② 2026-09-25 板上时钟 27→45 MHz 后，**原来正好的 ITER=820 只剩 6.54s**，
 > 同样 invalid —— 周期数一个字没变，**是分母变了**。
+> ③ 同一天再提到 49.8927 MHz 后，45 MHz 时代的 **ITER=1500 只剩 10.65s**
+> （1500 × 354,119 ÷ 49,892,700），余量掉到 6.5% → 重取 **ITER=1663**。
 > 每次动流水线后先跑 `run_coremark.ps1 -Iter 1` 读 `Total ticks`，再按平台时钟定 ITER。
 
 ### 平台注意事项
@@ -250,10 +281,12 @@ ITER=700 → Total ticks 294,065,438 / 700 = 420,094 周期/迭代   ← 改造�
 
 1. **本报告的 49/1/0 逐项不变**（除非本次改动的目的就是改变某一项）
 2. **CoreMark 计时区间**（`+PROF` 读到的 `Total ticks`）**一字不差**
-   —— 当前基线：**358,846** 拍（测试台总周期 1,462,898），
+   —— 当前基线：**354,119** 拍（测试台总周期 1,457,776），
    CRC 为 `crclist=0xe714 crcmatrix=0x1fd7 crcstate=0x8e3a`
 
 第 2 条是"没有碰坏流水线"最灵敏的探针 —— 多一个停顿、少一次前递都会让它变。
 
-> 改造前的基线是 420,070 拍（测试台 1,529,499）。2026-09-21 的取指重定向
+> 历史基线：420,070（改造前，测试台 1,529,499）→ 382,972（2026-09-21 取指重定向）
+> → 358,846 / 1,462,898（ID 级静态预测 + jal）→ **354,119 / 1,457,776**
+> （2026-09-25 加 BHT 之后，当前）。2026-09-21 的取指重定向
 > **目的就是改变它**，所以数值变了；除这种"目的即改变"的情况外，它不该动。

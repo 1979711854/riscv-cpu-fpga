@@ -21,17 +21,18 @@ scripts\run_sim.ps1 -NoWave
 ```
 
 > [!] **上板前记得换回 ITER=1663 并同步**：跑过 `-Iter 1` 之后
-> `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有几毫秒（45 MHz 板上约 0.008 s）、
+> `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有几毫秒（49.89 MHz 板上约 0.007 s）、
 > CoreMark 判 invalid。
 > ```powershell
 > scripts\run_coremark.ps1 -Iter 1663 -SkipSim
 > scripts\sync_firmware.ps1
 > ```
-> **为什么是 1500**：ITER 要按**板上系统时钟**算 —— 本地盘古板已用 PLL 把板载 27 MHz
+> **为什么是 1663**：ITER 要按**板上系统时钟**算 —— 本地盘古板已用 PLL 把板载 27 MHz
 > 倍频到 **49.8927 MHz**（仿真与远程平台仍是 27 MHz），
 > `1663 × 354,119 ÷ 49,892,700 = 11.80 s`（余量 18%，满足赛题 ≥10 s）。
-> ⬜ **49.89 MHz 版尚未上板**（45 MHz 版已实测：`538,285,445` ÷ 45e6 = 11.9619 s / 125.40 CoreMark）
-> （日志 `doc/board/uart_20260925_005201.txt`）。
+> [OK] **49.89 MHz 版已上板实测**：`588,890,651` ÷ 49,892,700 = **11.8031 s / 140.89 CoreMark**
+> （日志 `doc/board/uart_20260925_172318.txt`）；45 MHz 版（历史）实测 `538,285,445` ÷ 45e6
+> = 11.9619 s / 125.40 CoreMark（日志 `doc/board/uart_20260925_005201.txt`）。
 > 速算式：**`ITER = 目标时长 × 板上时钟 ÷ 每迭代周期数`**，其中每迭代周期数
 > **354,119** 见上面的回归示例（这个数与时钟无关；BHT 之前是 358,846）。
 > 上板也可以直接走一条龙 `scripts\build_bitstream.ps1 coremark`（生成固件 → 同步 → 综合）。
