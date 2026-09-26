@@ -1,0 +1,186 @@
+﻿<#
+============================================================================
+ build.ps1 —— 编译 RT-Thread 应用到本 CPU（RV32IM / 32KB 统一存储器）
+----------------------------------------------------------------------------
+ 用法：
+   scripts\rtthread\build.ps1                只编译+链接，打印镜像占用
+   scripts\rtthread\build.ps1 -Firmware      再出 mem.hex（可送 PDS 综合）
+
+ 为什么不用 scripts\run_coremark.ps1 那套：那个脚本是为"单文件 C 程序 + runtime\"
+ 设计的，源码扫描不递归。RT-Thread 是深目录树 + 多个 -I 路径，得自己走。
+
+ [!] 32KB 是硬上限。每次编译都会打印 .text/.data/.bss 的占用和堆的剩余，
+     超了会直接报错停下 —— 别等上板才发现。
+============================================================================
+#>
+param(
+    [switch]$Firmware,           # 出 mem.hex（送 PDS 用）
+    [switch]$Clean               # 先清干净再编
+)
+
+$ErrorActionPreference = "Stop"
+$Here    = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Repo    = Split-Path -Parent (Split-Path -Parent $Here)   # D:\riscv-cpu-fpga
+$Tool    = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
+$GCC     = Join-Path $Tool "riscv-none-elf-gcc.exe"
+$SIZE    = Join-Path $Tool "riscv-none-elf-size.exe"
+
+$RtRoot  = Join-Path $Repo "third_party\rt-thread"
+$Build   = Join-Path $Here "build"
+$Elf     = Join-Path $Build "rtthread.elf"
+$Map     = Join-Path $Build "rtthread.map"
+
+if ($Clean -and (Test-Path $Build)) { Remove-Item $Build -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $Build | Out-Null
+
+# ---- 源文件 ----------------------------------------------------------------
+# [!] scheduler_mp.c / cpu_mp.c 是 SMP（多核）用的，我们单核，靠 --gc-sections
+#     丢掉；scheduler_up.c / cpu_up.c 才是走的那条路。
+$srcDirs = @(
+    (Join-Path $RtRoot "src"),
+    # [!] src\klibc 必须单独列：上面的 Get-ChildItem 不递归，漏了它就会在链接期报
+    #     undefined reference to `rt_memset' / `rt_vsnprintf' / `rt_strlen' 一大串。
+    #     （RT-Thread 官方 src/SConscript 末尾就是用 SConscript 递归子目录的。）
+    #     src\utest 是单元测试框架，不要。
+    (Join-Path $RtRoot "src\klibc"),
+    (Join-Path $RtRoot "libcpu\risc-v\common"),
+    (Join-Path $Here   "bsp"),
+    (Join-Path $Here   "app")
+)
+$cSrcs = @()
+$sSrcs = @()
+foreach ($d in $srcDirs) {
+    if (-not (Test-Path $d)) { throw "源目录不存在：$d" }
+    $cSrcs += Get-ChildItem $d -Filter *.c -File | ForEach-Object { $_.FullName }
+    $sSrcs += Get-ChildItem $d -Filter *.S -File | ForEach-Object { $_.FullName }
+}
+
+# ---- 按 rtconfig.h 排除不编的源文件 ----------------------------------------
+# 依据：RT-Thread 官方 src/SConscript 的 SrcRemove 规则，逐条对应到我们的 rtconfig.h。
+# 我们没开的组件，其 .c 一律不编 —— 既省编译时间，也避免它们引用不存在的配置宏。
+#   没开 RT_USING_SLAB      -> slab.c
+#   没开 RT_USING_MEMPOOL   -> mempool.c
+#   没开 RT_USING_MEMHEAP   -> memheap.c
+#   没开 RT_USING_SIGNALS   -> signal.c
+#   没开 RT_USING_DEVICE    -> device.c
+#   没开 RT_USING_SMP       -> cpu_mp.c / scheduler_mp.c（单核走 *_up.c）
+# [!] 我们的 CPU 是 RV32IM，**没有 A 扩展**（没有 lr/sc 和 AMO 指令），
+#     所以 libcpu/risc-v/common/atomic_riscv.c 编不过 —— 它无条件用
+#     amoswap.w / lr.w / sc.w，实测报 "unrecognized opcode ... extension 'zaamo' required"。
+#     rtatomic.h 里本来就有软实现分支：没定义 RT_USING_STDC_ATOMIC 时走
+#     rt_soft_atomic_*（rt_inline 写在头文件里，用关中断临界区做读改写）。
+#     所以正确做法是【不编 atomic_riscv.c】，而不是去凑 A 扩展。
+#     > 单核下这样是正确的。若日后 CPU 加了 A 扩展，删掉这行即可用硬件原子（更快）。
+#   klibc 两份 vsnprintf 二选一：官方 SConscript 的规则是"没定义
+#   RT_KLIBC_USING_VSNPRINTF_STANDARD 就用 tiny 版" —— 我们选 tiny，
+#   32KB 下这是唯一合理的选择（std 版大一截，功能我们用不到）。
+$excludeC = @('slab.c','mempool.c','memheap.c','signal.c','device.c','cpu_mp.c','scheduler_mp.c','atomic_riscv.c','rt_vsnprintf_std.c')
+$before = $cSrcs.Count
+$cSrcs = $cSrcs | Where-Object { $excludeC -notcontains [IO.Path]::GetFileName($_) }
+Write-Host ("      按 rtconfig.h 排除 $($before - $cSrcs.Count) 个源文件（未开启的组件）") -ForegroundColor DarkGray
+
+# ---- 编译选项 --------------------------------------------------------------
+$incs = @(
+    (Join-Path $RtRoot "include"),
+    (Join-Path $RtRoot "libcpu\risc-v\common"),
+    (Join-Path $Here   "bsp")
+) | ForEach-Object { "-I$_" }
+
+# -Os                          体积优先（32KB 硬墙，这个最重要）
+# -ffunction-sections/-fdata-sections + --gc-sections
+#                              没被调用的函数/数据全部丢掉 —— RT-Thread 里
+#                              大量代码我们根本用不到，不丢的话装不下
+# -fno-builtin                 不要让 gcc 把循环换成 memset/memcpy（那些是 libc 的）
+# -D__riscv_32e 不定义         我们用 RV32I，是完整 32 寄存器（32e 只有 16 个）
+$cflags = @(
+    # [!] 必须带 _zicsr：现代 RISC-V 规范把 CSR 指令从基础 I 里【拆出去了】，
+    #     只写 rv32im 的话汇编器报 "unrecognized opcode 'csrr ...' extension 'zicsr' required"。
+    #     RT-Thread 从上下文切换到 trap 分发到处要读写 CSR，所以这条不能省。
+    #     _zifencei 同理（我们的 CPU 实现了 FENCE.I）。
+    #     > 注意 CoreMark 那边用纯 "-march=rv32im" 也能过，因为它不碰 CSR —— 别照抄那边。
+    "-march=rv32im_zicsr_zifencei", "-mabi=ilp32",
+    "-Os", "-g",
+    "-ffunction-sections", "-fdata-sections",
+    "-fno-builtin", "-fno-common",
+    "-Wall", "-Wno-unused-parameter",
+    # [!] 这两个宏必须加，否则内核源码编不过：
+    #   __RTTHREAD__           RT-Thread 自己的标识
+    #   __RT_KERNEL_SOURCE__   RT-Thread v5 的"内部 API 封装门槛" —— rtsched.h 里
+    #                          只有定义了它才声明 rt_sched_tick_increase 等内部函数，
+    #                          不加就报 "implicit declaration of rt_sched_tick_increase"。
+    #                          官方 BSP 是在 rtconfig.py 里传的（见 bsp/xuantie/*/rtconfig.py）。
+    "-D__RTTHREAD__", "-D__RT_KERNEL_SOURCE__"
+    # [!] 不要加 -nostdinc：rttypes.h 要 <stdint.h>，那是工具链自带的头，
+    #     -nostdinc 会把 gcc 的 include 目录一起去掉（实测报
+    #     "fatal error: stdint.h: No such file or directory"）。
+    #     不用 libc 的代码靠链接期的 -nostdlib 保证，头在不在不影响。
+) + $incs
+
+$ldflags = @(
+    # [!] 必须带 _zicsr：现代 RISC-V 规范把 CSR 指令从基础 I 里【拆出去了】，
+    #     只写 rv32im 的话汇编器报 "unrecognized opcode 'csrr ...' extension 'zicsr' required"。
+    #     RT-Thread 从上下文切换到 trap 分发到处要读写 CSR，所以这条不能省。
+    #     _zifencei 同理（我们的 CPU 实现了 FENCE.I）。
+    #     > 注意 CoreMark 那边用纯 "-march=rv32im" 也能过，因为它不碰 CSR —— 别照抄那边。
+    "-march=rv32im_zicsr_zifencei", "-mabi=ilp32",
+    "-nostartfiles", "-nostdlib", "-static",
+    "-Wl,--gc-sections",
+    "-Wl,--no-relax",              # 我们的 CPU 没实现 RVC/压缩指令，别让链接器塞压缩跳转
+    "-T", (Join-Path $Here "bsp\link.ld"),
+    "-Wl,-Map=$Map"
+)
+
+# ---- 编译 ------------------------------------------------------------------
+Write-Host "[1/3] 编译 $($cSrcs.Count) 个 .c + $($sSrcs.Count) 个 .S ..." -ForegroundColor Cyan
+$objs = @()
+$idx = 0
+foreach ($src in ($cSrcs + $sSrcs)) {
+    $idx++
+    $obj = Join-Path $Build ("{0:d3}_{1}.o" -f $idx, [IO.Path]::GetFileNameWithoutExtension($src))
+    $objs += $obj
+    if ($src -like "*.S") {
+        & $GCC @cflags -c $src -o $obj
+    } else {
+        & $GCC @cflags -c $src -o $obj
+    }
+    if ($LASTEXITCODE -ne 0) { throw "编译失败：$src" }
+}
+
+# ---- 链接 ------------------------------------------------------------------
+Write-Host "[2/3] 链接 ..." -ForegroundColor Cyan
+& $GCC @ldflags @objs -o $Elf
+if ($LASTEXITCODE -ne 0) { throw "链接失败（多半是 32KB 装不下，看上面的 undefined / overflow）" }
+
+# ---- 占用报告 --------------------------------------------------------------
+Write-Host "[3/3] 镜像占用：" -ForegroundColor Cyan
+& $SIZE $Elf
+$sizeLine = (& $SIZE $Elf | Select-Object -Last 1) -split '\s+' | Where-Object { $_ -ne '' }
+$text = [int]$sizeLine[0]; $data = [int]$sizeLine[1]; $bss = [int]$sizeLine[2]
+
+# RAM 占用 = .text + .data + .bss（统一存储器，代码和数据抢同一块 32KB）
+$ramUsed = $text + $data + $bss
+$ramTotal = 0x8000          # 32KB
+$stackTop = 0x7FF0
+$heapEnd  = 0x7000
+Write-Host ("      代码 .text = {0,6} 字节" -f $text)
+Write-Host ("      数据 .data = {0,6} 字节   .bss = {1,6} 字节" -f $data, $bss)
+Write-Host ("      静态占用   = {0,6} 字节 / {1} 字节 ({2:p1})" -f $ramUsed, $ramTotal, ($ramUsed / $ramTotal))
+Write-Host ("      堆可用     = {0,6} 字节  (0x{1:X} .. 0x{2:X})" -f ($heapEnd - $ramUsed), $ramUsed, $heapEnd)
+
+if ($ramUsed -ge $ramTotal) {
+    throw "镜像 $ramUsed 字节 >= 32KB，装不下！先裁 rtconfig.h（关组件）或缩应用。"
+}
+if ($ramUsed -ge $heapEnd) {
+    throw "静态占用 $ramUsed 已越过栈底 0x$('{0:X}' -f $heapEnd)，堆被挤没了。先裁代码。"
+}
+
+# ---- 出固件（可选）---------------------------------------------------------
+if ($Firmware) {
+    Write-Host "生成 mem.hex ..." -ForegroundColor Cyan
+    $py = "python"
+    & $py (Join-Path $Repo "scripts\elf2mem.py") $Elf (Join-Path $Build "mem.hex")
+    if ($LASTEXITCODE -ne 0) { throw "elf2mem.py 失败" }
+    Write-Host "  -> $Build\mem.hex" -ForegroundColor Green
+}
+
+Write-Host "完成：$Elf" -ForegroundColor Green

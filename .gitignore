@@ -125,3 +125,6 @@ $RECYCLE.BIN/
 # doc/board/uart_*.txt 同类（都是板上证据），要入库。
 # 命名约定见 doc/ila_analysis.md §7.6：ila_hw_<触发信号>_<代码区>.vcd
 !doc/board/*.vcd
+
+# ---- RT-Thread 移植（scripts/rtthread/）----
+/scripts/rtthread/build/
