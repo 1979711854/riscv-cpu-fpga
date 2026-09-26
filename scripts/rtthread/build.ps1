@@ -15,7 +15,8 @@
 #>
 param(
     [switch]$Firmware,           # 出 mem.hex（送 PDS 用）
-    [switch]$Clean               # 先清干净再编
+    [switch]$Clean,              # 先清干净再编
+    [switch]$Sim                 # 按【仿真口径】编：27MHz + 短延时 + 出 hex
 )
 
 $ErrorActionPreference = "Stop"
@@ -109,12 +110,24 @@ $cflags = @(
     #                          只有定义了它才声明 rt_sched_tick_increase 等内部函数，
     #                          不加就报 "implicit declaration of rt_sched_tick_increase"。
     #                          官方 BSP 是在 rtconfig.py 里传的（见 bsp/xuantie/*/rtconfig.py）。
-    "-D__RTTHREAD__", "-D__RT_KERNEL_SOURCE__"
     # [!] 不要加 -nostdinc：rttypes.h 要 <stdint.h>，那是工具链自带的头，
     #     -nostdinc 会把 gcc 的 include 目录一起去掉（实测报
     #     "fatal error: stdint.h: No such file or directory"）。
     #     不用 libc 的代码靠链接期的 -nostdlib 保证，头在不在不影响。
+    "-D__RTTHREAD__", "-D__RT_KERNEL_SOURCE__"
 ) + $incs
+
+# ---- 仿真口径：-Sim 时覆盖时钟与延时 ----
+# [!] 仿真时钟是 **100MHz**，不是 27MHz —— sim/ 下所有测试台都写 `always #5 clk = ~clk`。
+#     （CLAUDE.md 里说的"仿真 27MHz"指的是 UART_DIV 默认值 234 那套标称口径，
+#      指的是别把 49.89MHz 的 433 带进仿真；实际仿真节拍是 100MHz。）
+#     mtime 数的是 CPU 时钟周期，所以 tick 换算必须按 100MHz，否则 tick 不是 1ms。
+# APP_DELAY_MS 调小是为了让仿真跑得动：500ms @100MHz = 5000 万周期，几轮就几分钟。
+if ($Sim) {
+    $cflags += @("-DBOARD_SYSTEM_CLOCK_HZ=100000000", "-DAPP_DELAY_MS=5")
+    $Firmware = $true
+    Write-Host "      [仿真口径] 时钟 100MHz，乒乓节奏 5ms，并生成 hex" -ForegroundColor Yellow
+}
 
 $ldflags = @(
     # [!] 必须带 _zicsr：现代 RISC-V 规范把 CSR 指令从基础 I 里【拆出去了】，
@@ -176,11 +189,14 @@ if ($ramUsed -ge $heapEnd) {
 
 # ---- 出固件（可选）---------------------------------------------------------
 if ($Firmware) {
-    Write-Host "生成 mem.hex ..." -ForegroundColor Cyan
-    $py = "python"
-    & $py (Join-Path $Repo "scripts\elf2mem.py") $Elf (Join-Path $Build "mem.hex")
+    Write-Host "生成 hex 镜像 ..." -ForegroundColor Cyan
+    # [!] elf2mem.py 的第二个参数是【输出目录】，不是文件名 ——
+    #     写成 ...\mem.hex 的话它会建一个叫 mem.hex 的目录，然后"成功"退出。
+    #     它一次产出 4 份：imem.hex / dmem.hex / mem.hex / tohost_addr.hex
+    #     （仿真用 imem+dmem，PDS 综合用 mem.hex）
+    & python (Join-Path $Repo "scripts\elf2mem.py") $Elf $Build
     if ($LASTEXITCODE -ne 0) { throw "elf2mem.py 失败" }
-    Write-Host "  -> $Build\mem.hex" -ForegroundColor Green
+    Write-Host "  -> $Build\{imem,dmem,mem}.hex" -ForegroundColor Green
 }
 
 Write-Host "完成：$Elf" -ForegroundColor Green

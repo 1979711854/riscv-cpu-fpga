@@ -11,17 +11,64 @@
 | 项 | 状态 |
 |---|---|
 | 编译链接 | **[OK] 通过** |
-| 镜像占用 | `.text` 18,805 / `.data` 188 / `.bss` 2,528 = **21,521 字节 (65.7%)** |
-| 堆剩余 | **7,151 字节** |
-| 仿真验证 | [ ] 待做 |
+| 镜像占用 | `.text` 18,801 / `.data` 188 / `.bss` 2,528 = **21,517 字节 (65.7%)** |
+| 堆剩余 | **7,155 字节** |
+| **仿真验证** | **[OK] 通过** —— 见下面「仿真验证结果」 |
 | 上板验证 | [ ] 待做 |
 
-## 怎么编译
+版本：**RT-Thread v5.3.1**（内核子集，`libcpu/risc-v/common` 的 RV32 通用移植层）。
+
+## 怎么跑
 
 ```powershell
-scripts\rtthread\build.ps1              # 编译+链接，打印占用
-scripts\rtthread\build.ps1 -Firmware    # 再出 mem.hex
+# 一条命令：编 RT-Thread -> 编测试台 -> 跑仿真 -> 报三个自检
+scripts\rtthread\run_sim.ps1
+
+# 只编不跑
+scripts\rtthread\build.ps1              # 上板口径（49.8927MHz）
+scripts\rtthread\build.ps1 -Firmware    # 再出 mem.hex（送 PDS 综合）
+scripts\rtthread\build.ps1 -Sim         # 仿真口径（100MHz + 短延时 + 出 hex）
 ```
+
+## 仿真验证结果（2026-09-27）
+
+`scripts\rtthread\run_sim.ps1` 的输出：
+
+```
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Sep 27 2026
+ 2006 - 2026 Copyright by RT-Thread team
+
+========================================
+ RISC-V RV32IM @ 49.8927MHz  RT-Thread
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 3800 bytes
+[boot] both threads started -- watching ping/pong alternate
+[pong] got semaphore, total 1
+[ping] round 1  tick 20 (delta 20, expect 20)
+[pong] got semaphore, total 2
+[ping] round 2  tick 40 (delta 20, expect 20)
+...
+=== PASS ===
+```
+
+| 自检 | 判据 | 结果 |
+|---|---|---|
+| 控制台通了 | 出现 RT-Thread banner | **[OK]** |
+| **系统 tick 在走** | ping 的 tick 差值 == `APP_DELAY_MS`，且连续多轮 | **[OK]** `delta 20, expect 20` 精确相等 |
+| **上下文切换正确** | ping / pong 靠信号量交替，次数成对 | **[OK]** ping 6 次 / pong 7 次 |
+
+**这三条一起通过，说明**：异常/中断入口（`mtvec` → `SW_handler` → `rt_rv32_system_irq_handler`）
+是对的、`mscratch` 中断栈切换是对的、`mstatus` 的保存恢复是对的、调度器能正常切线程。
+**RT-Thread 的内核在这颗 CPU 上真的跑起来了。**
+
+> [!] **仿真口径与上板不同**：仿真时钟 **100MHz**（`sim/` 下所有测试台都是 `always #5`），
+> 所以 tick 换算按 100MHz；上板是 49.8927MHz。`-Sim` 会自动传对。
+> （CLAUDE.md 里说的"仿真 27MHz"指的是 UART_DIV 默认值 234 那套**标称**口径 ——
+> 意思是"别把 49.89MHz 的 433 带进仿真"，不是说仿真节拍是 27MHz。）
 
 ## 目录
 

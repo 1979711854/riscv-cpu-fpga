@@ -9,9 +9,19 @@
 #ifndef __BOARD_H__
 #define __BOARD_H__
 
-/* ---- 板上时钟：49.8927 MHz（板载 27MHz 经 PLL 倍频，RATIO0=23）----
- * 只用于延时换算和注释；RT-Thread 的 tick 由 mtimecmp 决定，不依赖这个数。 */
+/* ---- 系统时钟：用于把 tick/延时换算成 mtime 周期数 ----
+ *
+ * 三套口径别混（和 CLAUDE.md 里说的一样）：
+ *   上板（本地盘古板）  49.8927 MHz  板载 27MHz 经 PLL 倍频，RATIO0=23
+ *   仿真                27 MHz       测试台例化 cpu_top，不传 UART_DIV、不走 PLL
+ *   远程 FPGA 平台      27 MHz       没有 PLL
+ *
+ * 所以【不能写死】。build.ps1 -Sim 会自动传 27000000，上板用默认值。
+ * [!] 算错的后果：tick 周期偏 1.85 倍 —— 功能还能跑（mdelay 数的是 tick 个数），
+ *     但仿真里每 500ms 要多跑近一倍的周期，白白拖慢仿真。 */
+#ifndef BOARD_SYSTEM_CLOCK_HZ
 #define BOARD_SYSTEM_CLOCK_HZ       49892700u
+#endif
 
 /* ---- 外设 MMIO（字地址，直接读写）-------------------------------------- */
 #define MMIO_GPIO_BASE              0x80000000u  /* W LED[7:0] / R {key[7:0], led[7:0]} */

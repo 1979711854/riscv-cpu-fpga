@@ -31,6 +31,14 @@ static struct rt_thread pong_thread;
 static rt_uint8_t ping_stack[STACK_PING];
 static rt_uint8_t pong_stack[STACK_PONG];
 
+/* 乒乓的节奏。上板用 500ms（肉眼看得清），仿真用 build.ps1 -Sim 传个小值 ——
+ * 500ms 在 27MHz 仿真里是 1350 万周期，跑几轮就要好几分钟，没必要。
+ * [!] 判断 tick 是否正常看的是【rt_tick_get() 的差值 ≈ 这个值】，
+ *     所以改这个数不会让判据失效，只是让仿真快很多。 */
+#ifndef APP_DELAY_MS
+#define APP_DELAY_MS 500
+#endif
+
 /* 两个线程用这个信号量玩"乒乓球"：ping 放、pong 取，顺序错了立刻能看出来 */
 static struct rt_semaphore ping_pong_sem;
 static rt_uint32_t round_count = 0;
@@ -53,13 +61,13 @@ static void ping_entry(void *parameter)
 
         /* 信号量要等对方取走后再放下一个 —— 用 mdelay 卡住节奏。
          * [!] 这里是验证 tick 的地方：如果 tick 没在走，mdelay 会永远不返回。 */
-        rt_thread_mdelay(500);
+        rt_thread_mdelay(APP_DELAY_MS);
 
         now = rt_tick_get();
         n++;
 
-        rt_kprintf("[ping] round %d  tick %d (delta %d, expect 500)\n",
-                   n, now, now - last_tick);
+        rt_kprintf("[ping] round %d  tick %d (delta %d, expect %d)\n",
+                   n, now, now - last_tick, APP_DELAY_MS);
         last_tick = now;
     }
 }
@@ -136,7 +144,7 @@ int main(void)
      * 系统会继续跑 ping / pong 两个线程 —— 它们交替打印就说明调度正常。 */
     while (1)
     {
-        rt_thread_mdelay(5000);
+        rt_thread_mdelay(APP_DELAY_MS * 10);
         rt_kprintf("[main] still alive, uptime %d ticks\n", rt_tick_get());
     }
 }
