@@ -12,7 +12,7 @@
 |---|---|
 | 编译链接 | **[OK] 通过** |
 | 镜像占用 | `.text` 18,801 / `.data` 188 / `.bss` 2,528 = **21,517 字节 (65.7%)** |
-| 堆剩余 | **7,155 字节** |
+| 堆剩余 | **3,800 字节**（`_end` 0x6128 .. `__heap_end` 0x7000）|
 | **仿真验证** | **[OK] 通过** —— 见下面「仿真验证结果」 |
 | 上板验证 | [ ] 待做 —— 步骤见下面「上板」 |
 
@@ -55,7 +55,7 @@ scripts\build_bitstream.ps1 rtthread
  RISC-V RV32IM @ 49.8927MHz  RT-Thread
 ========================================
 [boot] tick period  = 1000 Hz
-[boot] heap         = 7151 bytes
+[boot] heap         = 3800 bytes
 [pong] got semaphore, total 1
 [ping] round 1  tick 500 (delta 500, expect 500)     <- delta 必须精确等于 500
 [pong] got semaphore, total 2
@@ -224,7 +224,7 @@ PowerShell 5.1 读**无 BOM** 的 `.ps1` 时按 GBK 解析，中文注释会把�
 | `.data` | 188 | 已初始化全局量 |
 | `.bss` | 2,528 | 含两个静态线程栈 512×2 = 1KB |
 | **静态合计** | **21,521** | **65.7%** |
-| 堆 | 7,151 | `_end` .. `0x7000` |
+| 堆 | **3,800** | `_end`(0x6128) .. `0x7000` —— 用 `nm` 取 `_end` 算，别用 text+data+bss 相加（差近一倍）|
 | 中断栈 / 引导栈 | 0x7000..0x7FF0 | 4KB，栈顶 0x7FF0（兼容区在 0x7FF0 以上，不能越）|
 
 > **余量不多但够用。** 代码一大堆就变小；不够时先裁 `rtconfig.h`（关组件），

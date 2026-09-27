@@ -178,7 +178,20 @@ $heapEnd  = 0x7000
 Write-Host ("      代码 .text = {0,6} 字节" -f $text)
 Write-Host ("      数据 .data = {0,6} 字节   .bss = {1,6} 字节" -f $data, $bss)
 Write-Host ("      静态占用   = {0,6} 字节 / {1} 字节 ({2:p1})" -f $ramUsed, $ramTotal, ($ramUsed / $ramTotal))
-Write-Host ("      堆可用     = {0,6} 字节  (0x{1:X} .. 0x{2:X})" -f ($heapEnd - $ramUsed), $ramUsed, $heapEnd)
+# [!] 堆的大小必须用【链接脚本算出来的 _end】，不能用 text+data+bss 相加 ——
+#     后者没算段间对齐填充（link.ld 里 `. = ALIGN(0x1000)` 把数据段推到 0x1000），
+#     2026-09-27 实测：相加减法给出 7151 字节，而真实 _end=0x6128、堆只有 3800 字节，
+#     **差近一倍**。板上程序打印的 heap 值就是 3800，与 _end 一致。
+$NM = Join-Path $Tool "riscv-none-elf-nm.exe"
+$endAddr = 0
+foreach ($l in (& $NM $Elf)) {
+    if ($l -match '^([0-9a-fA-F]+)\s+\S\s+_end$') { $endAddr = [Convert]::ToInt32($matches[1], 16) }
+}
+if ($endAddr -gt 0) {
+    Write-Host ("      堆可用     = {0,6} 字节  (_end 0x{1:X} .. __heap_end 0x{2:X})" -f ($heapEnd - $endAddr), $endAddr, $heapEnd)
+} else {
+    Write-Host "      [!] 取不到 _end 符号，堆大小无法准确报告" -ForegroundColor Yellow
+}
 
 if ($ramUsed -ge $ramTotal) {
     throw "镜像 $ramUsed 字节 >= 32KB，装不下！先裁 rtconfig.h（关组件）或缩应用。"
