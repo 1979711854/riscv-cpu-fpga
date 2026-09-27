@@ -15,7 +15,7 @@
 | `board_bringup.md` | **上板教程** —— 接线（两根 USB 线）、引脚表、烧录两个流程、串口抓取、排障速查 |
 | `board/` | **板上实测证据** —— 串口原始日志 + **ILA 硬件波形**（`ila_hw_*.vcd`）+ 索引（**当前 49.8927 MHz 版 ITER=1663 已实测：11.8031 s / 140.89 CoreMark**；45 MHz 时代 ITER=1500 的 11.9619 s / 125.40 与 27 MHz 时代 ITER=820 的 10.898 s / 75.24 作为历史对照保留） |
 | `figures/` | 流水线时序波形图（`pipeline_*.svg` / `.png`） |
-| `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`、**`2026-09-24_teammate_45mhz.md`（迁移方案）**、`2026-09-25_45mhz_migration.md`（27→45 MHz 执行结果：6 项验证全部通过，含板上实测）、**`2026-09-25_49mhz_migration.md`（45→49.89 MHz + BHT 执行结果，含板上实测 —— 当前口径的依据）**、**`2026-09-25_progress_report.md`（进度报告，含原"待修改清单"的口径差异结论）**、**`2026-09-25_handoff_rtthread_gameconsole.md`（新任务书）**） |
+| `reports/` | 单次改动的验证记录与会话报告（`2026-09-21_branch_opt_verify.md`、`2026-09-23_board_bringup.md`、**`2026-09-24_teammate_45mhz.md`（迁移方案）**、`2026-09-25_45mhz_migration.md`（27→45 MHz 执行结果：6 项验证全部通过，含板上实测）、**`2026-09-25_49mhz_migration.md`（45→49.89 MHz + BHT 执行结果，含板上实测 —— 当前口径的依据）**、**`2026-09-25_progress_report.md`（进度报告，含原"待修改清单"的口径差异结论）**、**`2026-09-28_handoff_mario.md`（新任务书）**） |
 | `paper/` | 论文撰写思路与获奖策略 |
 | `patches/` | 给队友的兼容补丁（历史记录） |
 

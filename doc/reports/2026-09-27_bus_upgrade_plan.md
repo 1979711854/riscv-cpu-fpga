@@ -4,7 +4,7 @@
 >
 > **本文是自包含的** —— 不需要先读别的文档就能开工。需要细节时按文中索引跳转。
 >
-> **上一份任务书**：`doc/reports/2026-09-25_handoff_rtthread_gameconsole.md`
+> **上一份任务书**：`doc/reports/2026-09-28_handoff_mario.md`
 > （应用场景落地：RT-Thread + 掌上游戏机）。**RT-Thread Nano 移植已经通了仿真**
 > （提交 `a96fb56`），显示外设与游戏本体仍未开工。
 >
@@ -578,7 +578,7 @@ Cache 的**唯一价值**是"隐藏慢速后端的延迟"。现在没有慢速�
 ### 7.1 [重点] SPI TFT 显示**不需要**改总线
 
 **这是本节最重要的一句，能省掉大量误判。**
-`doc/reports/2026-09-25_handoff_rtthread_gameconsole.md` §2 定的显示方案
+`doc/reports/2026-09-28_handoff_mario.md` §2 定的显示方案
 （SPI TFT，ILI9341 / ST7789）**不需要 `mem_ready`，也不需要任何桥**：
 
 * 写路径可以做成**"写进 FIFO 就 1 拍响应"** —— CPU 写完就走，
