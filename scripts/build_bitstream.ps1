@@ -201,6 +201,11 @@ if ($Variant -eq "coremark") {
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
     Write-Host " [重点] 板上时钟 49.8927MHz，期望 Total ticks ≈ 588,900,000 -> /49,892,700 = 11.80 s"
     Write-Host "       （**别再用 ÷45e6 或 ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
+} elseif ($Variant -eq "rtthread") {
+    Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
+    Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"
+    Write-Host " [重点] 三条判据：banner 出来 / [ping] 的 delta 精确等于 500 / [pong] total 递增"
+    Write-Host "       板级：led[0]=pll_locked=丝印 D19 常亮（led[1]=done=D18 本变体【不会亮】，别误判）"
 } else {
     Write-Host "  2) 烧完开串口，应反复打印 KEY=0x00 LED=0x00；按 SW4..SW7 看对应灯亮"
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4"
