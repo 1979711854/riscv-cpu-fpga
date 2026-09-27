@@ -1,0 +1,97 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-09-27 23:24:58
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Sep 27 2026 23:18:36
+ 2006 - 2026 Copyright by RT-Thread team
+
+========================================
+ RISC-V RV32IM @ 49.8927MHz  RT-Thread  
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 3800 bytes
+[boot] both threads started -- watching ping/pong alternate
+[pong] got semaphore, total 1
+[ping] round 1  tick 500 (delta 500, expect 500)
+[pong] got semaphore, total 2
+[ping] round 2  tick 1000 (delta 500, expect 500)
+[pong] got semaphore, total 3
+[ping] round 3  tick 1500 (delta 500, expect 500)
+[pong] got semaphore, total 4
+[ping] round 4  tick 2000 (delta 500, expect 500)
+[pong] got semaphore, total 5
+[ping] round 5  tick 2500 (delta 500, expect 500)
+[pong] got semaphore, total 6
+[ping] round 6  tick 3000 (delta 500, expect 500)
+[pong] got semaphore, total 7
+[ping] round 7  tick 3500 (delta 500, expect 500)
+[pong] got semaphore, total 8
+[ping] round 8  tick 4000 (delta 500, expect 500)
+[pong] got semaphore, total 9
+[ping] round 9  tick 4500 (delta 500, expect 500)
+[pong] got semaphore, total 10
+[main] still alive, uptime 5000 ticks
+[ping] round 10  tick 5000 (delta 500, expect 500)
+[pong] got semaphore, total 11
+[ping] round 11  tick 5500 (delta 500, expect 500)
+[pong] got semaphore, total 12
+[ping] round 12  tick 6000 (delta 500, expect 500)
+[pong] got semaphore, total 13
+[ping] round 13  tick 6500 (delta 500, expect 500)
+[pong] got semaphore, total 14
+[ping] round 14  tick 7000 (delta 500, expect 500)
+[pong] got semaphore, total 15
+[ping] round 15  tick 7500 (delta 500, expect 500)
+[pong] got semaphore, total 16
+[ping] round 16  tick 8000 (delta 500, expect 500)
+[pong] got semaphore, total 17
+[ping] round 17  tick 8500 (delta 500, expect 500)
+[pong] got semaphore, total 18
+[ping] round 18  tick 9000 (delta 500, expect 500)
+[pong] got semaphore, total 19
+[ping] round 19  tick 9500 (delta 500, expect 500)
+[pong] got semaphore, total 20
+[main] still alive, uptime 10000 ticks
+[ping] round 20  tick 10000 (delta 500, expect 500)
+[pong] got semaphore, total 21
+[ping] round 21  tick 10500 (delta 500, expect 500)
+[pong] got semaphore, total 22
+[ping] round 22  tick 11000 (delta 500, expect 500)
+[pong] got semaphore, total 23
+[ping] round 23  tick 11500 (delta 500, expect 500)
+[pong] got semaphore, total 24
+[ping] round 24  tick 12000 (delta 500, expect 500)
+[pong] got semaphore, total 25
+[ping] round 25  tick 12500 (delta 500, expect 500)
+[pong] got semaphore, total 26
+[ping] round 26  tick 13000 (delta 500, expect 500)
+[pong] got semaphore, total 27
+[ping] round 27  tick 13500 (delta 500, expect 500)
+[pong] got semaphore, total 28
+[ping] round 28  tick 14000 (delta 500, expect 500)
+[pong] got semaphore, total 29
+[ping] round 29  tick 14500 (delta 500, expect 500)
+[pong] got semaphore, total 30
+[main] still alive, uptime 15000 ticks
+[ping] round 30  tick 15000 (delta 500, expect 500)
+[pong] got semaphore, total 31
+[ping] round 31  tick 15500 (delta 500, expect 500)
+[pong] got semaphore, total 32
+[ping] round 32  tick 16000 (delta 500, expect 500)
+[pong] got semaphore, total 33
+[ping] round 33  tick 16500 (delta 500, expect 500)
+[pong] got semaphore, total 34
+[ping] round 34  tick 17000 (delta 500, expect 500)
+[pong] got semaphore, total 35
+[ping] round 35  tick 17500 (delta 500, expect 500)
+[pong] got semaphore, total 36
+[ping] round 36  tick 18000 (delta 500, expect 500)
+[pong] got semaphore, total 37
+[ping] round 37  tick 18500 (delta 500, expect 500)
+[pong] got semaphore, total 38
+[ping] round 38  tick 19000 (delta 500, expect 500)
+[pong] got semaphore, total 39
+[ping] round 39  tick 19500 (delta 500, expect 500)
+[pong] got semaphore, total 40
+# 结束于 2026-09-27 23:25:28，共 95 行
