@@ -26,11 +26,22 @@ module unified_mem (
     input  wire [3:0]  b_byte_en,
     output reg  [31:0] b_rd_data,
     input  wire        b_clk,
-    input  wire        b_rst
+    input  wire        b_rst,
+
+    // ---- B 口就绪（新增，配合 core.v 的访存等待机制）----
+    // 恒 1 表示"这次访存完成了"。默认（不加 plusarg）恒为 1，行为与以前【逐位相同】。
+    // 加 +MEMWAIT=n 后每 n+1 拍才拉高一次，用来【验证】core.v 的停顿逻辑真的生效。
+    output reg         b_ready
 );
     reg [31:0] mem [0:8191];
     reg [1023:0] hexpath;
     integer i;
+
+    // 访存额外等待周期。0 = 不等待（默认，与改动前一致）。
+    // [!] 只作用于 B 口（数据访存）。A 口（取指）没有 ready 通路 —— 取指永远是
+    //     1 拍，这是当前架构的既定事实，去零等待只在数据侧做验证。
+    integer memwait = 0;
+    integer wait_cnt = 0;
 
     initial begin
         // 必须先清零：未初始化地址读出 X，会让比较类测试莫名失败
@@ -45,6 +56,7 @@ module unified_mem (
             $readmemh("programs/imem.hex", mem);
             $readmemh("programs/dmem.hex", mem);
         end
+        void'($value$plusargs("MEMWAIT=%d", memwait));
     end
 
     // A 口：同步读（非阻塞 ⇒ 与 B 口写同址时读到旧值，即 read_first）
@@ -66,5 +78,31 @@ module unified_mem (
     always @(posedge b_clk or posedge b_rst) begin
         if (b_rst) b_rd_data <= 32'd0;
         else       b_rd_data <= mem[b_addr];
+    end
+
+    // ------------------------------------------------------------------
+    // B 口就绪时序（+MEMWAIT=n 时才有等待）
+    // ------------------------------------------------------------------
+    // memwait = 0 时：每个沿 wait_cnt 都等于 0，于是 b_ready 恒 1、
+    // b_rd_data 每个沿更新一次 —— 与改动前【逐位相同】。
+    //
+    // memwait = n > 0 时：数到 n 才拉高一次 b_ready，再从头数。
+    // 因为停顿期间 CPU 会把 mem_addr 保持住（这正是 core.v 那三处冻结做的事），
+    // 所以 mem[b_addr] 每次采的都是同一个地址，数据是对的。
+    //
+    // [!] 写操作在停顿期间会被重复执行 n+1 次。对 BRAM（同地址写同值）是幂等的，
+    //     所以这里不处理。**但对 FIFO 类外设（UART TX）就不行** —— 真正的多拍
+    //     设备要在桥里自己保证写只发生一次（见 task book §3 的接口约定）。
+    always @(posedge b_clk or posedge b_rst) begin
+        if (b_rst) begin
+            wait_cnt <= 0;
+            b_ready  <= 1'b1;
+        end else if (wait_cnt == memwait) begin
+            b_ready  <= 1'b1;          // 这一拍之后 ready 拉高，CPU 在下一个沿采数据
+            wait_cnt <= 0;
+        end else begin
+            b_ready  <= 1'b0;
+            wait_cnt <= wait_cnt + 1;
+        end
     end
 endmodule

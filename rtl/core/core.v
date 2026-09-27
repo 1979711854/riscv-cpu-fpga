@@ -23,6 +23,14 @@ module core (
     output wire        mem_re,
     input  wire [31:0] mem_rdata,
 
+    // ---- 访存就绪（访存等待机制）----
+    // 恒 1 时行为与"固定 1 拍"完全一致（逐位不变）。
+    // 为 0 时本模块把 MEM/WB 与上游一起冻住，等它拉高 —— 这是接 APB/AXI
+    // 等多拍总线的前提（那些协议一次传输要 2 拍以上，或要 valid/ready 握手）。
+    // [!] 冻结方向必须和 stall/div_stall 一致：【保持】而不是【清】。
+    //     清成气泡会把还没写回的那条指令丢掉。
+    input  wire        mem_ready,
+
     // ---- 中断源（电平，高有效）----
     // 直接对应 mip 的两个位，内核把它们与 mie / mstatus.MIE 相与后裁决。
     // 之所以是电平而不是脉冲：中断的采样点在 EX 级，且要求"软件清源后自动落下"
@@ -155,11 +163,23 @@ module core (
     // 同一条指令的性质决定，互斥。
     //   trap 优先级最高：异常/中断时 EX 级那条指令必须被丢弃，
     //   它比任何分支重定向都优先。（mret 不在这里 —— 它折进了 ex_flush，见 EX 段。）
+    //
+    // [!] `!mem_ready` 必须和 stall/div_stall 一起退回 if_addr_d ——
+    //     这不是"顺手加的"，是【承重】的，漏了会静默丢指令：
+    //
+    //     访存停顿的第一拍会把 IF/ID 冻结，而那一拍本来要收下的是上一拍发出的
+    //     那次取指（地址 = if_addr_d）。冻结把它拦掉了，所以必须【重发同一个
+    //     地址】—— 这正是 if_addr_d 这条支路存在的理由，和 stall 完全同理。
+    //
+    //     若这里退回 pc_r（错），则会去取"下一条"，于是那条被拦掉的指令
+    //     永远补不回来 → 程序从停顿点开始整段错位。
+    //     2026-09-27 实测：漏了它时 +MEMWAIT=2 下 RT-Thread 一个字节都打不出来，
+    //     pc 停在 0x18d0；补上后同样的等待周期下全部自检通过。
     wire [31:0] fetch_addr = trap                ? trap_target :
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              id_redirect         ? id_target :
-                             (stall || div_stall) ? if_addr_d :
+                             (stall || div_stall || !mem_ready) ? if_addr_d :
                                                     pc_r;
 
     // 更新【无门控】：fetch_addr 在 stall/div_stall 时就等于 if_addr_d 自身，
@@ -266,7 +286,25 @@ module core (
     // ex_flush 优先：EX 级是更老的指令，它重定向时 ID 级指令本来就会被杀掉。
     // stall / div_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
     // 流水线状态会脱节。
-    assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !div_stall;
+    // [!] `mem_ready` 必须或进来 —— 这一条不加会【静默破坏分支预测的一致性】：
+    //
+    //   `id_ex_pred_taken <= id_redirect` 是在 ID/EX 里锁存的，而 id_redirect 的
+    //   另外三个因子（ex_flush/stall/div_stall）来自【后级】、逐拍在变。
+    //   没有访存停顿时，分支在 ID 只停 1 拍，两边天然一致；
+    //   一旦访存停住多拍，分支会在 ID 滞留好几拍，于是可能出现
+    //   "某一拍真的重定向了、锁存那一拍却没置上 pred 标志" —— 状态不一致。
+    //
+    //   后果：那条分支进 EX 后 id_ex_pred_taken=0，于是
+    //     ex_flush   = ex_resolve_taken && !pred   → 该跳时冲刷（看起来正常）
+    //     ex_mispred = !ex_resolve_taken && pred    → 该【不】跳时【不】恢复 ✗
+    //   即"预测 taken 但实际 not-taken"这条恢复路径永远不触发 → 分支预测
+    //   一旦预测 taken 就再也纠不回来，循环退不出去。
+    //   2026-09-27 实测：漏了它时 +MEMWAIT=2 下 BSS 清零循环冲过上限 0x6128
+    //   一直转（pc 停在 0x24，rs1_val 已到 0x6200）。
+    //
+    //   抑制到 mem_ready 释放那拍再统一生效是安全的：停顿期间取指本来就冻着
+    //   （fetch_addr 走 if_addr_d），重定向晚一拍执行正好跟着一起释放。
+    assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !div_stall && mem_ready;
 
     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
     assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
@@ -585,7 +623,9 @@ module core (
             pc_r <= ex_mispred_target + 32'd4;
         else if (id_redirect)
             pc_r <= id_target + 32'd4;
-        else if (!stall && !div_stall)
+        // [!] mem_ready 也要或进来：访存没完成时 pc_r 必须停住，
+        //     否则取指会跑到前面去、把停在 MEM 的那条指令的后续全冲掉。
+        else if (!stall && !div_stall && mem_ready)
             pc_r <= pc_r + 32'd4;
     end
 
@@ -609,11 +649,13 @@ module core (
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
             if_id_valid <= 1'b0;          // 冲刷插入的是气泡，不是真指令
-        end else if (!stall && !div_stall) begin
+        end else if (!stall && !div_stall && mem_ready) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
             if_id_instr <= imem_rd;
         end
+        // [!] 注意这里是"三者都不成立就【保持】"，不是清 ——
+        //     访存停顿（mem_ready=0）属于这一类：停住不动，不清成气泡。
     end
 
     // ================= ID/EX 寄存器 =================
@@ -649,7 +691,9 @@ module core (
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
             id_ex_valid     <= 1'b0;
-        end else if (!div_stall) begin
+        // [!] mem_ready=0 时和 div_stall 一样【保持】：停在 MEM 的那条指令
+        //     还在 ID/EX 的下游，这里必须冻住，不能推进也不能清。
+        end else if (!div_stall && mem_ready) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
             id_ex_alu_b_sel <= alu_b_sel;
@@ -710,7 +754,16 @@ module core (
             ex_mem_rd         <= 5'd0;
             ex_mem_funct3     <= 3'd0;
             ex_mem_sys_ebreak <= 1'b0;
-        end else begin
+        // [!] mem_ready=0 时必须【保持】EX/MEM —— 这一处不能省，实测踩过：
+        //     冻结和"EX/MEM <= ID/EX"是【同一个沿】发生的，而那一拍的 ID/EX 里
+        //     已经是【下一条】指令了。不门控的话，没完成的 store 会被下一条覆盖，
+        //     于是这次写【永久丢失】，还会伴随 mem_addr 变成下一条的垃圾地址
+        //     （实测出现过 0x00000000，会砸掉 _start）。
+        //
+        //     2026-09-27 实测：漏了这里时 +MEMWAIT=2 下 RT-Thread 卡在启动，
+        //     pc 停在 0x2c 的 jalr；逐拍 trace 显示 store 的 mem_we 只高 1 拍就
+        //     被换掉、地址从 0x5748 跳到 0x574c。
+        end else if (mem_ready) begin
             ex_mem_reg_write  <= id_ex_reg_write;
             ex_mem_mem_read   <= id_ex_mem_read;
             ex_mem_mem_write  <= id_ex_mem_write;
@@ -736,7 +789,7 @@ module core (
             mem_wb_rd         <= 5'd0;
             mem_wb_funct3     <= 3'd0;
             mem_wb_addr_low   <= 2'd0;
-        end else begin
+        end else if (mem_ready) begin
             mem_wb_reg_write  <= ex_mem_reg_write;
             mem_wb_wb_sel     <= ex_mem_wb_sel;
             mem_wb_alu_result <= ex_mem_alu_result;
@@ -747,5 +800,9 @@ module core (
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
         end
     end
+
+    // [!] 上面 MEM/WB 那处是 mem_ready=0 时唯一【必须】门控的地方：
+    //     不门控的话，被停住的那条 load 会带着还没回来的 mem_rdata 提前写回。
+    //     EX/MEM 不用门控 —— 前端冻住后 id_ex_* 不变，重复写入同值无害。
 
 endmodule

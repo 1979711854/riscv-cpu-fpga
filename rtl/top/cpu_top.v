@@ -37,6 +37,7 @@ module cpu_top (
 
     // ---- core ↔ mem_bus：访存口 ----
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
+    wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（见 core.v 的访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
 
@@ -73,6 +74,7 @@ module cpu_top (
         .mem_we       (mem_we),
         .mem_re       (mem_re),
         .mem_rdata    (mem_rdata),
+        .mem_ready    (mem_ready),
         .gpio_we      (gpio_we),
         .uart_tx_we   (uart_tx_we),
         .uart_rx_ack  (uart_rx_ack),
@@ -95,6 +97,7 @@ module cpu_top (
         .mem_we      (mem_we),
         .mem_re      (mem_re),
         .mem_rdata   (mem_rdata),
+        .mem_ready   (mem_ready),
         .ebreak      (ebreak),
         // ---- 中断 ----
         // 定时器中断：由 mem_bus 里的 CLINT（mtime/mtimecmp 比较器）驱动。

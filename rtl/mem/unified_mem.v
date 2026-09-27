@@ -32,8 +32,16 @@ module unified_mem (
     input  wire [3:0]  b_byte_en,
     output reg  [31:0] b_rd_data,
     input  wire        b_clk,
-    input  wire        b_rst
+    input  wire        b_rst,
+
+    // ---- B 口就绪（配合 core.v 的访存等待机制）----
+    // 本模块是单周期 BRAM，恒 1。core 只在它为 1 时推进 MEM/WB。
+    // 仿真模型 sim/mem_model.vh 里同一个端口可以被 +MEMWAIT=n 拉低，
+    // 用来验证 core.v 那三处冻结逻辑真的生效。
+    output wire        b_ready
 );
+
+    assign b_ready = 1'b1;
     // 8192 word = 32KB。若要扩容，必须同步改 mem_bus 与 core 里的 [14:2] 切片，
     // 否则高位被静默截断。
     (* syn_ramstyle = "block_ram" *) reg [31:0] mem [0:8191];

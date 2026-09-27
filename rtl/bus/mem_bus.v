@@ -39,6 +39,12 @@ module mem_bus (
     input  wire        mem_re,
     output wire [31:0] mem_rdata,
 
+    // ---- 访存就绪（core.v 的访存等待机制）----
+    // 恒 1 = 这次访存在固定 1 拍内完成（现在的行为，逐位不变）。
+    // 拉低 = 这次访存还没完成，core 会把 MEM/WB 和上游一起冻住，直到它拉高。
+    // 现在只有 RAM 的 b_ready 接上来（恒 1）；日后 APB/AXI 桥在这里驱动它。
+    output wire        mem_ready,
+
     // ---- 外设：写选通 / 读回（外设寄存器本体在 rtl/periph/ 里）----
     output wire        gpio_we,       // 0x8000_0000 写 LED
     output wire        uart_tx_we,    // 0x8000_0008 或 0x7FFC 写一个字符
@@ -119,6 +125,7 @@ module mem_bus (
     // ------------------------------------------------------------------
     wire [12:0] ram_word = mem_addr[14:2];
     wire [31:0] ram_rdata;
+    wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 
     unified_mem u_mem (
         // A 口：取指（只读）
@@ -133,8 +140,16 @@ module mem_bus (
         .b_byte_en(mem_byte_en),
         .b_rd_data(ram_rdata),
         .b_clk    (clk),
-        .b_rst    (~resetn)
+        .b_rst    (~resetn),
+        // [!] 输出端口只能接一根线，不能写条件表达式（iverilog 会报
+        //     "expression not valid in assign l-value"）。选择逻辑放在下面。
+        .b_ready  (ram_ready)
     );
+
+    // [!] 现在只有 RAM 参与就绪。命中 RAM 时听 RAM 的 b_ready；其余地址
+    //     （兼容区 / 外设区）都是寄存器型、1 拍必回，直接给 1。
+    //     日后加 APB/AXI 桥时，把桥的 ready 也并进来（相与）。
+    assign mem_ready = ram_hit ? ram_ready : 1'b1;
 
     // ------------------------------------------------------------------
     // 读数据选择位 + 非 RAM 源的读数据，都在 MEM→WB 沿寄存（约束 2）
@@ -167,6 +182,17 @@ module mem_bus (
     // ------------------------------------------------------------------
     // 外设写选通（组合，零拍；u8 写入按低字节取，与 sb/sh/sw 都兼容）
     // ------------------------------------------------------------------
+    // [!] 这三个选通是【电平敏感】的，外设不是在沿上"看一眼"：
+    //       uart_tx.v:  if (tx_start && !fifo_full) → 高 N 拍就入队 N 个字符
+    //       uart_rx.v:  if (ack && !empty) rptr++   → 高 N 拍就弹掉 N 个字节
+    //     **现在安全**，因为外设访问恒不等待（上面 mem_ready 对非 RAM 地址直接给 1），
+    //     而这些条件里本来就含 mem_we/mem_re，所以只高 1 拍。
+    //
+    //     [!!] 但**加 APB/AXI 桥并让外设等待之后就不安全了** —— 访问被停住时
+    //     选通会一直高着，于是"发一次字符"变成"发 N 次"、"读一次"变成"弹 N 个"，
+    //     而且是静默数据损坏。**那时必须把这三个选通与"本次访问的首次那一拍"
+    //     相与**（桥里锁存一个 one-shot，或者在 core 引出 mem_req）。
+    //     详见 doc/reports/2026-09-27_bus_upgrade_plan.md §3。
     assign gpio_we      = periph_hit && mem_we && (periph_off == `PERIPH_GPIO);
     assign uart_tx_we   = (periph_hit && mem_we && (periph_off == `PERIPH_UART_TX))
                           || (legacy_utx && mem_we);
