@@ -14,7 +14,67 @@
 | 镜像占用 | `.text` 18,801 / `.data` 188 / `.bss` 2,528 = **21,517 字节 (65.7%)** |
 | 堆剩余 | **7,155 字节** |
 | **仿真验证** | **[OK] 通过** —— 见下面「仿真验证结果」 |
-| 上板验证 | [ ] 待做 |
+| 上板验证 | [ ] 待做 —— 步骤见下面「上板」 |
+
+## 上板（2026-09-27 起 `build_bitstream.ps1` 已支持 `rtthread` 变体）
+
+**一条命令搞定固件 + 综合布线出比特流**（约 5 分钟）：
+
+```powershell
+scripts\build_bitstream.ps1 rtthread
+```
+
+它做的事（全部串好，不用手工分步）：编 RT-Thread 固件（**上板口径** 49.8927MHz /
+乒乓 500ms）→ 同步进 PDS 工程 → **sha256 校验**（9498 行 / 4749 字）→ 综合布线出 `.sbit`。
+
+> [!] **别用 `scripts\rtthread\build.ps1 -Sim` 的产物上板** —— 那是仿真口径
+> （100MHz / 乒乓 5ms），上板会算错 tick。`build_bitstream.ps1 rtthread` 用的是正确口径。
+
+**然后烧板并看串口**：
+
+1. **插两根 USB 线** —— Jtag（FTDI，两个 COM 口）+ USB UART（CP2102 一个 COM 口）。
+   **只插 Jtag，串口永远没输出**，这是最容易卡住的一步。
+2. **PDS → TOOL → Programmer**，**必须重新 Browse** 选
+   `pds\RV32I_1\generate_bitstream\cpu_top_board.sbit`
+   （Programmer 会记住上次的文件；不重选极易烧成上一版）
+3. **抓串口**：
+   ```powershell
+   scripts\serial_monitor.ps1 -Port COM4 -Seconds 30
+   ```
+   （COM 号认 `Silicon Labs CP210x` 那个；不带 `-Port` 会列出全部串口）
+
+**期望看到**（板上时基 1ms、乒乓节奏 500ms，所以 30 秒能看约 30 轮）：
+
+```
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build ...
+ 2006 - 2026 Copyright by RT-Thread team
+
+========================================
+ RISC-V RV32IM @ 49.8927MHz  RT-Thread
+========================================
+[boot] tick period  = 1000 Hz
+[boot] heap         = 7151 bytes
+[pong] got semaphore, total 1
+[ping] round 1  tick 500 (delta 500, expect 500)     <- delta 必须精确等于 500
+[pong] got semaphore, total 2
+[ping] round 2  tick 1000 (delta 500, expect 500)
+...
+```
+
+**判据**（三条，与仿真一致）：
+
+| 判据 | 期望 |
+|---|---|
+| 控制台 | 打出 RT-Thread banner（**串口不乱码** —— 顺带验了 49.89MHz 下 `UART_DIV=433` 对上了）|
+| **系统 tick** | `delta` **精确等于 500**，且连续多轮不漂 |
+| **上下文切换** | ping / pong 交替，`total` 递增 |
+
+**板级辅助判据**：`led[0]` = `pll_locked` = **丝印 D19**，常亮 = PLL 已锁（不亮说明 CPU 一直被复位）。
+
+> [!] `led[1]` = `done` = **丝印 D18** 在 RT-Thread 版上**不会亮** —— RT-Thread 的应用
+> 没有写 `0x7FF8`（那是 CoreMark 的结束标志）。**别把它当成"没跑起来"。**
 
 版本：**RT-Thread v5.3.1**（内核子集，`libcpu/risc-v/common` 的 RV32 通用移植层）。
 

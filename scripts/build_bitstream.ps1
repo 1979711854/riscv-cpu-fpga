@@ -20,9 +20,11 @@
 .PARAMETER Variant
     coremark = CoreMark ITER=1663 跑分版（板上约 11.80 s，赛题硬指标）
     demo     = 演示程序版（读按键 -> 写 LED -> 串口打印）
-[!] 两个变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
+    rtthread = RT-Thread Nano 版（开机能打 banner，ping/pong 两个线程交替打印）
+[!] 各变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
          demo     -> DEBUG_LED=0（led[7:0] 全给 GPIO，恢复 LED=KEY 演示映射）
+         rtthread -> DEBUG_LED=1（同 coremark；led[0]=pll_locked 仍是上板首要判据）
 
 .PARAMETER Iter
     仅 coremark 用，默认 1663。
@@ -36,10 +38,11 @@
 .EXAMPLE
     scripts\build_bitstream.ps1 coremark
     scripts\build_bitstream.ps1 demo
+    scripts\build_bitstream.ps1 rtthread
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("coremark", "demo")]
+    [ValidateSet("coremark", "demo", "rtthread")]
     [string]$Variant,
 
     [int]$Iter = 1663,
@@ -64,15 +67,15 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
 #     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
 #     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
-$expectLines = @{ coremark = 8416; demo = 326 }
-$expectDesc  = @{ coremark = "4208 字"; demo = "163 字" }
+$expectLines = @{ coremark = 8416; demo = 326; rtthread = 9498 }
+$expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
 #   coremark -> 1：led[1:0] 显示 pll_locked / done，板上能一眼看出卡在哪
 #   demo     -> 0：led[7:0] 全给 GPIO，恢复"按开关位置重排"的 LED=KEY 映射
 $topBoard = Join-Path $repo "rtl\top\cpu_top_board.v"
-$debugLed = @{ coremark = 1; demo = 0 }[$Variant]
+$debugLed = @{ coremark = 1; demo = 0; rtthread = 1 }[$Variant]
 
 Write-Host ""
 Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
@@ -100,7 +103,18 @@ if ($topNew -ne $topOrig) {
 try {
     # ---- 1) 生成固件 ----
     Write-Host "[1/3] 生成固件 ..." -ForegroundColor Yellow
-    if ($Variant -eq "coremark") {
+    if ($Variant -eq "rtthread") {
+        # RT-Thread 的固件由它自己的 build 脚本产出（它有独立的 BSP 与链接脚本），
+        # 先把产物放进 sim\programs\，这样下面的 sync_firmware 与 sha256 校验
+        # 都能照常走，不必为它开一条特例路径。
+        # [!] 默认（不带 -Sim）就是【上板口径】：时钟 49.8927MHz、延时 500ms。
+        #     带 -Sim 会变成仿真的 100MHz/5ms —— 那个不能上板。
+        & (Join-Path $PSScriptRoot "rtthread\build.ps1") -Firmware
+        if ($LASTEXITCODE -ne 0) { throw "RT-Thread 固件编译失败" }
+        Copy-Item (Join-Path $PSScriptRoot "rtthread\build\*.hex") `
+                  (Join-Path $repo "sim\programs\") -Force
+        Write-Host "    RT-Thread 固件已放进 sim\programs\（上板口径 49.8927MHz）" -ForegroundColor Green
+    } elseif ($Variant -eq "coremark") {
         & (Join-Path $PSScriptRoot "run_coremark.ps1") -Iter $Iter -SkipSim
     } else {
         & (Join-Path $PSScriptRoot "run_demo.ps1") -SkipSim
