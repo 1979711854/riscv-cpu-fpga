@@ -19,6 +19,7 @@ module tb_debug_trap;
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
+    wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
 
@@ -30,6 +31,7 @@ module tb_debug_trap;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .mem_ready(mem_ready),
         .ebreak(),
         .irq_timer(irq_timer), .irq_ext(1'b0)
     );
@@ -39,6 +41,7 @@ module tb_debug_trap;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .mem_ready(mem_ready),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
         .done(),

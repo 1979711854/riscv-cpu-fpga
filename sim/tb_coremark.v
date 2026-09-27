@@ -20,6 +20,7 @@ module coremark_tb;
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
+    wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
     wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
@@ -29,6 +30,7 @@ module coremark_tb;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .mem_ready(mem_ready),
         .ebreak(),
         // CoreMark 全程不碰 CSR、中断关闭（mstatus.MIE=0、mie=0），
         // 接真实 MTIP 也不会被受理；接上是为了不让端口悬空成 Z。
@@ -43,6 +45,7 @@ module coremark_tb;
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
+        .mem_ready(mem_ready),
         .gpio_we(), .uart_tx_we(), .uart_rx_ack(),
         .periph_wdata(), .gpio_rdata(32'd0), .uart_rx_rdata(32'd0),
         .done(),           // 周期计数器已从 mem_bus 去掉（无使用者）
