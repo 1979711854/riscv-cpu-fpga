@@ -120,6 +120,11 @@ $RECYCLE.BIN/
 /pds/**/generate_netlist/
 /pds/**/report_power/
 
+# IP Compiler 每次重新生成 IP 都会在 ipcore/<ip>/ 下写一个 rev_N/ 工作目录
+# （compile/、flow.log、impl.tcl、ipc_ads.* 等，全是工具产物，不是交付物）。
+# 2026-09-28 加：当时它把 ipc_ads.pds / ipc_ads.tcl 漏进了打包清单。
+/pds/**/ipcore/*/rev_*/
+
 # ---- [!] 例外：ILA 硬件在环抓的波形是【板上实测证据】，不是仿真产物 ----
 # 上面的 *.vcd 是给 Icarus/GTKWave 的仿真输出用的；硬件抓的 VCD 与
 # doc/board/uart_*.txt 同类（都是板上证据），要入库。

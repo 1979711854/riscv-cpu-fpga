@@ -27,7 +27,7 @@ module core (
     // 恒 1 时行为与"固定 1 拍"完全一致（逐位不变）。
     // 为 0 时本模块把 MEM/WB 与上游一起冻住，等它拉高 —— 这是接 APB/AXI
     // 等多拍总线的前提（那些协议一次传输要 2 拍以上，或要 valid/ready 握手）。
-    // [!] 冻结方向必须和 stall/div_stall 一致：【保持】而不是【清】。
+    // [!] 冻结方向必须和 stall/mc_stall 一致：【保持】而不是【清】。
     //     清成气泡会把还没写回的那条指令丢掉。
     input  wire        mem_ready,
 
@@ -55,11 +55,17 @@ module core (
     // "Unable to bind wire/reg/memory ... declaration after use"（旧版容忍）。
     // 这里【只把声明提前】，逻辑一行未改。
     // ------------------------------------------------------------------
-    // 冒险 / 除法
+    // 冒险 / 多拍功能单元（除法器 + 乘法器）
     wire        stall;
-    wire [31:0] div_result;
+    wire [31:0] div_result, mul_result;
     wire        div_busy, div_done;
-    wire        div_stall;
+    wire        mul_busy, mul_done;
+    wire        div_stall;      // 多拍除法停顿
+    wire        mul_stall;      // 多拍乘法停顿
+    // 二者的并 =「EX 里那条多拍指令还没算完」，流水线前端必须冻住。
+    // [!] 前端所有冻结判据一律用 mc_stall，【不要】直接用 div_stall 或 mul_stall ——
+    //     漏掉任何一路都会静默丢/重复执行指令（与历史上漏 mem_ready 同类）。
+    wire        mc_stall;
     wire        ex_flush;
     wire [31:0] ex_target;      // EX 级解析出的跳转目标（在 EX 段才被赋值）
     // 分支预测：ID 级重定向 / EX 级误判恢复（三段都在后文才被赋值）
@@ -158,13 +164,13 @@ module core (
     //                     只为把优先级写成自明的）
     //   4. stall/div    —— 退格重读，不改变地址流
     //
-    // 互斥性说明：ex_flush 来自 EX 是分支/跳转、div_stall 来自 EX 是除法
-    // （id_ex_is_div）、stall 来自 EX 是 load（id_ex_mem_read）—— 三者在 EX 级由
-    // 同一条指令的性质决定，互斥。
+    // 互斥性说明：ex_flush 来自 EX 是分支/跳转、mc_stall 来自 EX 是除法或乘法
+    // （id_ex_is_div / id_ex_is_mul）、stall 来自 EX 是 load（id_ex_mem_read）
+    // —— 四者在 EX 级由同一条指令的性质决定，互斥。
     //   trap 优先级最高：异常/中断时 EX 级那条指令必须被丢弃，
     //   它比任何分支重定向都优先。（mret 不在这里 —— 它折进了 ex_flush，见 EX 段。）
     //
-    // [!] `!mem_ready` 必须和 stall/div_stall 一起退回 if_addr_d ——
+    // [!] `!mem_ready` 必须和 stall/mc_stall 一起退回 if_addr_d ——
     //     这不是"顺手加的"，是【承重】的，漏了会静默丢指令：
     //
     //     访存停顿的第一拍会把 IF/ID 冻结，而那一拍本来要收下的是上一拍发出的
@@ -179,11 +185,11 @@ module core (
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              id_redirect         ? id_target :
-                             (stall || div_stall || !mem_ready) ? if_addr_d :
+                             (stall || mc_stall || !mem_ready) ? if_addr_d :
                                                     pc_r;
 
-    // 更新【无门控】：fetch_addr 在 stall/div_stall 时就等于 if_addr_d 自身，
-    // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !div_stall)` 门控。
+    // 更新【无门控】：fetch_addr 在 stall/mc_stall 时就等于 if_addr_d 自身，
+    // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !mc_stall)` 门控。
     //
     // [!] 原来那个门控必须去掉，因为 `trap && stall` 是**可达的**
     //（EX 里是未对齐的 load 时，ex_exception 与 load-use stall 同拍成立）。
@@ -284,12 +290,12 @@ module core (
     assign      id_target     = if_id_pc + imm;
 
     // ex_flush 优先：EX 级是更老的指令，它重定向时 ID 级指令本来就会被杀掉。
-    // stall / div_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
+    // stall / mc_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
     // 流水线状态会脱节。
     // [!] `mem_ready` 必须或进来 —— 这一条不加会【静默破坏分支预测的一致性】：
     //
     //   `id_ex_pred_taken <= id_redirect` 是在 ID/EX 里锁存的，而 id_redirect 的
-    //   另外三个因子（ex_flush/stall/div_stall）来自【后级】、逐拍在变。
+    //   另外三个因子（ex_flush/stall/mc_stall）来自【后级】、逐拍在变。
     //   没有访存停顿时，分支在 ID 只停 1 拍，两边天然一致；
     //   一旦访存停住多拍，分支会在 ID 滞留好几拍，于是可能出现
     //   "某一拍真的重定向了、锁存那一拍却没置上 pred 标志" —— 状态不一致。
@@ -304,7 +310,7 @@ module core (
     //
     //   抑制到 mem_ready 释放那拍再统一生效是安全的：停顿期间取指本来就冻着
     //   （fetch_addr 走 if_addr_d），重定向晚一拍执行正好跟着一起释放。
-    assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !div_stall && mem_ready;
+    assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !mc_stall && mem_ready;
 
     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
     assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
@@ -354,16 +360,44 @@ module core (
         .busy(div_busy),
         .done(div_done)
     );
+
+    // ---- 多拍乘法：MUL/MULH/MULHSU/MULHU 由两拍乘法器接管 ----
+    // [重点] 为什么必须摘出来：综合报告显示单拍组合乘法占关键路径 10.05 ns
+    //   （整条数据通路的 56%），而且路径起点是 BRAM —— 即 "lw 紧跟 mul" 时，
+    //   访存数据从 BRAM 出来要在一个周期内穿过解包、前递、再走完 4 级 APM 乘法链。
+    //   摘出来单独占两拍后，那 10 ns 就不在关键路径上了。
+    //   代价是每条 mul 多 1 拍。实测 CoreMark 每迭代执行 **9,396 条 mul**
+    //   （+PROF 的 c_mul；注意不能用静态推算，会小 5.8 倍），
+    //   即区间周期 354,119 → 363,515（+2.65%）。
+    //   详见 rtl/core/multiplier.v 头注释。
+    wire id_ex_is_mul = (id_ex_alu_op >= 5'd10) && (id_ex_alu_op <= 5'd13);
+    wire mul_start    = id_ex_is_mul && !mul_busy;
+    // alu_op 10/11/12/13 → op 0/1/2/3（MUL/MULH/MULHSU/MULHU）
+    wire [1:0] mul_op = id_ex_alu_op[1:0] - 2'd2;
+    multiplier u_multiplier (
+        .clk(clk), .resetn(resetn),
+        .start(mul_start),
+        .a(alu_a), .b(alu_b),
+        .op(mul_op),
+        .result(mul_result),
+        .busy(mul_busy),
+        .done(mul_done)
+    );
     // ------------------------------------------------------------------
-    // EX 结果三选一：CSR 读 > 多拍除法 > ALU
+    // EX 结果四选一：CSR 读 > 多拍除法 > 多拍乘法 > ALU
     //   * CSR 读值【骑在这里】才能白拿前递与写回通路 —— 对下游而言它就是
     //     "EX 算出来的结果"，不需要任何额外旁路。
+    //   * 多拍单元的结果同理骑在这里：它们在 done 那一拍给出组合输出，
+    //     所以对前递网络和 EX/MEM 而言与"单拍 ALU 结果"没有区别。
     //   * [!] 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
-    //     `id_ex_is_div`，误触发除法停顿 → div_stall 永不释放 → 死锁。
+    //     `id_ex_is_div`，误触发除法停顿 → mc_stall 永不释放 → 死锁。
     //     所以 CSR 用**独立的** id_ex_is_csr 标志，alu_op 保持 0。
+    //   * [!] `id_ex_is_mul` 判的是 10..13，与 14..17 的除法**不重叠**，
+    //     两者也互斥（同一条指令不可能既是 mul 又是 div）。
     // ------------------------------------------------------------------
     wire [31:0] alu_result = id_ex_is_csr ? csr_rdata :
-                             id_ex_is_div ? div_result : alu_raw;
+                             id_ex_is_div ? div_result :
+                             id_ex_is_mul ? mul_result : alu_raw;
     // 访存地址 = base + offset，恒为 ADD（load/store 的 alu_op 固定为 0，
     // 见 control.v 的 OP_LOAD / OP_STORE —— 它们不写 alu_op，保持 default 的 0）。
     // 单独用一个加法器产生地址，把 32×32 乘法器从
@@ -372,6 +406,9 @@ module core (
     // [!] 只用于未对齐判据与 mtval，不改变任何流水线语义（见 §关键路径）。
     wire [31:0] addr_result = alu_a + alu_b;
     assign      div_stall  = id_ex_is_div && !div_done;
+    assign      mul_stall  = id_ex_is_mul && !mul_done;
+    // 前端冻结判据只有这一根 —— 理由见文件顶部声明处的 [!]。
+    assign      mc_stall   = div_stall || mul_stall;
 
     wire equal         = (rs1_val == rs2_val);
     wire less_signed   = ($signed(rs1_val) < $signed(rs2_val));
@@ -495,12 +532,12 @@ module core (
     //   id_ex_valid —— [重点] EX 里必须真的有指令。缺了它会在"上一条指令刚重定向、
     //                  ID/EX 已清空"的那一拍误受理中断，而 mepc 取的是气泡的
     //                  id_ex_pc(=0) → mret 跳到地址 0。2026-09-23 实测踩到。
-    //   !div_stall  —— 护住多拍除法器，避免残留状态/陈旧结果
+    //   !mc_stall   —— 护住多拍除法器/乘法器，避免残留状态/陈旧结果
     //   !id_ex_mret —— 抑制"打断 mret"的嵌套角落
     // 同步异常无需门控：肇事指令下一拍已被清成气泡，ex_exception 自然为 0；
     // 而气泡的 id_ex_illegal/ecall/ebreak/mem_read 全为 0，也判不出异常。
     assign int_take = csr_mstatus_mie && int_pending && id_ex_valid &&
-                      !div_stall && !id_ex_mret;
+                      !mc_stall && !id_ex_mret;
 
     assign trap_cause  = ex_exception ? exc_cause :
                          int_timer    ? 32'h8000_0007 :   // Machine timer
@@ -592,7 +629,7 @@ module core (
     //     id_ex_pc  = pc_r-12       （正在 EX 执行）
     // 跳转那一拍 fetch_addr 被旁路，此后 pc_r 与"已发出的地址"相差 4。
     //
-    // stall / div_stall 时：pc_r 与 if_addr_d 都【保持不动】，同时上面
+    // stall / mc_stall 时：pc_r 与 if_addr_d 都【保持不动】，同时上面
     // fetch_addr 的 mux 把取指地址【退回 if_addr_d[14:2]】—— 也就是重读上一拍
     // 已经读过一遍的同一个 word，让它落在 imem_rd 上、在 stall 结束那一拍被
     // if_id 采走，从而拿到 (pc, 指令) 同址的一对。
@@ -625,7 +662,7 @@ module core (
             pc_r <= id_target + 32'd4;
         // [!] mem_ready 也要或进来：访存没完成时 pc_r 必须停住，
         //     否则取指会跑到前面去、把停在 MEM 的那条指令的后续全冲掉。
-        else if (!stall && !div_stall && mem_ready)
+        else if (!stall && !mc_stall && mem_ready)
             pc_r <= pc_r + 32'd4;
     end
 
@@ -649,7 +686,7 @@ module core (
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
             if_id_valid <= 1'b0;          // 冲刷插入的是气泡，不是真指令
-        end else if (!stall && !div_stall && mem_ready) begin
+        end else if (!stall && !mc_stall && mem_ready) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
             if_id_instr <= imem_rd;
@@ -691,9 +728,9 @@ module core (
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
             id_ex_valid     <= 1'b0;
-        // [!] mem_ready=0 时和 div_stall 一样【保持】：停在 MEM 的那条指令
+        // [!] mem_ready=0 时和 mc_stall 一样【保持】：停在 MEM 的那条指令
         //     还在 ID/EX 的下游，这里必须冻住，不能推进也不能清。
-        end else if (!div_stall && mem_ready) begin
+        end else if (!mc_stall && mem_ready) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
             id_ex_alu_b_sel <= alu_b_sel;
@@ -703,7 +740,7 @@ module core (
             id_ex_jump      <= jump;
             id_ex_jump_reg  <= jump_reg;
             // 必须寄存【实际生效的重定向】id_redirect，而不是预测意图
-            // id_pred_taken —— 两者在有 stall / ex_flush / div_stall 时会分叉
+            // id_pred_taken —— 两者在有 stall / ex_flush / mc_stall 时会分叉
             // （那三种情况 id_redirect 被抑制，但 id_pred_taken 仍为 1）。
             // 若寄存错了，会出现"记着预测过、但 pc_r 根本没重定向"的状态，
             // EX 级据此判定预测正确而不冲刷，流水线就沿错误路径一路跑下去。
@@ -742,7 +779,7 @@ module core (
     //   清它不会丢数据：此时 EX/MEM 里那条【更老】的指令已经在这个沿推进到
     //   MEM/WB 了（MEM/WB 与 EX/MEM 是同一个沿更新的），写回不受影响。
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || div_stall || trap) begin
+        if (!resetn || mc_stall || trap) begin
             ex_mem_reg_write  <= 1'b0;
             ex_mem_mem_read   <= 1'b0;
             ex_mem_mem_write  <= 1'b0;

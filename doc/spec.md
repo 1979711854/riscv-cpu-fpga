@@ -57,7 +57,7 @@ if_id_pc  = pc_r - 8           // 正在 ID 译码
 id_ex_pc  = pc_r - 12          // 正在 EX 执行
 ```
 
-**stall / div_stall 时 `pc_r` 与 `if_addr_d` 都保持不动**，由 `imem_addr` 的 mux
+**stall / mc_stall 时 `pc_r` 与 `if_addr_d` 都保持不动**，由 `imem_addr` 的 mux
 退回 `if_addr_d[14:2]`（重读上一拍已读过的同一 word），让 `if_id` 在 stall 结束那拍
 拿到 (pc, 指令) 同址的一对。
 
@@ -70,7 +70,7 @@ id_ex_pc  = pc_r - 12          // 正在 EX 执行
 
 ```verilog
 wire [31:0] fetch_addr = ex_flush            ? ex_target :
-                         (stall || div_stall) ? if_addr_d :
+                         (stall || mc_stall) ? if_addr_d :
                                                 pc_r;
 assign imem_addr = fetch_addr[14:2];
 // 地址已在当拍发出，pc_r 必须跳过它，否则目标指令会被取两次
@@ -100,7 +100,8 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 |---|---|
 | RAW（EX 级） | 两级前递：EX/MEM 优先于 MEM/WB；load 结果不从前递取（`wb_sel==01` 排除） |
 | load-use | `stall` 停顿 1 拍（`id_ex_mem_read` 命中 rs1/rs2 时） |
-| 多拍除法 | `div_stall` 停住 EX 及之前各级，`ex_mem` 插气泡 |
+| 多拍除法 | `div_stall`（迭代 33 拍）停住 EX 及之前各级，`ex_mem` 插气泡 |
+| 多拍乘法 | `mul_stall`（2 拍）同上。两者并成 `mc_stall`，前端冻结判据只用它 |
 | 分支/跳转 | ID 级预测：**256 项带 tag 的 BHT 预测条件分支方向** + jal 静态后向（jalr 不预测）；
 命中则当拍重定向（损失 **1 拍**）；未命中/误判与 jalr 走 EX 冲刷，
 同样**同拍把目标地址旁路给取指**（损失 **2 拍**）。见 §3.1 |

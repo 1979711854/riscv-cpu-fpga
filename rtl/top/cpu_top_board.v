@@ -24,15 +24,22 @@
 // 已实测：从左到右依次按 key[0..3]，串口输出 0x01/0x02/0x04/0x08。
 //
 // ----------------------------------------------------------------------------
-// [!] 时钟：上板 49.89MHz，仿真仍是 27MHz —— 两套口径不要混
+// [!] 时钟：上板 62.03MHz，仿真仍是 27MHz —— 两套口径不要混
 // ----------------------------------------------------------------------------
 //   * 仿真：测试台例化的是 cpu_top（不是本文件），不传 UART_DIV → 234（27MHz），
 //     周期数与风险分析口径全部按 27MHz。本文件**不参与仿真**。
-//   * 上板：PLL 27MHz→49.89MHz，UART_DIV 传 433，CoreMark 的 EE_TICKS_PER_SEC=49892700。
-//   * 因此 **CPLD 板上的 CoreMark 时长 = Total ticks ÷ 49,892,700**
-//     （不再是 ÷27e6）。文档里所有"÷27e6"的说法仅适用于仿真/远程平台。
+//   * 上板：PLL 27MHz→62.0309MHz，UART_DIV 传 538，CoreMark 的 EE_TICKS_PER_SEC=62030900。
+//   * 因此 **CPLD 板上的 CoreMark 时长 = Total ticks ÷ 62,030,900**
+//     （不再是 ÷49,892,700，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
 //   * PLL 输出时钟约束由 PDS 从 IP 自动推导（`.fdc` 里只有 27MHz 的
-//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 49.8927 MHz）。
+//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 62.0309 MHz）。
+//   * 频率来历：VCO = 27 ÷ RATIOI(1) × RATIOM(2) × RATIOF(21.25) = 1147.5 MHz，
+//     CLKOUT0 = VCO ÷ STATIC_RATIO0(18.5) = 62.03 MHz。
+//     改频率只需改 ipcore/pll/pll.idf 的 STATIC_RATIO0 再跑
+//     `ip_generate.exe -i pll.idf`（**可命令行完成，不必开 GUI**）。
+//     [重点] 改完必须同步 4 处常量：本文件的 UART_DIV、
+//     coremark_port/core_portme.c 的 EE_TICKS_PER_SEC、demo/addr_map.h 的 CPU_HZ、
+//     rtthread/bsp/board.h 的 BOARD_SYSTEM_CLOCK_HZ，并重算 ITER。
 // ============================================================================
 module cpu_top_board #(
     // LED 映射开关（PDS 综合时取默认值，切换需重新综合 —— 或加 `-D` 宏）：
@@ -73,7 +80,7 @@ module cpu_top_board #(
     wire [7:0] led_gpio;    // CPU 的 GPIO LED 输出
     wire       done;        // CoreMark 完成标志（写 0x7FF8）
 
-    cpu_top #(.UART_DIV(10'd433)) u_soc (   // 49.89MHz → 115200 波特
+    cpu_top #(.UART_DIV(10'd538)) u_soc (   // 62.03MHz → 115200 波特（62,030,900/115200 = 538.5）
         .clk      (clk_sys),
         .resetn   (sys_resetn),
 

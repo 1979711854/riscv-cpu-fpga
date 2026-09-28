@@ -61,7 +61,7 @@ module coremark_tb;
     // 输入。prof_on=0 时计数器不递增、不打印，所以 run_coremark.ps1 的默认运行
     // （不带 +PROF）周期数与加入本段之前完全一致 —— 这是回归纪律的硬要求。
     //
-    // 之所以能这样做：core 的 stall / div_stall / ex_flush / 四路
+    // 之所以能这样做：core 的 stall / mc_stall / ex_flush / 四路
     // 前递判定都是模块内部信号，用层次引用（u_core.xxx）即可观测，不需要为了
     // 测量去改 RTL（改 RTL 会触发全量回归）。
     //
@@ -75,7 +75,7 @@ module coremark_tb;
     reg [1023:0] trace_fname;
 
     // 周期构成累计
-    reg [63:0] c_stall, c_div, c_flush;
+    reg [63:0] c_stall, c_div, c_mul, c_flush;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
     reg [63:0] c_commit, c_inst_in;
 
@@ -89,7 +89,7 @@ module coremark_tb;
     // 【不】挂在 ex_flush 上 —— 加了预测之后，预测正确的 taken 不再产生 ex_flush，
     // 挂在冲刷信号上的计数会塌掉，改造前后也就没法比。
     //   c_br_tot  = 到达 EX 的条件分支总数（每条恰好计一次：分支的 id_ex_is_div=0，
-    //               所以 div_stall=0，ID/EX 必在下一拍推进；stall/ex_flush 会清零
+    //               所以 mc_stall=0，ID/EX 必在下一拍推进；stall/ex_flush 会清零
     //               id_ex_branch，也不会重复计）
     //   c_br_bwd  = 其中偏移为负（后向，通常是循环回边）
     reg [63:0] c_br_tot, c_br_bwd, c_br_bwd_tk;
@@ -108,7 +108,7 @@ module coremark_tb;
     reg [63:0] t_timer_cyc [0:7];
     integer    t_timer_n;
     reg        in_timed;
-    reg [63:0] tc_all, tc_stall, tc_div, tc_flush;
+    reg [63:0] tc_all, tc_stall, tc_div, tc_mul, tc_flush;
     reg [63:0] tc_fwdex, tc_fwdwb, tc_mem, tc_commit;
     reg [63:0] tc_br_tot, tc_br_tk, tc_br_bwd, tc_br_bwd_tk;
     reg [63:0] tc_jal, tc_jalr;
@@ -202,6 +202,12 @@ module coremark_tb;
                          (c_stall * 100.0) / cycle_count);
                 $display("div stall        : %0d  %f%%", c_div,
                          (c_div * 100.0) / cycle_count);
+                // mul 条数（每条恰好多占 1 拍 EX）。这是"乘法器拆成两拍"代价的
+                // 唯一可靠口径 —— 静态推算（按每迭代一次 matrix_test 算 N 和条数）
+                // 会小 5.8 倍：core_bench_matrix 其实是被 core_list_join.c 的
+                // calc_func 在链表遍历中按数据相关次数调用的。
+                // 2026-09-28 实测区间值 = 9,396 条/迭代。
+                $display("mul executed     : %0d", c_mul);
                 $display("br/jmp redirect  : %0d  %f%%", c_flush,
                          (c_flush * 100.0) / cycle_count);
                 // 气泡数 = 总周期 − 提交指令数。这是【与冲刷实现无关】的口径：
@@ -235,6 +241,7 @@ module coremark_tb;
                              (tc_stall * 100.0) / tc_all);
                     $display("region div stall : %0d  %f%%", tc_div,
                              (tc_div * 100.0) / tc_all);
+                    $display("region mul exec  : %0d", tc_mul);
                     $display("region flush     : %0d  %f%%", tc_flush,
                              (tc_flush * 100.0) / tc_all);
                     $display("region fwd ex    : %0d", tc_fwdex);
@@ -282,7 +289,7 @@ module coremark_tb;
     // ========================================================================
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            c_stall <= 64'd0; c_div <= 64'd0; c_flush <= 64'd0;
+            c_stall <= 64'd0; c_div <= 64'd0; c_mul <= 64'd0; c_flush <= 64'd0;
             c_fwdex <= 64'd0; c_fwdwb <= 64'd0; c_mem <= 64'd0;
             c_br_taken <= 64'd0; c_jump <= 64'd0;
             c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
@@ -293,7 +300,8 @@ module coremark_tb;
             h_idx <= 0; h_cnt <= 0;
             t_timer_n <= 0;
             in_timed  <= 1'b0;
-            tc_all <= 64'd0; tc_stall <= 64'd0; tc_div <= 64'd0; tc_flush <= 64'd0;
+            tc_all <= 64'd0; tc_stall <= 64'd0; tc_div <= 64'd0; tc_mul <= 64'd0;
+            tc_flush <= 64'd0;
             tc_fwdex <= 64'd0; tc_fwdwb <= 64'd0; tc_mem <= 64'd0;
             tc_commit <= 64'd0;
             tc_br_tot <= 64'd0; tc_br_tk <= 64'd0;
@@ -302,20 +310,26 @@ module coremark_tb;
             tc_redir <= 64'd0; tc_mispred <= 64'd0;
         end else if (prof_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
+            // [!] 冻结判据一律用 core 的 mc_stall（多拍功能单元停顿的并集：
+            //     除法 or 乘法），不能只用 div_stall —— 那样乘法的 1 拍停顿
+            //     会被当成"流水线正常推进"，提交指令数会被多算。
             v_wb  <= v_mem;
-            v_mem <= u_core.div_stall ? 1'b0 : v_ex;
+            v_mem <= u_core.mc_stall ? 1'b0 : v_ex;
             v_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.stall) ? 1'b0 :
-                     (u_core.div_stall ? v_ex : v_id);
+                     (u_core.mc_stall ? v_ex : v_id);
             v_id  <= (u_core.ex_flush || u_core.ex_mispred || u_core.id_redirect) ? 1'b0 :
-                     ((!u_core.stall && !u_core.div_stall) ? 1'b1 : v_id);
+                     ((!u_core.stall && !u_core.mc_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
             if (!u_core.ex_flush && !u_core.ex_mispred && !u_core.id_redirect &&
-                !u_core.stall && !u_core.div_stall)
+                !u_core.stall && !u_core.mc_stall)
                 c_inst_in <= c_inst_in + 64'd1;
 
             // ---- 周期构成 ----
             if (u_core.stall)      c_stall  <= c_stall + 64'd1;
             if (u_core.div_stall)  c_div    <= c_div + 64'd1;
+            // mul_start 每条 mul 恰好高 1 拍（见 multiplier.v），所以它直接就是
+            // 动态 mul 条数 —— 这也是"乘法器拆成两拍"代价的唯一实测口径。
+            if (u_core.mul_start)  c_mul    <= c_mul + 64'd1;
             if (u_core.ex_flush)   c_flush  <= c_flush + 64'd1;
             if (u_core.fwd_a_ex || u_core.fwd_b_ex) c_fwdex <= c_fwdex + 64'd1;
             if (u_core.fwd_a_wb || u_core.fwd_b_wb) c_fwdwb <= c_fwdwb + 64'd1;
@@ -351,6 +365,7 @@ module coremark_tb;
                 tc_all <= tc_all + 64'd1;
                 if (u_core.stall)     tc_stall  <= tc_stall + 64'd1;
                 if (u_core.div_stall) tc_div    <= tc_div + 64'd1;
+                if (u_core.mul_start) tc_mul    <= tc_mul + 64'd1;
                 if (u_core.ex_flush)  tc_flush  <= tc_flush + 64'd1;
                 if (u_core.fwd_a_ex || u_core.fwd_b_ex) tc_fwdex <= tc_fwdex + 64'd1;
                 if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
@@ -407,7 +422,7 @@ module coremark_tb;
                     u_core.ex_mem_pc, u_core.ex_mem_rd,
                     u_core.mem_we, u_core.mem_re,
                     u_core.mem_wb_rd, u_core.mem_wb_reg_write,
-                    u_core.stall, u_core.div_stall,
+                    u_core.stall, u_core.mc_stall,
                     u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
                     u_core.fwd_a_ex, u_core.fwd_b_ex,
                     u_core.fwd_a_wb, u_core.fwd_b_wb,

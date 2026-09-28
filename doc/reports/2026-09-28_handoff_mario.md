@@ -371,18 +371,22 @@ id_ex_pred_taken / funct3 / rs1_val / rs2_val / 四个前递`，
 
 ```powershell
 scripts\run_riscv_tests.ps1              # 期望 49 PASS / 1 FAIL / 0 TIMEOUT
-scripts\run_coremark.ps1 -Iter 1         # 期望 354,119 拍 / 总周期 1,457,776
+scripts\run_coremark.ps1 -Iter 1         # 期望 363,515 拍 / 总周期 1,467,276
+scripts\run_own_tests.ps1                # 期望 2 PASS / 0
+scripts\run_sim.ps1 -NoWave              # 单元测试台（含 tb_multiplier 840 项）
 ```
 
 | 指标 | 当前基线 |
 |---|---|
-| CoreMark 计时区间 | **354,119** 拍 |
-| 测试台总周期 | **1,457,776** |
+| CoreMark 计时区间 | **363,515** 拍（= 288,056 提交 + 20,720 load-use + 9,396 mul + 45,343 分支）|
+| 测试台总周期 | **1,467,276** |
 | 四个 CRC | `e9f5 / e714 / 1fd7 / 8e3a` 逐位一致 |
 | riscv-tests | **49 / 1 / 0** |
-| 板上实测 | **140.89 CoreMark**（49.8927 MHz，ITER=1663）|
-| 资源（生产版）| LUT 3,721 / FF 2,441 / DRM 16 / APM 11 |
-| 时序 | 49.8927 MHz，可达 54.0745 MHz，slack **+1.550 ns**，`All Constraints Met` |
+| 板上实测 | **170.64 CoreMark**（62.0309 MHz，ITER=2000，11.7203 s）—— 2026-09-28 验证 |
+| 对照实测 | 同代"只改 RTL 不提频"版 **137.25 CoreMark**（49.89 MHz，ITER=1663）|
+| 资源（生产版）| LUT 3,767 / FF 2,508 / DRM 16 / **APM 4**（乘法器重构后从 11 降到 4）|
+| 时序 | **62.0309 MHz**，可达 **67.78 MHz**，slack **+1.368 ns**，`All Constraints Met` |
+| 归档比特流 | `bitstreams/coremark_step2_pll62mhz_6b247362.sbit`（62MHz 版）<br>`bitstreams/coremark_step1_mult2cyc_49mhz_0f85d0ab.sbit`（只改 RTL、频率仍 49.89 的对照版）|
 
 > [!] **`crcfinal` 不能比** —— 它是 CoreMark 的跨迭代累加器，必然随 ITER 变。
 > 只认 `seedcrc`/`crclist`/`crcmatrix`/`crcstate` 四个。

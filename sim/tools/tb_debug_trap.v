@@ -82,10 +82,11 @@ module tb_debug_trap;
         if (resetn) begin
             cyc = cyc + 1;
             // 紧凑格式：逐拍 pc + 四级 pc + 重定向来源 + 关键控制位，便于两版本 diff
-            $display("%0d pc=%h ifid=%h idex=%h exmem=%h memwb=%h st=%b dv=%b fl=%b mp=%b rd=%b | trap=%b mc=%b aexp=%h aext=%h acs=%h",
+            // dv/mu 分开打：mc_stall 是二者的并，但调试时要知道【停在哪一个】。
+            $display("%0d pc=%h ifid=%h idex=%h exmem=%h memwb=%h st=%b dv=%b mu=%b fl=%b mp=%b rd=%b | trap=%b mc=%b aexp=%h aext=%h acs=%h",
                 cyc, pc,
                 u_core.if_id_pc, u_core.id_ex_pc, u_core.ex_mem_pc, u_core.mem_wb_pc,
-                u_core.stall, u_core.div_stall,
+                u_core.stall, u_core.div_stall, u_core.mul_stall,
                 u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
                 u_core.trap, u_core.id_ex_mret,
                 u_core.alu_result, u_core.ex_target, u_core.csr_rdata);

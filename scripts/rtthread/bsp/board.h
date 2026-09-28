@@ -12,15 +12,17 @@
 /* ---- 系统时钟：用于把 tick/延时换算成 mtime 周期数 ----
  *
  * 三套口径别混（和 CLAUDE.md 里说的一样）：
- *   上板（本地盘古板）  49.8927 MHz  板载 27MHz 经 PLL 倍频，RATIO0=23
+ *   上板（本地盘古板）  62.0309 MHz  板载 27MHz 经 PLL 倍频，RATIO0=18.5
  *   仿真                27 MHz       测试台例化 cpu_top，不传 UART_DIV、不走 PLL
  *   远程 FPGA 平台      27 MHz       没有 PLL
  *
  * 所以【不能写死】。build.ps1 -Sim 会自动传 27000000，上板用默认值。
- * [!] 算错的后果：tick 周期偏 1.85 倍 —— 功能还能跑（mdelay 数的是 tick 个数），
- *     但仿真里每 500ms 要多跑近一倍的周期，白白拖慢仿真。 */
+ * [!] 算错的后果：tick 周期按倍率偏 —— 功能还能跑（mdelay 数的是 tick 个数），
+ *     但仿真里每 500ms 会多跑或少跑相应倍数的周期，白白拖慢仿真或让延时失真。
+ * [!] 改频率时本文件容易被漏掉（早期文档只列了 3 处常量，没算上这里）。
+ *     完整清单见 rtl/top/cpu_top_board.v 头部注释。 */
 #ifndef BOARD_SYSTEM_CLOCK_HZ
-#define BOARD_SYSTEM_CLOCK_HZ       49892700u
+#define BOARD_SYSTEM_CLOCK_HZ       62030900u
 #endif
 
 /* ---- 外设 MMIO（字地址，直接读写）-------------------------------------- */

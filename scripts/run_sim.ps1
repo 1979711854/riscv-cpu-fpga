@@ -14,7 +14,12 @@ $simRoot = Join-Path $repoRoot "sim"
 #   sim/tb_riscv.v    -> scripts/run_riscv_tests.ps1
 #   sim/tb_coremark.v -> scripts/run_coremark.ps1
 #   sim/tb_demo.v     -> scripts/run_demo.ps1（跑整个 SoC，还要编 rtl/top）
-$externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_demo.v", "tb_template.v")
+#   sim/tb_rtthread.v -> scripts/rtthread/run_sim.ps1（同样要编 rtl/top）
+# [!] 这张表【必须】跟着 sim/ 下新增的 tb_*.v 一起维护：漏一个就会让
+#     "跑全部"这条入口在它那里抛异常中断，排在它【后面】的测试台全部不跑，
+#     看起来却像"只坏了一个"。tb_rtthread.v 就漏过一次（2026-09-28 发现）。
+$externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_demo.v", "tb_template.v",
+                        "tb_rtthread.v")
 
 # 编译哪些 RTL：core + periph。
 # 注意 1：存储器模型 imem/bram 在 testbench 里自带（行为级），所以【不要】编译 rtl/mem，

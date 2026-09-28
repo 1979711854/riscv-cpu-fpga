@@ -1,0 +1,17 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-09-28 21:24:49
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 727018199
+Total time (secs): 11
+Iterations/Sec   : 181
+Iterations       : 2000
+Compiler version : GCC15.2.0
+Compiler flags   : -O2 -march=rv32im -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0x4983
+Correct operation validated. See README.md for run and reporting rules.
+# 结束于 2026-09-28 21:25:19，共 15 行

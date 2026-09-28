@@ -27,10 +27,13 @@
          rtthread -> DEBUG_LED=1（同 coremark；led[0]=pll_locked 仍是上板首要判据）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 1663。
-[!] **改了流水线/取指逻辑必须重算**：
-        ITER = 498,927,000 ÷ 每迭代周期数   ← 分母是**板上 49.8927MHz×10s**
+    仅 coremark 用，默认 2000。
+[!] **改了流水线/取指逻辑或主频必须重算**：
+        ITER = 时钟频率 × 10s ÷ 每迭代周期数
+    当前：62,030,900 × 10 ÷ 363,515 = 1,706（恰好 10s），默认取 2000 → 11.72s（余量 17%）。
     （仿真/远程平台是 27MHz，那边用 270,000,000。别混。）
+[!] 每迭代周期数当前是 **363,515**（两拍乘法器之后）；再往前是 354,119。
+    改完 RTL 先跑 `run_coremark.ps1 -Iter 1` 看 Total ticks 现是多少，再套上面的式子。
 
 .PARAMETER NoBuild
     只生成并同步固件，不跑 PDS 综合（想自己在 GUI 里点时用）。
@@ -45,7 +48,7 @@ param(
     [ValidateSet("coremark", "demo", "rtthread")]
     [string]$Variant,
 
-    [int]$Iter = 1663,
+    [int]$Iter = 2000,
 
     [switch]$NoBuild
 )
@@ -61,14 +64,15 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 
 # 期望的 mem.hex 行数（每字两行：@地址 + 数据）—— 只作**粗筛**，真正的判据是下面的逐字节比对。
 #
-# [!] 这个数字**会随编译期常量变**，别当成硬约束。实测（2026-09-25）：
+# [!] 这个数字**会随编译期常量变**，别当成硬约束。实测：
 #       EE_TICKS_PER_SEC = 45,000,000  -> 4209 字（8418 行）
 #       EE_TICKS_PER_SEC = 49,892,700  -> 4208 字（8416 行）
+#       EE_TICKS_PER_SEC = 62,030,900  -> 4209 字（8418 行）  （2026-09-28 提频）
 #     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
 #     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
 #     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
-$expectLines = @{ coremark = 8416; demo = 326; rtthread = 9498 }
-$expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字" }
+$expectLines = @{ coremark = 8418; demo = 326; rtthread = 9498 }
+$expectDesc  = @{ coremark = "4209 字"; demo = "163 字"; rtthread = "4749 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -199,8 +203,9 @@ Write-Host "     配置文件就是上面这个路径（**别用备份/旧文件
 if ($Variant -eq "coremark") {
     Write-Host "  2) 烧完立刻抓串口（一轮约 12 秒，慢一拍就错过）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
-    Write-Host " [重点] 板上时钟 49.8927MHz，期望 Total ticks ≈ 588,900,000 -> /49,892,700 = 11.80 s"
-    Write-Host "       （**别再用 ÷45e6 或 ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
+    Write-Host " [重点] 板上时钟 62.0309MHz，期望 Total ticks ≈ 727,030,000 -> /62,030,900 = 11.72 s"
+    Write-Host "       （**别再用 ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
+    Write-Host "       得分预期：62.0309e6 / 363,515 × 1000 = 170.6 CoreMark（改前 140.89）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"

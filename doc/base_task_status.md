@@ -15,7 +15,7 @@
 | # | 要求 | 现状 | 判定 |
 |---|---|---|---|
 | 2a | ≥3 级流水线 | **5 级**（IF/ID/EX/MEM/WB，`if_id`/`id_ex`/`ex_mem`/`mem_wb` 级间寄存器） | [OK] 达标 |
-| 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍除法 `div_stall`；regfile 写优先 | [OK] 达标 |
+| 2b | 数据冲突处理 | forwarding 前递（EX/MEM、MEM/WB 两级）+ load-use 停顿 + 多拍功能单元停顿 `mc_stall`（除法 33 拍 / 乘法 2 拍）；regfile 写优先 | [OK] 达标 |
 | 2c | 分支跳转处理 | 6 种分支条件全实现；**条件分支方向由 256 项带 tag 的 BHT 动态预测**（2026-09-25），预测命中当拍重定向，吞吐损失 **1 拍**；未命中/误判与 jal/jalr 目标走 `ex_flush` 单拍冲刷 + **同拍把目标地址旁路给取指端**（损失 **2 拍**，2026-09-21 取指重定向改造） | [OK] 达标 |
 | 1 | RV32I 基础整数指令集 | **全覆盖**，含此前缺的 FENCE / FENCE.I / ECALL / EBREAK | [OK] 达标 |
 | 3a | UART 控制器 | **发送**（`uart_tx`，1024 深 FIFO）+ **接收**（`uart_rx`，16 深 FIFO，读弹出） | [OK] 达标 |
