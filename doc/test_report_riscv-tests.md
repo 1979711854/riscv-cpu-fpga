@@ -1,6 +1,12 @@
 # riscv-tests 回归报告（RV32IM 五级流水线 CPU）
 
-最近更新：2026-09-25
+最近更新：2026-09-28
+
+> [!] **当前回归基线（2026-09-28 起）**：CoreMark 计时区间 **363,515** 拍
+> （测试台总周期 **1,467,276**）、riscv-tests **49/1/0**、四个 CRC `e9f5/e714/1fd7/8e3a`。
+> 最灵敏的探针是闭合式：`288,056（提交）+ 20,720（load-use）+ 9,396（mul）+ 45,343（分支）= 363,515`。
+> 本文件中 354,119 / 1,457,776 / 49.8927 MHz 等数字是 **49.89 MHz 那一代**的记录，
+> 保留作为历史对照，**不要当当前值引用**。
 方法：不改 CPU、不改 riscv-tests 仓库；`scripts/elf2mem.py` 把 ELF 拆成
      `imem.hex` / `dmem.hex`（另出合并的 `mem.hex`），`sim/tb_riscv.v` 监控
      core 对 tohost 的 store，判定 PASS / FAIL / TIMEOUT。
@@ -162,7 +168,27 @@ Correct operation validated. See README.md for run and reporting rules.
 - `seedcrc` / `crclist` / `crcmatrix` / `crcstate` 与仿真**逐位一致** → **CPU 在真实硬件上算得对的最强证据**
   （[!] **`crcfinal` 不比** —— 它跨迭代累加、随 ITER 变：ITER=700 → `0x65c5`、ITER=820 → `0xbd59`、ITER=1500 → `0x25b5`、ITER=1663 → `0x81c9`）
 
-### 板上实测结果（本地盘古板，49.8927 MHz，ITER=1663）—— **当前设计**（2026-09-25）
+### 板上实测结果（本地盘古板，62.0309 MHz，ITER=2000）—— **当前设计**（2026-09-28）
+
+```
+CoreMark Size    : 666
+Total ticks      : 727018199
+Total time (secs): 11            ← 整数截断，实际 11.7203 s
+Iterations/Sec   : 181           ← 废数（= 2000/11），实际 170.64
+Iterations       : 2000
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0x4983        （随 ITER 变，不比）
+Correct operation validated. See README.md for run and reporting rules.
+```
+
+- **727,018,199 ÷ 62,030,900 = 11.7203 秒** [OK] 满足赛题 ≥10s → **170.64 CoreMark**（= 2000 ÷ 11.7203）
+- 每迭代 **363,509** 周期（727,018,199 ÷ 2000）—— 与仿真 363,515 差 **−0.0016%**（板上略快）
+- 原始日志：`doc/board/uart_20260928_212449.txt`
+
+### 板上实测结果（本地盘古板，49.8927 MHz，ITER=1663）—— 上一代（2026-09-25，历史）
 
 ```
 CoreMark Size    : 666

@@ -42,19 +42,25 @@ powershell -NoProfile -Command "Get-CimInstance Win32_PnPEntity | Where-Object {
 系统时钟不是晶振直连，而是走 PLL：
 
 ```
-clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(49.89MHz) ──> cpu_top
+clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(62.03MHz) ──> cpu_top
                           └─> lock ──> 门控 resetn（锁定前一直复位 CPU）
 ```
 
 * `.fdc` 里只有输入晶振的 `create_clock ... -period 37.037`（27 MHz），**这句别改**。
   PLL 输出的约束由 **PDS 从 PLL IP 自动推导**，只在时序报告里显示
-  （当前 `clk 49.8927 MHz，可达 54.0745 MHz`）。**别以为约束没生效。**
+  （当前 `clk 62.0309 MHz，可达 67.78 MHz`）。**别以为约束没生效。**
 * PLL 是 Pango IP，在工程里以 `wgt_my_ips_src` 引用（`ipcore/pll/`）。
   **不能只把 `pll.v` 当普通源文件加进去** —— 那样综合会报 `pll` 是黑盒。
-* **由此产生的连带改动**：UART 分频 **433**（`cpu_top_board` 传 `UART_DIV`）、
-  CoreMark 的 `EE_TICKS_PER_SEC = 49892700`、`addr_map.h` 的 `CPU_HZ = 49892700u`。
+* **由此产生的连带改动（4 处，别只改 3 处）**：UART 分频 **538**（`cpu_top_board` 传 `UART_DIV`）、
+  CoreMark 的 `EE_TICKS_PER_SEC = 62030900`、`addr_map.h` 的 `CPU_HZ = 62030900u`、
+  **`scripts/rtthread/bsp/board.h` 的 `BOARD_SYSTEM_CLOCK_HZ = 62030900u`**。
+* **改频率怎么做**（可命令行完成，不必开 IP Compiler GUI）：改 `ipcore/pll/pll.idf` 的
+  `STATIC_RATIO0`，然后 `D:\pango\PDS_2022.2-SP6.4\bin\ip_generate.exe -i pll.idf`。
+  `VCO = 27 x RATIOM(2) x RATIOF(21.25) = 1147.5 MHz`，`CLKOUT0 = VCO / RATIO0`。
+  可选档位：`18.5 -> 62.031`（当前）、`19.0 -> 60.395`、`18.0 -> 63.750`。
+  [!] 改 `CLKOUT0_REQ_FREQ_basicPage` **无效**，生成器只认 `STATIC_RATIO*`。
 * [!] **仿真仍然是 27 MHz**（测试台例化 `cpu_top`，不传参数 → 分频 234）。
-  所以：**仿真 27 MHz / 上板 49.89 MHz**，两套口径别混。
+  所以：**仿真 27 MHz / 上板 62.03 MHz**，两套口径别混。
   远程 FPGA 平台**没有 PLL，也是 27 MHz**。
 
 | 信号 | 管脚 | 板上丝印 | 说明 |
@@ -90,7 +96,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(49.89MHz) ──> cpu_top
 **队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
 ```powershell
-scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=1663，板上约 11.8 s）
+scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=2000，板上约 11.72 s）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
 ```
 
@@ -158,7 +164,7 @@ User Guide》第 4 章）：
 
 ```powershell
 # ① 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 1663 -SkipSim     # 跑分版（当前板上时钟 49.8927 MHz 的取值）
+scripts\run_coremark.ps1 -Iter 2000 -SkipSim     # 跑分版（当前板上时钟 62.0309 MHz 的取值）
 scripts\run_demo.ps1 -SkipSim                    # 演示程序版
 
 # ② 同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
@@ -245,40 +251,37 @@ KEY=0x00 LED=0x00
 
 **约 12 秒后**打印。
 
-**当前设计（49.8927 MHz / ITER=1663）的板上实测原始输出**
-（日志 `doc/board/uart_20260925_172318.txt`，2026-09-25 17:23）：
+**当前设计（62.0309 MHz / ITER=2000）的板上实测原始输出**
+（日志 `doc/board/uart_20260928_212449.txt`，2026-09-28 21:24）：
 
 ```
 CoreMark Size    : 666
-Total ticks      : 588890651
+Total ticks      : 727018199
 Total time (secs): 11
-Iterations/Sec   : 151
-Iterations       : 1663
+Iterations/Sec   : 181
+Iterations       : 2000
 Compiler flags   : -O2 -march=rv32im -mabi=ilp32
 seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 Correct operation validated.
 ```
 
-实测：588,890,651 ÷ 49,892,700 = **11.8031 s** → **140.89 CoreMark**（满足赛题 ≥10 s）。
-推算值 588,900,000 / 140.89 与实测**分毫不差**。
+实测：727,018,199 ÷ 62,030,900 = **11.7203 s** → **170.64 CoreMark**（满足赛题 ≥10 s）。
+推算值 170.6 与实测差 0.02%。
 
-**45 MHz 版（ITER=1500）的板上实测原始输出（历史，留作对照）**（已确认，
-日志 `doc/board/uart_20260925_005201.txt`）：
-
-```
-Total ticks      : 538285445
-Iterations       : 1500
-seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
-Correct operation validated.
-```
-实测 538,285,445 ÷ 45,000,000 = **11.9619 s** → **125.40 CoreMark**。
+**49.89 MHz 版（ITER=1663）的板上实测原始输出（历史，留作对照）**
+（日志 `doc/board/uart_20260925_172318.txt`）：`Total ticks 588890651` ÷ 49,892,700
+= **11.8031 s** → **140.89 CoreMark**。
+另有一份**同代对照**：只改 RTL（两拍乘法器）、频率仍 49.89 → `Total ticks 604516199`
+→ 12.1163 s → **137.25 CoreMark**（日志 `doc/board/uart_20260928_212347.txt`），
+它把"乘法器代价 −2.6%"单独锁死了。
 
 [!] **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
-当前这版显示 `11`（实际 11.8031）、`151`（= 1663 ÷ 11 的截断值，**真实 140.89**）；历史 45 MHz 那次显示 `11`（实际 11.9619）、`136`（**真实 125.40**）。
+当前这版显示 `11`（实际 11.7203）、`181`（= 2000 ÷ 11 的截断值，**真实 170.64**）；
+49.89 MHz 那代显示 `11`（实际 11.8031）、`151`（**真实 140.89**）。
 **真实时长一定要自己算：**
 
 ```
-板上时长 = Total ticks ÷ 49,892,700      <- 当前板上时钟
+板上时长 = Total ticks ÷ 62,030,900      <- 当前板上时钟
 ```
 
 > 历史口径：`÷27e6`（27 MHz 时代）、`÷45e6`（45 MHz 时代）。
@@ -302,7 +305,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[1:0]` 被 `pll_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
-| **`Iterations/Sec` 显示 151** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（1663 ÷ 11 ≈ 151）。**真实得分是 140.89 CoreMark**（= 1663 ÷ 11.8031）。历史 45 MHz 那版对应显示 `136` / 真实 125.40。见 §4 的说明 |
+| **`Iterations/Sec` 显示 181** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（2000 ÷ 11 ≈ 181）。**真实得分是 170.64 CoreMark**（= 2000 ÷ 11.7203）。历史：49.89 MHz 那代显示 `151` / 真实 140.89；45 MHz 那代 `136` / 125.40。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。
