@@ -1,30 +1,37 @@
 ﻿<#
 .SYNOPSIS
-    轨道 C（棋盘 / 判胜）的 x86 单测 —— 一条命令编译并跑。
+    五子棋 C/D 轨道的 x86 单测 —— 一条命令编译并跑两个测试台。
 
 .DESCRIPTION
     **不需要板子、不需要 RISC-V 工具链、不需要 iverilog**，只要一个 x86 gcc。
     没装的话：`scoop install gcc`。
 
-    为什么单独给 C 轨道开一条 x86 路径（工作清单 §C / §6）：
-    判胜逻辑改一行就走 iverilog 全仿真太慢，没法迭代。这里是纯 C 逻辑，
-    x86 上毫秒级出结果，而且 board.c 是【一份源码两处用】——
-    同一份文件原样编进 RV32 固件，不存在"PC 上过的和板上跑的不是同一份"。
+    两个测试台：
+      test_board.exe  轨道 C：棋盘 / 落子合法性 / 五连判胜 / 平局
+      test_ai.exe     轨道 D：AI 战术 / 自对弈 / 棋力 / 节点数与耗时
 
-    [!] 编译时带 -Wall -Wextra，且把警告当错误看 —— 固件那边没有 printf 兜底，
-        警告往往就是真 bug（尤其是 int8_t 与 int 混用、比较有无符号）。
+    为什么单独开一条 x86 路径（工作清单 §C / §6）：
+    改一行就走 iverilog 全仿真太慢，没法迭代。这里是纯 C 逻辑，x86 上毫秒级出结果，
+    而且 board.c / ai.c 是【一份源码两处用】—— 同一份文件原样编进 RV32 固件，
+    不存在"PC 上过的和板上跑的不是同一份"。
+
+    [!] 编译带 -Wall -Wextra，警告要当错误看 —— 固件那边没有 printf 兜底。
+    [!] 改完 board.c / ai.c 建议再用 RV32 交叉编译器过一遍（本脚本末尾会做，
+        找不到工具链就跳过）：
+
+        riscv-none-elf-gcc -march=rv32im -mabi=ilp32 -O2 -Wall -Wextra -ffreestanding -c board.c
+        riscv-none-elf-gcc -march=rv32im -mabi=ilp32 -O2 -Wall -Wextra -ffreestanding -c ai.c
 
 .EXAMPLE
     scripts\gomoku\run_test.ps1
 #>
 param(
-    [string]$Gcc = ""    # 默认走 PATH；scoop 装的在 ~\scoop\apps\gcc\current\bin
+    [string]$Gcc = "",       # 默认走 PATH；scoop 装的在 ~\scoop\apps\gcc\current\bin
+    [switch]$SkipRv32        # 跳过 RV32 交叉编译检查
 )
 
 $ErrorActionPreference = "Stop"
-
 $here = $PSScriptRoot
-$repo = (Resolve-Path (Join-Path $here "..\..")).Path
 
 if ([string]::IsNullOrWhiteSpace($Gcc)) {
     $cand = Join-Path $env:USERPROFILE "scoop\apps\gcc\current\bin\gcc.exe"
@@ -39,20 +46,53 @@ if ([string]::IsNullOrWhiteSpace($Gcc)) {
     }
 }
 
-$exe = Join-Path $here "test_board.exe"
+$CFLAGS = @("-std=c99", "-O2", "-Wall", "-Wextra")
 
-Write-Host "[1/2] 编译（gcc -std=c99 -O2 -Wall -Wextra）..." -ForegroundColor Yellow
-& $Gcc -std=c99 -O2 -Wall -Wextra `
-    (Join-Path $here "board.c") (Join-Path $here "test_board.c") `
-    -o $exe
-if ($LASTEXITCODE -ne 0) { throw "gcc 编译失败" }
+$suites = @(
+    @{ Name = "轨道 C（棋盘/判胜）"; Exe = "test_board.exe"; Src = @("board.c", "test_board.c") },
+    @{ Name = "轨道 D（AI）";        Exe = "test_ai.exe";    Src = @("board.c", "ai.c", "test_ai.c") }
+)
 
-Write-Host "[2/2] 运行 ..." -ForegroundColor Yellow
-& $exe
-$rc = $LASTEXITCODE
-
-if ($rc -eq 0) {
+$failed = 0
+foreach ($s in $suites) {
+    $exe = Join-Path $here $s.Exe
     Write-Host ""
-    Write-Host "本条路径不需要硬件 —— 这是没板子时能推进的那部分。" -ForegroundColor Green
+    Write-Host "===== $($s.Name) =====" -ForegroundColor Cyan
+    Write-Host "[1/2] 编译 $($s.Exe) ..." -ForegroundColor Yellow
+    $srcs = $s.Src | ForEach-Object { Join-Path $here $_ }
+    & $Gcc @CFLAGS @srcs -o $exe
+    if ($LASTEXITCODE -ne 0) { throw "gcc 编译失败：$($s.Exe)" }
+
+    Write-Host "[2/2] 运行 ..." -ForegroundColor Yellow
+    & $exe
+    if ($LASTEXITCODE -ne 0) { $failed++ }
 }
-exit $rc
+
+# ---- RV32 交叉编译检查（"一份源码两处用"的守门人）----
+if (-not $SkipRv32) {
+    $rv = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gcc.exe"
+    if (Test-Path $rv) {
+        Write-Host ""
+        Write-Host "===== RV32 交叉编译检查（rv32im / freestanding）=====" -ForegroundColor Cyan
+        $obj = Join-Path $env:TEMP "gomoku_rv32_check.o"
+        & $rv -march=rv32im -mabi=ilp32 -O2 -Wall -Wextra -ffreestanding `
+              -c (Join-Path $here "board.c") -o $obj
+        if ($LASTEXITCODE -ne 0) { Write-Host "board.c RV32 编译失败" -ForegroundColor Red; $failed++ }
+        & $rv -march=rv32im -mabi=ilp32 -O2 -Wall -Wextra -ffreestanding `
+              -c (Join-Path $here "ai.c") -o $obj
+        if ($LASTEXITCODE -ne 0) { Write-Host "ai.c RV32 编译失败" -ForegroundColor Red; $failed++ }
+        if ($failed -eq 0) { Write-Host "两个文件 rv32im 编译通过、无警告 [OK]" -ForegroundColor Green }
+        Remove-Item $obj -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Host ""
+        Write-Host "（跳过 RV32 检查：找不到 $rv）" -ForegroundColor DarkGray
+    }
+}
+
+Write-Host ""
+if ($failed -eq 0) {
+    Write-Host "全部通过 —— 这条路径不需要硬件。" -ForegroundColor Green
+} else {
+    Write-Host "有 $failed 个测试台失败。" -ForegroundColor Red
+}
+exit $failed
