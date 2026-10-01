@@ -22,6 +22,7 @@
     demo     = 演示程序版（读按键 -> 写 LED -> 串口打印）
     rtthread = RT-Thread Nano 版（开机能打 banner，ping/pong 两个线程交替打印）
     video    = HDMI 彩条版（填显存画 8 条竖条 + 串口显存读回自检）
+    gomoku   = 五子棋版（HDMI 出棋盘，4 个按键操作，串口打印 AI 节点数/耗时）
 [!] 各变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
          demo     -> DEBUG_LED=0（led[7:0] 全给 GPIO，恢复 LED=KEY 演示映射）
@@ -48,7 +49,7 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("coremark", "demo", "rtthread", "video")]
+    [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku")]
     [string]$Variant,
 
     [int]$Iter = 2000,
@@ -74,15 +75,15 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
 #     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
 #     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
-$expectLines = @{ coremark = 8418; demo = 326; rtthread = 9498; video = 758 }
-$expectDesc  = @{ coremark = "4209 字"; demo = "163 字"; rtthread = "4749 字"; video = "379 字" }
+$expectLines = @{ coremark = 8418; demo = 326; rtthread = 9498; video = 758; gomoku = 9172 }
+$expectDesc  = @{ coremark = "4209 字"; demo = "163 字"; rtthread = "4749 字"; video = "379 字"; gomoku = "4586 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
 #   coremark -> 1：led[1:0] 显示 pll_locked / done，板上能一眼看出卡在哪
 #   demo     -> 0：led[7:0] 全给 GPIO，恢复"按开关位置重排"的 LED=KEY 映射
 $topBoard = Join-Path $repo "rtl\top\cpu_top_board.v"
-$debugLed = @{ coremark = 1; demo = 0; rtthread = 1; video = 1 }[$Variant]
+$debugLed = @{ coremark = 1; demo = 0; rtthread = 1; video = 1; gomoku = 1 }[$Variant]
 
 Write-Host ""
 Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
@@ -125,6 +126,9 @@ try {
         & (Join-Path $PSScriptRoot "run_coremark.ps1") -Iter $Iter -SkipSim
     } elseif ($Variant -eq "video") {
         & (Join-Path $PSScriptRoot "run_video.ps1") -SkipSim
+    } elseif ($Variant -eq "gomoku") {
+        # 五子棋有自己的一套源码与构建脚本（7 个模块 + 图块表）
+        & (Join-Path $PSScriptRoot "gomoku\build.ps1")
     } else {
         & (Join-Path $PSScriptRoot "run_demo.ps1") -SkipSim
     }
@@ -216,6 +220,15 @@ if ($Variant -eq "coremark") {
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"
     Write-Host " [重点] 三条判据：banner 出来 / [ping] 的 delta 精确等于 500 / [pong] total 递增"
     Write-Host "       板级：led[0]=pll_locked 常亮；led[2]=done 本变体【不会亮】，别误判"
+} elseif ($Variant -eq "gomoku") {
+    Write-Host "  2) 先看板上的灯（DEBUG_LED=1）："
+    Write-Host "     led[1]=video_locked 不亮 -> 视频 PLL 没锁，屏幕不会亮，先查这个"
+    Write-Host "     （丝印：D18=video_locked  D19=pll_locked  D13=done）"
+    Write-Host "  3) 再接 HDMI 显示器，应看到【15×15 棋盘 + 红色光标圈】；"
+    Write-Host "     串口会打印按键用法，AI 每走一步会打印 nodes/depth/耗时："
+    Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"
+    Write-Host "  4) 操作：SW4/5/6/7 = 左/右/上/下；短按移动光标，长按 0.6 秒落子；"
+    Write-Host "     标题屏长按任意键开始；SW3 复位"
 } elseif ($Variant -eq "video") {
     Write-Host "  2) 先看板上的灯（DEBUG_LED=1）："
     Write-Host "     led[0]=pll_locked  led[1]=video_locked  —— led[1] 不亮先查视频 PLL，别去看 HDMI"

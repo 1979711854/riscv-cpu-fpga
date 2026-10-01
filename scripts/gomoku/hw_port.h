@@ -26,8 +26,13 @@ void hw_uart_putc(char c);
 
 void hw_uart_puts(const char *s);
 
-/* 把周期差换算成毫秒（板上是 62030.9 周期/ms）。
+/* 把周期差换算成毫秒。
  * 放在端口层是因为这个换算依赖板上时钟 —— 换板子/换主频只改这一处。 */
 uint32_t hw_ticks_to_ms(uint32_t ticks);
+
+/* 每毫秒多少计数（板上 = CPU_HZ/1000）。**init 类函数的阈值参数就是这么来的**：
+ *      input_init(&in, t, keys, INPUT_DEBOUNCE_MS * hw_ticks_per_ms(), ...)
+ * 不要自己在别处写 62031 之类的常数 —— 换主频时那会变成静默的错。 */
+uint32_t hw_ticks_per_ms(void);
 
 #endif /* GOMOKU_HW_PORT_H */

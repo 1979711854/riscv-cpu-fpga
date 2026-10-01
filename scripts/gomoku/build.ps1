@@ -1,0 +1,101 @@
+﻿<#
+.SYNOPSIS
+    五子棋固件构建 —— 编译 + 拆 hex，产物进 sim\programs\（轨道 E1）
+
+.DESCRIPTION
+    一条命令出 mem.hex。上板走 scripts\build_bitstream.ps1 gomoku（它内部会调本脚本）。
+
+    复用 demo 的 start.S 与 link.ld（与 run_video.ps1 同样的做法）——
+    内存布局只有一份真相，别在这里再抄一份链接脚本，否则迟早漂移。
+
+    编译完会打印各段大小与一条"够不够装"的检查：RAM 只有 32KB，
+    超了不会报错、只会在板上跑到一半崩掉，所以这里主动拦一道。
+
+.PARAMETER Toolchain
+    riscv-none-elf-gcc 所在目录。
+
+.PARAMETER NoHex
+    只编译 ELF，不拆 hex（调试用）。
+
+.EXAMPLE
+    scripts\gomoku\build.ps1
+#>
+param(
+    [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin",
+    [switch]$NoHex,
+    [switch]$Sim           # 仿真空径：缩短按键阈值，产物叫 gomoku_sim.elf
+)
+
+$ErrorActionPreference = "Stop"
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$env:PATH = "$Toolchain;$env:PATH"
+$env:RISCV_TOOLS = $Toolchain
+
+$demo = Join-Path $repo "scripts\demo"
+# [!] 仿真产物必须放【另一个目录】。早先 -Sim 也写 sim\programs\mem.hex，
+#     而那正是 build_bitstream.ps1 同步给 PDS 的那一份 —— 一次 -Sim 构建
+#     就可能把"长按 5ms"的仿真固件送上板，而且全程零报错。
+$prog = Join-Path $repo $(if ($Sim) { "sim\programs\gomoku_sim" } else { "sim\programs" })
+New-Item -ItemType Directory -Force -Path $prog | Out-Null
+$elf = Join-Path $prog $(if ($Sim) { "gomoku_sim.elf" } else { "gomoku.elf" })
+
+# 源文件：本目录的 7 个模块 + main，加上 demo 的启动代码
+$srcs = @("board.c", "ai.c", "render.c", "video_port.c",
+          "input.c", "hw_port.c", "game.c", "main.c") |
+        ForEach-Object { Join-Path $PSScriptRoot $_ }
+$srcs += Join-Path $demo "start.S"
+
+Write-Host ("[1/2] 编译五子棋固件{0} ..." -f $(if ($Sim) { "（仿真口径：短按键阈值）" } else { "" })) -ForegroundColor Yellow
+# -march=rv32im：M 扩展本来用得上（编译器会把小常数乘法/除法折成 mul/div），
+#   而且板的 CPU 实现了它。别用 rv32i —— 那会让常量除法走软件例程，白白变慢。
+$gccArgs = @(
+    "-march=rv32im", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
+    "-ffreestanding", "-nostartfiles",
+    "-Wall", "-Wextra",
+    "-I$PSScriptRoot", "-I$demo",
+    "-T$(Join-Path $demo 'link.ld')"
+)
+# [!] 仿真必须缩短按键阈值，否则长按 600ms = 3700 万周期，整盘棋仿不完。
+#     见 input.h 里那段 [!]。这个变体【不能上板】。
+if ($Sim) {
+    $gccArgs += @("-DINPUT_DEBOUNCE_MS=1", "-DINPUT_LONG_MS=5")
+}
+$gccArgs += $srcs + @("-o", $elf)
+
+& riscv-none-elf-gcc @gccArgs
+if ($LASTEXITCODE -ne 0) { throw "gcc 编译失败" }
+
+# ---- 打印段大小并检查装不装得下 ----
+$sizeOut = & riscv-none-elf-size $elf
+$sizeOut | ForEach-Object { Write-Host "      $_" }
+
+$line = ($sizeOut | Select-Object -Last 1)
+$parts = $line -split '\s+' | Where-Object { $_ -ne '' }
+$text = [int]$parts[0]; $data = [int]$parts[1]; $bss = [int]$parts[2]
+
+# 栈顶 0x7000（见 demo/link.ld），所以可用 RAM 是 0x0000~0x6FFF = 28KB。
+# 兼容区 0x7FF0~0x7FFF 被 MMIO 挖掉，不能放东西。
+$RAM_TOP = 0x7000
+$used = $text + $data + $bss
+Write-Host ("      静态占用 {0} 字节（text {1} + data {2} + bss {3}），栈顶 0x{4:X}" -f $used, $text, $data, $bss, $RAM_TOP)
+if ($used -gt $RAM_TOP) {
+    Write-Host "!! 超出 RAM —— 板上会跑到一半崩掉，且没有任何报错。" -ForegroundColor Red
+    Write-Host "   图块表 tiles.h 占 9216 字节，是第一个该压的（可改成运行时合成）。" -ForegroundColor Red
+    exit 1
+}
+Write-Host ("      余量 {0} 字节给栈（AI 递归在里面）" -f ($RAM_TOP - $used)) -ForegroundColor Green
+
+if ($NoHex) {
+    Write-Host "已按 -NoHex 停在 ELF。"
+    exit 0
+}
+
+Write-Host "[2/2] 拆 ELF -> mem.hex ..." -ForegroundColor Yellow
+& python (Join-Path $repo "scripts\elf2mem.py") $elf $prog
+if ($LASTEXITCODE -ne 0) { throw "elf2mem.py 失败" }
+
+Write-Host ""
+Write-Host "固件：$prog\mem.hex" -ForegroundColor Green
+Write-Host "上板：scripts\build_bitstream.ps1 gomoku（生成固件 -> 同步 -> 综合一条龙）"
