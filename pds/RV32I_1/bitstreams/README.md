@@ -5,6 +5,7 @@
 | 文件 | 内容 | md5 |
 |---|---|---|
 | `video_colorbar_pll62mhz_75871d8a.sbit` | **HDMI 彩条版**（首次上板用）—— `build_bitstream.ps1 video` 产物 | `75871d8a` |
+| `gomoku_pll62mhz_93cb0a16.sbit` | **五子棋版**（能玩了）—— `build_bitstream.ps1 gomoku` 产物 | `93cb0a16` |
 
 **怎么生成 / 怎么确认是哪一版**（2026-10-01 首次成功综合）：
 
