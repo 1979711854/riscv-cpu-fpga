@@ -59,7 +59,8 @@ $suites = @(
     @{ Name = "轨道 C（棋盘/判胜）"; Exe = "test_board.exe";  Src = @("board.c", "test_board.c") },
     @{ Name = "轨道 D（AI）";        Exe = "test_ai.exe";     Src = @("board.c", "ai.c", "test_ai.c") },
     @{ Name = "轨道 A3（渲染层）";   Exe = "test_render.exe"; Src = @("board.c", "render.c", "test_render.c") },
-    @{ Name = "轨道 B1（按键）";     Exe = "test_input.exe";  Src = @("input.c", "test_input.c") }
+    @{ Name = "轨道 B1（按键）";     Exe = "test_input.exe";  Src = @("input.c", "test_input.c") },
+    @{ Name = "轨道 B2/B3（对局）";  Exe = "test_game.exe";   Src = @("board.c", "ai.c", "game.c", "test_game.c") }
 )
 
 $failed = 0
@@ -86,7 +87,7 @@ if (-not $SkipRv32) {
         $obj = Join-Path $env:TEMP "gomoku_rv32_check.o"
         # video_port.c 要用 scripts/demo/addr_map.h（软件侧的地址定义）
         $inc = @("-I", $here, "-I", (Join-Path $repo "scripts\demo"))
-        foreach ($f in @("board.c", "ai.c", "render.c", "video_port.c", "input.c", "hw_port.c")) {
+        foreach ($f in @("board.c", "ai.c", "render.c", "video_port.c", "input.c", "hw_port.c", "game.c")) {
             & $rv -march=rv32im -mabi=ilp32 -O2 -Wall -Wextra -ffreestanding `
                   @inc -c (Join-Path $here $f) -o $obj
             if ($LASTEXITCODE -ne 0) {
@@ -94,7 +95,7 @@ if (-not $SkipRv32) {
             }
         }
         if ($failed -eq 0) {
-            Write-Host "board/ai/render/video_port 四个文件 rv32im 编译通过、无警告 [OK]" -ForegroundColor Green
+            Write-Host "board / ai / render / video_port / input / hw_port / game 七个文件 rv32im 编译通过、无警告 [OK]" -ForegroundColor Green
         }
         Remove-Item $obj -Force -ErrorAction SilentlyContinue
     } else {
