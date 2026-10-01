@@ -31,6 +31,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# [!] 两个测试台的输出都是 UTF-8 中文，而中文 Windows 的控制台默认代码页是
+#     GBK(cp936) —— 不设这两句全是乱码。详见 play.ps1 里的三道保险说明。
+try { chcp 65001 | Out-Null } catch { }
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $here = $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($Gcc)) {

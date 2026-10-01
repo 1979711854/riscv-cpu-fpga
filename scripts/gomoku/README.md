@@ -6,10 +6,33 @@
 ## 怎么跑（**不需要板子、不需要 RISC-V 工具链、不需要 iverilog**）
 
 ```powershell
-scripts\gomoku\run_test.ps1
+scripts\gomoku\run_test.ps1      # 跑单测（轨道 C 70 项 + 轨道 D 47 项 + RV32 交叉编译检查）
+scripts\gomoku\play.ps1          # 跟 AI 下棋（-Easy / -Hard / -White 可选）
 ```
 
 只要一个 x86 gcc。没装的话：`scoop install gcc`。
+
+## [!] 输出中文乱码怎么办
+
+**症状**：棋盘和中文提示显示成一堆 `���`。
+
+**原因**：程序输出的是 **UTF-8** 字节，而中文 Windows 的控制台默认代码页是
+**GBK(cp936)** —— 解码方式对不上。**不是程序的问题**（用 `od -c` 看输出，
+字节确实是合法的 UTF-8）。
+
+**三道保险（都已加好，正常情况下你什么都不用做）**：
+
+| # | 位置 | 做什么 |
+|---|---|---|
+| 1 | `play.ps1` / `run_test.ps1` | `chcp 65001` —— 把控制台代码页切到 UTF-8 |
+| 2 | 同上 | `[Console]::OutputEncoding = UTF8` —— 让 PowerShell 按 UTF-8 解码子进程输出 |
+| 3 | `gomoku_cli.c`（`#ifdef _WIN32`）| `SetConsoleOutputCP(65001)` —— **直接双击 `.exe` 也管用** |
+
+**如果还是乱码**：先确认你是**用脚本跑的**（`scripts\gomoku\play.ps1`），
+而不是跑了一个旧的 `gomoku.exe`。改完源码要重新生成 `.exe` ——
+`play.ps1` 每次都会重编，但如果 **`.exe` 正在运行，重编会失败**
+（Windows 锁住可执行文件，报 `cannot open output file ... Permission denied`）。
+**先把旧的关掉再跑脚本。**
 
 ## 为什么单独开一条 x86 路径
 

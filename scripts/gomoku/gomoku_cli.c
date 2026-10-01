@@ -17,6 +17,10 @@
 #include "board.h"
 #include "ai.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define HIST_MAX (GOMOKU_N * GOMOKU_N)
 
 static const char *g_level_name[3] = { "EASY(贪心)", "NORMAL(4层)", "HARD(6层)" };
@@ -86,6 +90,14 @@ int main(int argc, char **argv)
     int nhist = 0;
     int i;
     char line[128];
+
+#ifdef _WIN32
+    /* [!] 本文件的所有界面文字是 UTF-8 字节，而中文 Windows 的控制台默认代码页是
+     *     GBK(cp936) —— 不设这一句，棋盘和提示全是乱码。
+     *     这里设一次，是为了让【直接双击 gomoku.exe】也能正常显示；
+     *     走 play.ps1 时脚本那边也会设（两道保险，互不冲突）。 */
+    SetConsoleOutputCP(65001);
+#endif
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-white") == 0) human = GOMOKU_WHITE;

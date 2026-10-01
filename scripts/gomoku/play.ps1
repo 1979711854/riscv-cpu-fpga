@@ -23,6 +23,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# [!] 中文乱码的三道保险（C 程序输出的是 UTF-8 字节，而中文 Windows 的控制台
+#     默认代码页是 GBK/cp936）：
+#       1) chcp 65001        —— 把【控制台】的代码页切到 UTF-8
+#       2) OutputEncoding    —— 让 PowerShell 按 UTF-8 解码子进程的输出
+#       3) gomoku_cli.c 里的 SetConsoleOutputCP(65001) —— 直接双击 .exe 也管用
+#     工程里 build_bitstream.ps1 用的也是第 2 条。
+try { chcp 65001 | Out-Null } catch { }
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $here = $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($Gcc)) {
