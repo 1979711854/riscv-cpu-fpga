@@ -24,6 +24,7 @@ void game_init(game_t *gm, int level, int human, uint32_t blink_ticks)
     gm->cursor_r     = CURSOR_HOME_R;
     gm->cursor_c     = CURSOR_HOME_C;
     gm->cursor_on    = 1;
+    gm->cursor_hidden= 0;
     gm->t_blink      = 0;
     gm->blink_ticks  = blink_ticks ? blink_ticks : 1;
     gm->level        = level;
@@ -80,7 +81,7 @@ int game_ai_turn(const game_t *gm)
 
 int game_cursor_shown(const game_t *gm)
 {
-    return (gm->phase == GAME_PLAYING && gm->cursor_on) ? 1 : 0;
+    return (gm->phase == GAME_PLAYING && gm->cursor_on && !gm->cursor_hidden) ? 1 : 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -131,8 +132,9 @@ static void tick_playing(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t l
         if (dr || dc) {
             gm->cursor_r = clamp(gm->cursor_r + dr, 0, GOMOKU_N - 1);
             gm->cursor_c = clamp(gm->cursor_c + dc, 0, GOMOKU_N - 1);
-            gm->cursor_on = 1;              /* 一移动就把光标点亮，别让它正好落在暗的半拍 */
-            gm->t_blink   = now;            /* 闪烁计时从"这次移动"重新起算 */
+            gm->cursor_on     = 1;          /* 一移动就把光标点亮，别让它正好落在暗的半拍 */
+            gm->cursor_hidden = 0;          /* 同时解除"落子后藏起来" */
+            gm->t_blink       = now;        /* 闪烁计时从这次移动重新起算 */
         }
 
         /* 长按方向键 = 在【当前光标位置】落子。
@@ -140,6 +142,9 @@ static void tick_playing(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t l
         if (long_mask) {
             int ret = gomoku_place(&gm->board, gm->cursor_r, gm->cursor_c);
             if (ret == GOMOKU_OK) {
+                /* 落子成功 -> 先把光标藏起来，让玩家看清自己刚下的那一手。
+                 * 理由见 game.h 的 game_cursor_shown 注释。 */
+                gm->cursor_hidden = 1;
                 after_move(gm);
                 if (gm->phase == GAME_PLAYING && game_ai_turn(gm)) {
                     run_ai_move(gm);

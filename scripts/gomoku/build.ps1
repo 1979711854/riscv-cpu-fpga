@@ -60,7 +60,8 @@ $gccArgs = @(
 # [!] 仿真必须缩短按键阈值，否则长按 600ms = 3700 万周期，整盘棋仿不完。
 #     见 input.h 里那段 [!]。这个变体【不能上板】。
 if ($Sim) {
-    $gccArgs += @("-DINPUT_DEBOUNCE_MS=1", "-DINPUT_LONG_MS=5")
+    $gccArgs += @("-DINPUT_DEBOUNCE_MS=1", "-DINPUT_LONG_MS=5",
+                  "-DGOMOKU_AI_LEVEL=AI_EASY")   # [!] NORMAL 在仿真里要跑十几分钟
 }
 $gccArgs += $srcs + @("-o", $elf)
 

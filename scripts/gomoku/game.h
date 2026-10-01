@@ -37,6 +37,7 @@ typedef struct {
 
     int cursor_r, cursor_c;     /* 光标位置（交叉点坐标） */
     int cursor_on;              /* 闪烁：这一拍光标画不画 */
+    int cursor_hidden;          /* 落子后临时藏起光标 —— 见 game_cursor_shown 的说明 */
     uint32_t t_blink;           /* 上次翻转时刻 */
     uint32_t blink_ticks;       /* 半周期（单位与 now 相同）*/
 
@@ -67,7 +68,13 @@ void game_tick(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask);
 /* 现在轮到 AI 吗（标题屏/胜负后不算）*/
 int game_ai_turn(const game_t *gm);
 
-/* 光标是否要画出来（闪烁 + 非 AI 思考时）*/
+/* 光标是否要画出来。
+ * [!] 落子之后会【临时藏起来】，直到玩家再按方向键。原因：显示层没有精灵，
+ *     光标和棋子占用的是【同一层的同一块图块】—— 光标画着就看不见底下的子。
+ *     而刚落完子那一拍恰恰是玩家最想确认自己下在哪的时候，所以让它先消失，
+ *     一按键（反正要挪光标了）立刻回来。
+ *     另一条路是给 9 种网格形状各加 黑/白 两个带光标的图块（+18 块 = +4.6KB），
+ *     但 32KB 里那 4.6KB 更该留给后面加字库。 */
 int game_cursor_shown(const game_t *gm);
 
 #endif /* GOMOKU_GAME_H */

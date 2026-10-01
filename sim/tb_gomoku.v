@@ -1,0 +1,320 @@
+`timescale 1ns/1ps
+// ============================================================================
+// 五子棋固件端到端测试台（轨道 E2）
+// ----------------------------------------------------------------------------
+// 覆盖什么：**从按键到画面**的整条链，在真 CPU + 真 PPU 上跑固件。
+//
+//   [1] 固件能启动：串口打印出 banner
+//   [2] 上电就把棋盘铺好了：探显存的 nametable，检查四个角/天元的图块号
+//   [3] 按键能开局：注入"长按" -> 串口出现 "start, level="
+//   [4] 落子 + AI 应手：再注入一次长按 -> 串口出现 "AI moved"，
+//       且天元的 nametable 从"空格"变成了"黑子"
+//
+// 覆盖不到（只能上板看）：pll_video 锁没锁、OSERDES/TMDS、显示器认不认时序。
+// 所以本测试台 PASS 只说明"喂给 TMDS 之前的画面与交互全对"。
+//
+// [!] 跑的是 `build.ps1 -Sim` 的固件（按键阈值缩到 1ms / 5ms）。
+//     板上口径是 10ms / 600ms —— 在 100MHz 仿真里跑 600ms 就是 6000 万周期，
+//     整盘棋仿不完。**别拿板上的 mem.hex 喂这个测试台，会等到超时。**
+//
+// 时钟：clk 同时当 clk_sys 和 pix_clk（显存是真双口，仿真里同源无妨）。
+// 换行一律用 CRLF 常量拼 —— Verilog 转义里没有 \r（见 CLAUDE.md 约定 3）。
+// ============================================================================
+
+`include "mem_model.vh"
+
+module tb_gomoku;
+    reg         clk = 1'b0;
+    reg         resetn;
+    wire [7:0]  led;
+    wire        uart_tx;
+    wire        done;
+    wire [31:0] pc;
+
+    // ---- 按键：**本测试台唯一驱动的东西**。低有效，走 cpu_top 的 8 位 key 口。
+    //      bit k 对应 key[k]；按下 = 0。
+    reg  [7:0]  key = 8'hFF;
+
+    // 视频口（mem_bus 译码出来的显存口）
+    wire        vid_we;
+    wire [1:0]  vid_vsel;
+    wire [13:0] vid_waddr;
+    wire [3:0]  vid_be;
+    wire [31:0] vid_wdata;
+    wire [1:0]  vid_vsel_d;
+    wire [13:0] vid_waddr_d;
+    wire [31:0] vid_rdata;
+
+    wire [23:0] rgb;
+    wire        de, hs, vs;
+
+    always #5 clk = ~clk;          // 100MHz 仿真时钟
+
+    cpu_top u_soc (
+        .clk        (clk),
+        .resetn     (resetn),
+        .pc         (pc),
+        .uart_tx    (uart_tx),
+        .uart_rx    (1'b1),
+        .led        (led),
+        .key        (key),
+        .done       (done),
+        .vid_we     (vid_we),
+        .vid_vsel   (vid_vsel),
+        .vid_waddr  (vid_waddr),
+        .vid_be     (vid_be),
+        .vid_wdata  (vid_wdata),
+        .vid_vsel_d (vid_vsel_d),
+        .vid_waddr_d(vid_waddr_d),
+        .vid_rdata  (vid_rdata)
+    );
+
+    // video_top 那层壳（pll_video / rgb2tmds / OSERDES）是 PDS 专有原语，
+    // iverilog 里不存在，所以直接例化 video_core（与 tb_video_bars.v 同理）。
+    video_core u_vid (
+        .pix_clk    (clk),
+        .vid_resetn (resetn),
+        .clk_sys    (clk),
+        .sys_resetn (resetn),
+        .vid_we     (vid_we),
+        .vid_vsel   (vid_vsel),
+        .vid_waddr  (vid_waddr),
+        .vid_be     (vid_be),
+        .vid_wdata  (vid_wdata),
+        .vid_vsel_d (vid_vsel_d),
+        .vid_waddr_d(vid_waddr_d),
+        .vid_rdata  (vid_rdata),
+        .rgb        (rgb),
+        .de         (de),
+        .hs         (hs),
+        .vs         (vs)
+    );
+
+    // ========================================================================
+    // 显存探针：直接读 video_core 里 nametable 的 BRAM 数组
+    // ------------------------------------------------------------------------
+    // nametable 是【字节寻址】的 8KB（rtl/video/vram_b32.v，AW=13 ⇒ 2048 字）。
+    // 棋盘第 r 行第 c 列的字节地址 = (BOARD_ROW0+r)*256 + (BOARD_COL0+c)
+    //                                  = (7+r)*256 + (12+c)
+    // 换算成 32 位字 + 字节道。
+    // ========================================================================
+    function [7:0] nt_byte;
+        input integer r;
+        input integer c;
+        integer idx;
+        begin
+            idx = (7 + r) * 256 + (12 + c);
+            case (idx % 4)
+                0: nt_byte = u_vid.u_nt.mem[idx/4][ 7: 0];
+                1: nt_byte = u_vid.u_nt.mem[idx/4][15: 8];
+                2: nt_byte = u_vid.u_nt.mem[idx/4][23:16];
+                default: nt_byte = u_vid.u_nt.mem[idx/4][31:24];
+            endcase
+        end
+    endfunction
+
+    // 图块编号：tile = shape*4 + state（与 scripts/gomoku/gen_tiles.py 一致）
+    localparam [7:0] T_INNER_EMPTY  = 8'd0;    // shape 0 内部 + state 0 空
+    localparam [7:0] T_INNER_BLACK  = 8'd1;    // shape 0 内部 + state 1 黑子
+    localparam [7:0] T_TOPLEFT_EMPTY= 8'd20;   // shape 5 左上角 + state 0 空
+
+    // ========================================================================
+    // UART TX 解码（同 tb_demo.v / tb_video_bars.v）：字节依次左移进 rxtext，
+    // 最近一个字节在 rxtext[7:0]。
+    // ========================================================================
+    localparam BIT_NS = 2340;                  // UART_DIV=234 拍 @100MHz 仿真时钟
+
+    reg [8*768-1:0] rxtext  = 0;
+    integer         rxcount = 0;
+    reg  [7:0]      rxb;
+    integer         bi;
+
+    initial begin
+        forever begin
+            @(negedge uart_tx);
+            #(BIT_NS + BIT_NS / 2);
+            for (bi = 0; bi < 8; bi = bi + 1) begin
+                rxb[bi] = uart_tx;
+                #(BIT_NS);
+            end
+            rxtext  = {rxtext[8*768-9:0], rxb};
+            rxcount = rxcount + 1;
+        end
+    end
+
+    // 在收到的文本里找子串。
+    // [!] needle 固定【6 个字符】= 48 位。早先写成"最多 16 字符、按 128 位窗口比"，
+    //     结果 15 字符的字面量会在高位补 0，而窗口的第 16 个字节是实际收到的
+    //     前一个字符（空格/'='），永远比不中 —— banner 明明打出来了却判定"没收到"。
+    //     **定长窗口 + 定长 needle，长度必须严格相等**，这是 Verilog 里做字符串
+    //     比较最容易踩的坑（没有运行期长度可用）。
+    function has_text;
+        input [8*6-1:0] needle;                // 恰好 6 个字符
+        integer i;
+        reg found;
+        begin
+            found = 0;
+            for (i = 0; i <= 200; i = i + 1)
+                if (!found && rxtext[i*8 +: 48] == needle) found = 1;
+            has_text = found;
+        end
+    endfunction
+
+    // [!] FRAME_NS 必须声明在用到它的 task 之前 ——
+    //     iverilog 14 严格要求"先声明后使用"（CLAUDE.md 约定 1）。
+    localparam integer FRAME_NS = 3400000;   // 一帧 ≈ 640x525 像素 @100MHz
+
+    // 等到某个文本出现为止（最多 max_frames 帧），比"死等固定时长"可靠得多。
+    // [!] AI 是在固件主循环里【同步】跑的：落子那一拍 game_tick 要跑完一次
+    //     alpha-beta 才返回。仿真里一次 4 层搜索约 2 秒（每节点约 2 万拍 ×
+    //     上万节点），死等帧数是猜不准的。
+    task wait_text;
+        input [47:0] needle;
+        input integer max_frames;
+        integer w;
+        begin
+            for (w = 0; w < max_frames; w = w + 1) begin
+                if (has_text(needle)) w = max_frames;   // 命中 -> 让循环退出
+                else #(FRAME_NS);
+            end
+        end
+    endtask
+
+    // ========================================================================
+    // 测试主流程
+    // ========================================================================
+    integer errors = 0;
+    integer checks = 0;
+
+    // 一帧 ≈ 640×525 像素 @100MHz。等这么久足够固件跑完一轮主循环。
+
+    task press_long;
+        input integer k;                       // 按哪个键（0..3）
+        integer n;
+        begin
+            key = 8'hFF & ~(8'h01 << k);       // 按下（低有效）
+            // [!] 时长要按【固件端的采样节奏】倒推，不能只按"长按阈值"算。
+            //     固件主循环是帧同步的，每帧只采样一次按键；而 input.c 的去抖要求
+            //     "原始电平连续两帧都变了"才认账 ⇒ 一个边沿就要 2 帧，
+            //     再加长按阈值本身 1 帧，共约 3 帧 ≈ 10ms。
+            //     早先按 8ms 给（≈2.4 帧），卡在边界上：第一次侥幸过、第二次没过。
+            //     现在给 20ms（≈6 帧），留一倍余量。
+            //     另外【松手】也走同一套去抖（同样要 2 帧才认账）。
+            //     早先在松手后只等 2 帧，正好卡边界：stable 一直停在"按下"，
+            //     于是下一次按下形不成新的【按下沿】，long_sent 永远不重置，
+            //     长按再也不会触发 —— 现象是"第一下有效、之后全无反应"。
+            #20_000_000;
+            key = 8'hFF;                        // 松手
+            #(FRAME_NS * 5);                    // 松手要等够，才能形成下一次按下沿
+            n = 0;
+        end
+    endtask
+
+    integer i;
+
+    initial begin
+        resetn = 1'b0;
+        key    = 8'hFF;
+        #2000;
+        resetn = 1'b1;
+
+        $display("=== tb_gomoku：五子棋固件端到端 ===");
+        $display("  跑的是 build.ps1 -Sim 的固件（按键阈值 1ms/5ms）");
+
+        // ---- [1] 等 banner ----
+        #(FRAME_NS * 4);
+        checks = checks + 1;
+        if (!has_text("GOMOKU")) begin
+            errors = errors + 1;
+            $display("  [FAIL] 没等到固件 banner —— 固件没跑起来，或卡在初始化里");
+        end else begin
+            $display("  [ok]   banner 收到：固件已启动");
+        end
+
+        // ---- [2] 上电就把棋盘铺好了 ----
+        #(FRAME_NS * 2);
+        checks = checks + 1;
+        if (nt_byte(0, 0) !== T_TOPLEFT_EMPTY) begin
+            errors = errors + 1;
+            $display("  [FAIL] nametable(0,0) = %0d，期望 %0d（左上角空格）",
+                     nt_byte(0, 0), T_TOPLEFT_EMPTY);
+        end else begin
+            $display("  [ok]   棋盘左上角已铺好（tile=%0d）", nt_byte(0, 0));
+        end
+
+        checks = checks + 1;
+        if (nt_byte(7, 7) !== T_INNER_EMPTY) begin
+            errors = errors + 1;
+            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（内部空格）",
+                     nt_byte(7, 7), T_INNER_EMPTY);
+        end else begin
+            $display("  [ok]   天元是空格（tile=%0d）—— 标题屏不画光标，符合预期",
+                     nt_byte(7, 7));
+        end
+
+        // ---- [3] 长按开局 ----
+        press_long(2);                         // SW6 = 上；标题屏长按任意键开始
+        checks = checks + 1;
+        if (!has_text("start,")) begin
+            errors = errors + 1;
+            $display("  [FAIL] 长按之后没等到 start —— 开局没生效");
+        end else begin
+            $display("  [ok]   长按开局成功");
+        end
+
+        // ---- [4] 在天元落子，AI 应手 ----
+        press_long(2);                         // 光标本来就在天元，直接长按落子
+
+        // [!] AI 是在固件主循环里【同步】跑的 —— 落子那一拍 game_tick 里要
+        //     跑完一次 alpha-beta 搜索才返回。测试台必须等它，否则断言会跑在
+        //     固件还在搜索的时候（现象：落子日志打出来了，但画面和串口都还没更新）。
+        //     实测 4 层搜索在仿真里要约 2 秒，所以这里等【条件】不等时长。
+        wait_text("AI mov", 400);
+        checks = checks + 1;
+        if (nt_byte(7, 7) !== T_INNER_BLACK) begin
+            errors = errors + 1;
+            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（内部黑子）—— 落子没落到天元",
+                     nt_byte(7, 7), T_INNER_BLACK);
+        end else begin
+            $display("  [ok]   天元已落黑子（tile=%0d）", nt_byte(7, 7));
+        end
+
+        checks = checks + 1;
+        if (!has_text("AI mov")) begin
+            errors = errors + 1;
+            $display("  [FAIL] 没等到 AI moved —— AI 没应手，或它那一步非法");
+        end else begin
+            $display("  [ok]   AI 已应手");
+        end
+
+        // 把收到的串口文本打出来 —— 出问题时，这是唯一能看见固件"说了什么"的窗口
+        $display("  --- 收到 %0d 字节的串口文本 ---", rxcount);
+        for (i = 0; i < 220; i = i + 1) begin
+            rxb = rxtext[(219-i)*8 +: 8];
+            if (rxb == 8'h0D)      $write("<CR>");
+            else if (rxb == 8'h0A) $write("%c", 8'h0A);
+            else if (rxb >= 8'h20 && rxb < 8'h7F) $write("%c", rxb);
+            else if (rxb != 8'h00) $write("<%02h>", rxb);
+        end
+        $write("%c", 8'h0A);
+
+        $display("");
+        $display("checks=%0d  errors=%0d", checks, errors);
+        if (errors == 0) $display("=== PASS ===");
+        else             $display("=== FAIL ===");
+        $finish;
+    end
+
+    // 超时保护（正常跑完约 100M 周期上下，这里给足 10 倍余量）
+    initial begin
+        #6_000_000_000;
+        $display("\n=== TIMEOUT (pc=0x%h) ===", pc);
+        $display("  最后收到的串口文本尾部：");
+        for (i = 0; i < 8; i = i + 1)
+            $write("%c", rxtext[(7-i)*8 +: 8]);
+        $write("\n");
+        $display("checks=%0d  errors=%0d", checks, errors);
+        $display("=== FAIL (timeout) ===");
+        $finish;
+    end
+endmodule

@@ -27,6 +27,10 @@
 #include "hw_port.h"
 #include "game.h"
 
+#ifndef GOMOKU_AI_LEVEL
+#define GOMOKU_AI_LEVEL AI_NORMAL      /* 上板默认：4 层，棋力够看 */
+#endif
+
 /* 光标闪烁半周期（毫秒）。300ms ⇒ 亮 300 / 灭 300，够醒目又不闪眼 */
 #define BLINK_MS   300u
 
@@ -80,7 +84,10 @@ int main(void)
     input_init(&g_input, hw_mtime(), hw_key_raw(),
                INPUT_DEBOUNCE_MS * hw_ticks_per_ms(),
                INPUT_LONG_MS     * hw_ticks_per_ms());
-    game_init(&g_game, AI_NORMAL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
+    /* 难度可编译期覆盖 —— **仿真必须用 EASY**。
+     * NORMAL(4 层) 一次搜索约 2 亿拍，仿真里要跑十几分钟真实时间；
+     * EASY 是纯贪心、一次函数调用，秒出。见 build.ps1 -Sim。 */
+    game_init(&g_game, GOMOKU_AI_LEVEL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
 
     uart_puts("\r\n=== GOMOKU on RV32I ===\r\n");
     uart_puts("keys: SW4/5/6/7 = left/right/up/down\r\n");
