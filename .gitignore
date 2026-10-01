@@ -133,3 +133,7 @@ $RECYCLE.BIN/
 
 # ---- RT-Thread 移植（scripts/rtthread/）----
 /scripts/rtthread/build/
+
+# ---- 五子棋 x86 单测产物 ----
+/scripts/gomoku/*.exe
+/scripts/gomoku/*.o
