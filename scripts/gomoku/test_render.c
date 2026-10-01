@@ -1,0 +1,363 @@
+/* ============================================================================
+ * test_render.c —— 渲染层的 x86 单测（轨道 A3）
+ * ----------------------------------------------------------------------------
+ * 运行：  scripts\gomoku\run_test.ps1
+ *
+ * 这个文件干两件事：
+ *   1) **逐字节验证**渲染层写出来的显存对不对（地址、图块号、调色板字节序…）
+ *   2) **在没有显示器的情况下把画面显示出来** —— 自己实现一遍 PPU 的读取路径
+ *      （nametable -> pattern -> palette），把结果打成字符画。
+ *      这也是"手上没有 HDMI 线/显示器"时唯一能看见棋盘的办法。
+ *
+ * 为什么值得这么做：渲染层的 bug 有几个是仿真测试台也难看的 ——
+ *   地址算错一格、图块号形状选错、调色板字节序反了（BGR vs RGB）、
+ *   光标没把旧格恢复。这些在字符画里一眼就能看出来。
+ * ==========================================================================*/
+#include <stdio.h>
+#include <string.h>
+#include "board.h"
+#include "render.h"
+#include "tiles.h"
+
+static int g_pass = 0;
+static int g_fail = 0;
+
+#define CHECK(cond, msg)                                            \
+    do {                                                            \
+        if (cond) { g_pass++; }                                     \
+        else {                                                      \
+            g_fail++;                                               \
+            printf("  [FAIL] %s:%d  %s\n", __FILE__, __LINE__, msg); \
+        }                                                           \
+    } while (0)
+
+/* ---------------------------------------------------------------------------
+ * 假的显存 + PPU
+ * 尺寸照抄 rtl/video/video_core.v 里 vram 的例化参数
+ * ------------------------------------------------------------------------- */
+#define NT_BYTES  (32u * 256u)      /* 8KB  */
+#define PAT_BYTES (256u * 256u)     /* 64KB */
+#define PAL_BYTES (256u * 4u)       /* 1KB  */
+
+static uint8_t g_nt[NT_BYTES];
+static uint8_t g_pat[PAT_BYTES];
+static uint8_t g_pal[PAL_BYTES];
+
+static unsigned long g_writes;      /* 写字节计数 —— 用来验"移动光标只写 2 字节" */
+
+/* render.h 声明的平台端口：测试侧就是往数组里塞 */
+void vid_bulk_write(uint8_t region, uint16_t offset, const uint8_t *data, uint16_t len)
+{
+    uint16_t i;
+    g_writes += len;
+    for (i = 0; i < len; i++) {
+        if (region == VID_REGION_NT) {
+            if ((unsigned)offset + i < NT_BYTES)  g_nt[offset + i] = data[i];
+        } else if (region == VID_REGION_PAT) {
+            if ((unsigned)offset + i < PAT_BYTES) g_pat[offset + i] = data[i];
+        } else {
+            if ((unsigned)offset + i < PAL_BYTES) g_pal[offset + i] = data[i];
+        }
+    }
+}
+
+/* 模拟 PPU 的读取路径：屏幕像素 (px,py) -> 调色板索引。
+ *   nametable[屏幕图块行][屏幕图块列] -> 图块号 -> pattern[图块][块内 y][块内 x]
+ * 这与 rtl/video/ppu.v 的三级查表是同一条路（它内部有 6 拍流水线，这里不需要）。 */
+static uint8_t ppu_pixel(int px, int py)
+{
+    int trow = py / TILE_W;
+    int tcol = px / TILE_W;
+    uint8_t tile;
+    if (trow >= SCREEN_ROWS || tcol >= SCREEN_COLS) return 0;
+    tile = g_nt[trow * 256 + tcol];
+    return g_pat[(unsigned)tile * TILE_BYTES + (py % TILE_W) * TILE_W + (px % TILE_W)];
+}
+
+/* ---------------------------------------------------------------------------
+ * 把画面打成字符画
+ *   全盘总览：每个交叉点取一个特征像素，判"这儿是空 / 黑 / 白 / 光标"
+ *   局部放大：一个图块 16x16 逐像素打出来（看线宽、棋子形状对不对）
+ * ------------------------------------------------------------------------- */
+static char classify_pixel(uint8_t idx)
+{
+    switch (idx) {
+    case 2: case 3: return 'X';   /* 黑子主体 / 高光 */
+    case 4: case 5: return 'O';   /* 白子主体 / 描边 */
+    case 6:         return '+';   /* 光标 */
+    case 1:         return '#';   /* 棋盘线 */
+    default:        return '.';   /* 底色 */
+    }
+}
+
+/* 每个交叉点采样【块内 (x=13,y=7)】这一个像素。
+ * 为什么选这儿：它在棋盘线的延长线上（空点 -> 线色）、又在棋子和光标圈上
+ * （有子 -> 子色；光标 -> 光标色），一个像素就能区分四种状态。
+ * 选块中心 (7,7) 是不行的 —— 光标是空心圈，中心是底色，看不出光标。 */
+static char sample_intersection(int r, int c)
+{
+    int px = (BOARD_COL0 + c) * TILE_W + 13;
+    int py = (BOARD_ROW0 + r) * TILE_W + 7;
+    return classify_pixel(ppu_pixel(px, py));
+}
+
+/* 把采样结果归成四类。
+ * [!] 别直接拿字符比 —— 空交叉点上采样点落在**棋盘线**上，本来就该是 '#'
+ *     （棋盘边缘外侧的格子才会是底色 '.'）。两者都表示"这儿没有棋子、没有光标"，
+ *     所以判据必须是【四分类】而不是字符相等。 */
+#define CAT_EMPTY  0
+#define CAT_BLACK  1
+#define CAT_WHITE  2
+#define CAT_CURSOR 3
+
+static int sample_cat(int r, int c)
+{
+    char ch = sample_intersection(r, c);
+    if (ch == 'X') return CAT_BLACK;
+    if (ch == 'O') return CAT_WHITE;
+    if (ch == '+') return CAT_CURSOR;
+    return CAT_EMPTY;
+}
+
+static void show_board(void)
+{
+    int r, c;
+    printf("       ");
+    for (c = 0; c < GOMOKU_N; c++) printf("%c ", 'A' + c);
+    printf("\n");
+    for (r = 0; r < GOMOKU_N; r++) {
+        printf("   %2d  ", r + 1);
+        for (c = 0; c < GOMOKU_N; c++) printf("%c ", sample_intersection(r, c));
+        printf("\n");
+    }
+    printf("       ");
+    for (c = 0; c < GOMOKU_N; c++) printf("%c ", 'A' + c);
+    printf("\n      （X=黑 O=白 +=光标 .=空）\n");
+}
+
+/* 把一个 16x16 图块逐像素打出来 —— 看线宽/棋子形状/光标圈对不对 */
+static void show_tile(int shape, int state)
+{
+    uint8_t tile = RENDER_TILE(shape, state);
+    int y, x;
+    printf("     图块 shape=%d state=%d (tile=%d)：\n", shape, state, tile);
+    for (y = 0; y < TILE_W; y++) {
+        printf("       ");
+        for (x = 0; x < TILE_W; x++)
+            putchar(classify_pixel(g_pat[(unsigned)tile * TILE_BYTES + y * TILE_W + x]));
+        putchar('\n');
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * A. render_shape：15x15 上只有 9 种形状，且各形状的数量是对的
+ *    内部 13x13=169，边 4x13=52，角 4
+ * ------------------------------------------------------------------------- */
+static void test_shapes(void)
+{
+    int r, c, cnt[9];
+    int i;
+    for (i = 0; i < 9; i++) cnt[i] = 0;
+    for (r = 0; r < GOMOKU_N; r++)
+        for (c = 0; c < GOMOKU_N; c++) {
+            uint8_t s = render_shape(r, c);
+            if (s < 9) cnt[s]++;
+        }
+
+    printf("---- A. 网格线形状 ----\n");
+    printf("       内部=%d  上边=%d 下边=%d 左边=%d 右边=%d  "
+           "左上=%d 右上=%d 左下=%d 右下=%d\n",
+           cnt[0], cnt[1], cnt[2], cnt[3], cnt[4], cnt[5], cnt[6], cnt[7], cnt[8]);
+    CHECK(cnt[0] == 169, "内部形状应 169 个（13x13）");
+    CHECK(cnt[1] == 13 && cnt[2] == 13 && cnt[3] == 13 && cnt[4] == 13,
+          "四条边各 13 个");
+    CHECK(cnt[5] == 1 && cnt[6] == 1 && cnt[7] == 1 && cnt[8] == 1, "四个角各 1 个");
+    CHECK(cnt[0] + cnt[1] + cnt[2] + cnt[3] + cnt[4]
+          + cnt[5] + cnt[6] + cnt[7] + cnt[8] == 225, "九个形状加起来应覆盖全盘");
+}
+
+/* ---------------------------------------------------------------------------
+ * B. render_init 写出来的调色板与图块像素
+ * ------------------------------------------------------------------------- */
+static void test_init(void)
+{
+    int i, y, x;
+    int pal_ok = 1, pat_ok = 1;
+
+    printf("---- B. render_init：调色板与图块 ----\n");
+    memset(g_nt, 0xAA, sizeof(g_nt));
+    memset(g_pat, 0xAA, sizeof(g_pat));
+    memset(g_pal, 0xAA, sizeof(g_pal));
+
+    render_init();
+
+    /* 调色板：字节序必须是 B,G,R,0（对应 RTL 侧的 0xRRGGBB 小端字） */
+    for (i = 0; i < TILE_N_PALETTE; i++) {
+        uint32_t rgb = TILE_PALETTE[i];
+        if (g_pal[i * 4 + 0] != (uint8_t)(rgb & 0xFF))       pal_ok = 0;
+        if (g_pal[i * 4 + 1] != (uint8_t)((rgb >> 8) & 0xFF)) pal_ok = 0;
+        if (g_pal[i * 4 + 2] != (uint8_t)((rgb >> 16) & 0xFF))pal_ok = 0;
+    }
+    CHECK(pal_ok, "调色板字节序应为 B,G,R,0（小端）");
+
+    /* 图块像素：逐字节比对 tiles.h */
+    for (i = 0; i < TILE_N_TOTAL; i++)
+        for (y = 0; y < TILE_W; y++)
+            for (x = 0; x < TILE_W; x++)
+                if (g_pat[i * TILE_BYTES + y * TILE_W + x] != TILE_PATTERN[i][y * TILE_W + x])
+                    pat_ok = 0;
+    CHECK(pat_ok, "36 块图块像素应与 tiles.h 逐字节一致");
+
+    /* 相邻图块不能互相踩（地址偏移算错的话会串） */
+    CHECK(g_pat[TILE_BYTES - 1] == TILE_PATTERN[0][TILE_BYTES - 1], "第 0/1 块边界不应串");
+    CHECK(g_pat[(unsigned)TILE_N_TOTAL * TILE_BYTES] == 0xAA, "图块区之后不该被写");
+}
+
+/* ---------------------------------------------------------------------------
+ * C. nametable 地址：棋盘必须落在 (7,12) 起、每行跨 256 字节
+ * ------------------------------------------------------------------------- */
+static void test_nt_address(void)
+{
+    gomoku_t g;
+    printf("---- C. nametable 地址 ----\n");
+    gomoku_reset(&g);
+    memset(g_nt, 0xAA, sizeof(g_nt));
+    render_full(&g, -1, -1);
+
+    CHECK(BOARD_ROW0 == 7 && BOARD_COL0 == 12, "棋盘原点应为 (行7, 列12)");
+    CHECK(g_nt[BOARD_ROW0 * 256 + BOARD_COL0] == RENDER_TILE(TILE_SHAPE_TOPLEFT, RENDER_ST_EMPTY),
+          "左上角格应是「左上角形状 + 空」");
+    CHECK(g_nt[(BOARD_ROW0 + 14) * 256 + (BOARD_COL0 + 14)]
+          == RENDER_TILE(TILE_SHAPE_BOTRIGHT, RENDER_ST_EMPTY), "右下角格应是「右下角形状」");
+    CHECK(g_nt[(BOARD_ROW0 + 7) * 256 + (BOARD_COL0 + 7)]
+          == RENDER_TILE(TILE_SHAPE_INNER, RENDER_ST_EMPTY), "正中天元应是「内部形状 + 空」");
+    /* 棋盘以外不许被碰 */
+    CHECK(g_nt[(BOARD_ROW0 - 1) * 256 + BOARD_COL0] == 0xAA, "棋盘上方不该被写");
+    CHECK(g_nt[BOARD_ROW0 * 256 + (BOARD_COL0 - 1)] == 0xAA, "棋盘左侧不该被写");
+}
+
+/* ---------------------------------------------------------------------------
+ * D. 落子与光标：整条 PPU 读取路径还原出来必须和棋盘状态一致
+ * ------------------------------------------------------------------------- */
+static void test_render_states(void)
+{
+    gomoku_t g;
+    int r, c, bad = 0, cbad = 0;
+
+    printf("---- D. 落子 / 光标（沿 PPU 读取路径还原）----\n");
+    gomoku_reset(&g);
+
+    /* 摆一个能同时覆盖四种状态的局面 */
+    gomoku_place(&g, 7, 7);    /* 黑 */
+    gomoku_place(&g, 7, 8);    /* 白 */
+    gomoku_place(&g, 6, 7);    /* 黑 */
+    gomoku_place(&g, 8, 8);    /* 白 */
+    gomoku_place(&g, 6, 6);    /* 黑 */
+
+    render_full(&g, 7, 6);     /* 光标放在 (7,6)：那里是空的 */
+
+    /* 逐点还原，与棋盘状态对拍 */
+    for (r = 0; r < GOMOKU_N; r++) {
+        for (c = 0; c < GOMOKU_N; c++) {
+            int got = sample_cat(r, c);
+            int want;
+            if (r == 7 && c == 6)                       want = CAT_CURSOR;
+            else if (g.cell[r][c] == GOMOKU_BLACK)      want = CAT_BLACK;
+            else if (g.cell[r][c] == GOMOKU_WHITE)      want = CAT_WHITE;
+            else                                        want = CAT_EMPTY;
+            if (got != want) {
+                bad++;
+                if (bad <= 3)
+                    printf("  [FAIL] (%d,%d) 画面类别 %d，应为 %d（字符 '%c'）\n",
+                           r, c, got, want, sample_intersection(r, c));
+            }
+        }
+    }
+    CHECK(bad == 0, "225 个交叉点逐点还原都应与棋盘一致");
+
+    /* 光标挪走之后，旧位置必须恢复成"空"（不是还留着光标） */
+    render_move_cursor(&g, 7, 6, 7, 5);
+    CHECK(sample_cat(7, 6) == CAT_EMPTY, "光标移走后旧位置应恢复为空");
+    CHECK(sample_cat(7, 5) == CAT_CURSOR, "新位置应显示光标");
+
+    /* 再挪一次，确认来回都对 */
+    render_move_cursor(&g, 7, 5, 8, 5);
+    CHECK(sample_cat(7, 5) == CAT_EMPTY, "再挪一次后旧位置仍应恢复");
+    CHECK(sample_cat(8, 5) == CAT_CURSOR, "再挪一次后新位置应是光标");
+
+    /* 挪到棋子上：正常不会发生（落子合法性拦着），但不该崩 */
+    render_move_cursor(&g, 8, 5, 7, 7);
+    CHECK(sample_cat(7, 7) == CAT_CURSOR, "光标停在棋子上时光标仍应画出来");
+    (void)cbad;
+}
+
+/* ---------------------------------------------------------------------------
+ * E. 移动光标只写 2 个字节 —— 这是"没有精灵层"下的性能关键
+ * ------------------------------------------------------------------------- */
+static void test_cursor_cost(void)
+{
+    gomoku_t g;
+    unsigned long before;
+
+    printf("---- E. 移动光标/落子的字节开销 ----\n");
+    gomoku_reset(&g);
+    render_full(&g, 7, 7);
+
+    before = g_writes;
+    render_move_cursor(&g, 7, 7, 7, 8);
+    printf("       移动光标一次写 %lu 字节\n", g_writes - before);
+    CHECK(g_writes - before == 2, "移动光标应只写 2 个字节（旧格 + 新格）");
+
+    gomoku_place(&g, 7, 7);
+    before = g_writes;
+    render_cell(&g, 7, 7, 7, 8);
+    printf("       落子一次写   %lu 字节\n", g_writes - before);
+    CHECK(g_writes - before == 1, "落子应只写 1 个字节");
+
+    before = g_writes;
+    render_full(&g, 7, 8);
+    printf("       全盘重画一次写 %lu 字节（225 格）\n", g_writes - before);
+    CHECK(g_writes - before == 225, "全盘重画应恰好 225 字节");
+}
+
+/* ------------------------------------------------------------------------- */
+int main(void)
+{
+    gomoku_t g;
+
+    printf("=== 五子棋 轨道 A3（渲染层）单测 ===\n");
+    printf("调色板 %d 项 / 图块 %d 块 × %d 字节 = %d 字节（常驻内存）\n\n",
+           TILE_N_PALETTE, TILE_N_TOTAL, TILE_BYTES, TILE_N_TOTAL * TILE_BYTES);
+
+    test_shapes();
+    test_init();
+    test_nt_address();
+    test_render_states();
+    test_cursor_cost();
+
+    /* ---- 把画面显示出来（没有显示器时唯一能看见棋盘的办法）---- */
+    printf("\n================ 画面预览（模拟 PPU 读显存后的结果）================\n");
+    gomoku_reset(&g);
+    gomoku_place(&g, 7, 7);   /* 黑天元 */
+    gomoku_place(&g, 7, 8);   /* 白 */
+    gomoku_place(&g, 6, 7);   /* 黑 */
+    gomoku_place(&g, 8, 8);   /* 白 */
+    gomoku_place(&g, 6, 6);   /* 黑 */
+    gomoku_place(&g, 6, 5);   /* 白 —— 凑一个形状好看点 */
+    render_init();
+    render_full(&g, 7, 6);    /* 光标在 (7,6) */
+    show_board();
+
+    printf("\n---- 局部放大：棋盘内部格（线宽/棋子形状）----\n");
+    show_tile(TILE_SHAPE_INNER, RENDER_ST_EMPTY);
+    show_tile(TILE_SHAPE_INNER, RENDER_ST_BLACK);
+    show_tile(TILE_SHAPE_INNER, RENDER_ST_CURSOR);
+    printf("\n---- 局部放大：左上角格 ----\n");
+    show_tile(TILE_SHAPE_TOPLEFT, RENDER_ST_WHITE);
+    printf("=================================================================\n");
+
+    printf("\nchecks=%d  errors=%d\n", g_pass + g_fail, g_fail);
+    if (g_fail == 0) printf("=== PASS ===\n");
+    else             printf("=== FAIL ===\n");
+    return g_fail == 0 ? 0 : 1;
+}
