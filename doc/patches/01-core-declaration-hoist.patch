@@ -1,0 +1,142 @@
+# 补丁说明：core.v 声明前移（兼容 iverilog 14）
+# 原始文件：RV32I_1/rtl/core.v（队友机器上的版本）
+# 只调整【声明位置】，逻辑未改。应用：git apply / patch -p1
+
+--- a/rtl/core.v
++++ b/rtl/core.v
+@@ -13,6 +13,44 @@
+     reg [31:0] pc_r;
+     assign pc = pc_r;
+ 
++    // ------------------------------------------------------------------
++    // 前置声明：这些级间寄存器/关键信号在模块后段才被赋值，但前面的
++    // assign 与例化要先用到。原文件把声明写在后面，iverilog 14 会报
++    // "Unable to bind wire/reg/memory ... declaration after use"（旧版容忍）。
++    // 这里【只把声明提前】，逻辑一行未改。
++    // ------------------------------------------------------------------
++    // 冒险 / 除法
++    wire        stall;
++    wire [31:0] div_result;
++    wire        div_busy, div_done;
++    wire        div_stall;
++    wire        ex_flush;
++    // ID/EX
++    reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
++    reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
++    reg [4:0]  id_ex_alu_op;
++    reg [1:0]  id_ex_wb_sel;
++    reg [31:0] id_ex_pc, id_ex_rdata1, id_ex_rdata2, id_ex_imm;
++    reg [4:0]  id_ex_rd, id_ex_rs1, id_ex_rs2;
++    reg [2:0]  id_ex_funct3;
++    // EX/MEM
++    reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
++    reg [1:0]  ex_mem_wb_sel;
++    reg [31:0] ex_mem_alu_result, ex_mem_wdata, ex_mem_pc, ex_mem_imm;
++    reg [4:0]  ex_mem_rd;
++    reg [2:0]  ex_mem_funct3;
++    // MEM/WB
++    reg        mem_wb_reg_write;
++    reg [1:0]  mem_wb_wb_sel;
++    reg [31:0] mem_wb_alu_result, mem_wb_pc, mem_wb_imm;
++    reg [4:0]  mem_wb_rd;
++    reg [2:0]  mem_wb_funct3;
++    reg [1:0]  mem_wb_addr_low;
++    reg        mem_wb_mmio;
++    // 写回数据
++    wire [31:0] wb_data;
++    // ------------------------------------------------------------------
++
+     // MMIO 观察口：MEM 阶段 store（供顶层 UART/外设用），不改数据通路
+     assign store_we    = ex_mem_mem_write;
+     assign store_addr  = ex_mem_alu_result;
+@@ -87,20 +125,14 @@
+     imm_gen u_imm (.instr(if_id_instr), .imm(imm));
+ 
+     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
+-    wire stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
+-                  ((id_ex_rd == rs1) || (id_ex_rd == rs2)));
++    assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
++                    ((id_ex_rd == rs1) || (id_ex_rd == rs2)));
+ 
+     // stall 时 imem 读地址退一格到在途指令 if_addr_d，让同步读重新锁存正确数据
+     assign imem_addr = (stall || div_stall) ? if_addr_d[14:2] : pc_r[14:2];
+ 
+     // ================= ID/EX =================
+-    reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
+-    reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
+-    reg [4:0]  id_ex_alu_op;
+-    reg [1:0]  id_ex_wb_sel;
+-    reg [31:0] id_ex_pc, id_ex_rdata1, id_ex_rdata2, id_ex_imm;
+-    reg [4:0]  id_ex_rd, id_ex_rs1, id_ex_rs2;
+-    reg [2:0]  id_ex_funct3;
++    // （级间寄存器声明已提前到文件顶部，避免 forward reference）
+ 
+     // ================= EX =================
+     // ---- EX 阶段 forwarding（优先级：EX/MEM > MEM/WB > 寄存器读） ----
+@@ -128,8 +160,7 @@
+     // 多拍除法：DIV/DIVU/REM/REMU 由迭代除法器接管（单拍组合除法会拖垮 Fmax）
+     wire id_ex_is_div = (id_ex_alu_op >= 5'd14);
+     wire div_start    = id_ex_is_div && !div_busy;
+-    wire [31:0] div_result;
+-    wire div_busy, div_done;
++    // （div_result / div_busy / div_done 声明已提前到文件顶部）
+     divider u_divider (
+         .clk(clk), .resetn(resetn),
+         .start(div_start),
+@@ -141,7 +172,7 @@
+         .done(div_done)
+     );
+     wire [31:0] alu_result = id_ex_is_div ? div_result : alu_raw;
+-    wire        div_stall  = id_ex_is_div && !div_done;
++    assign      div_stall  = id_ex_is_div && !div_done;
+ 
+     wire equal         = (rs1_val == rs2_val);
+     wire less_signed   = ($signed(rs1_val) < $signed(rs2_val));
+@@ -161,15 +192,11 @@
+ 
+     wire [31:0] branch_target = id_ex_pc + id_ex_imm;
+     wire [31:0] jalr_target   = (rs1_val + id_ex_imm) & 32'hFFFF_FFFE;
+-    wire        ex_flush      = (id_ex_branch && branch_taken) || id_ex_jump || id_ex_jump_reg;
++    assign      ex_flush      = (id_ex_branch && branch_taken) || id_ex_jump || id_ex_jump_reg;
+     wire [31:0] ex_target     = id_ex_jump_reg ? jalr_target : branch_target;
+ 
+     // ================= EX/MEM =================
+-    reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
+-    reg [1:0]  ex_mem_wb_sel;
+-    reg [31:0] ex_mem_alu_result, ex_mem_wdata, ex_mem_pc, ex_mem_imm;
+-    reg [4:0]  ex_mem_rd;
+-    reg [2:0]  ex_mem_funct3;
++    // （级间寄存器声明已提前到文件顶部，避免 forward reference）
+ 
+     // ================= MEM =================
+     wire [12:0] dmem_addr = ex_mem_alu_result[14:2];
+@@ -209,13 +236,7 @@
+     );
+ 
+     // ================= MEM/WB =================
+-    reg        mem_wb_reg_write;
+-    reg [1:0]  mem_wb_wb_sel;
+-    reg [31:0] mem_wb_alu_result, mem_wb_pc, mem_wb_imm;
+-    reg [4:0]  mem_wb_rd;
+-    reg [2:0]  mem_wb_funct3;
+-    reg [1:0]  mem_wb_addr_low;
+-    reg        mem_wb_mmio;
++    // （级间寄存器声明已提前到文件顶部，避免 forward reference）
+ 
+     // ================= WB =================
+     // dmem_rd 是 bram 读口输出，load 指令进入 WB 阶段时正好有效；
+@@ -234,10 +255,10 @@
+         (mem_wb_funct3 == 3'b101) ? {16'd0, load_half} :              // LHU
+         load_src;                                                     // LW
+ 
+-    wire [31:0] wb_data = (mem_wb_wb_sel == 2'b01) ? load_data :
+-                          (mem_wb_wb_sel == 2'b10) ? (mem_wb_pc + 32'd4) :
+-                          (mem_wb_wb_sel == 2'b11) ? mem_wb_imm :
+-                          mem_wb_alu_result;
++    assign wb_data = (mem_wb_wb_sel == 2'b01) ? load_data :
++                     (mem_wb_wb_sel == 2'b10) ? (mem_wb_pc + 32'd4) :
++                     (mem_wb_wb_sel == 2'b11) ? mem_wb_imm :
++                     mem_wb_alu_result;
+ 
+     // ================= PC =================
+     // 同步读 BRAM 使取指有 2 拍延迟（if_id = mem[pc_r-8]）。stall 时 pc_r 必须停在
