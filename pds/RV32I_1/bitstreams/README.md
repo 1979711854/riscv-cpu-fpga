@@ -6,7 +6,13 @@
 |---|---|---|
 | `video_colorbar_pll62mhz_75871d8a.sbit` | HDMI 彩条版（62 MHz 时代）| `75871d8a` |
 | `gomoku_pll62mhz_2cee98c9.sbit` | 五子棋版（62 MHz 时代）—— **提频出问题时的一键回退版** | `2cee98c9` |
-| **`gomoku_pll85mhz_f4e78dc6.sbit`** | **五子棋版 @ 85 MHz —— 当前最新。串口含棋盘快照 / 开局空棋盘 / 光标移动反馈 / 难度切档反馈 / AI 思考提示 / 落子失败提示** | `f4e78dc6` |
+| **`coremark_pll85mhz_ae4deea9.sbit`** | **CoreMark 跑分版 @ 85 MHz —— 已实测 233.85 分**（ITER=2740，`Total ticks 996,015,474` / 11.7171 s）| `ae4deea9` |
+| **`gomoku_pll85mhz_f4e78dc6.sbit`** | **五子棋版 @ 85 MHz —— 应用场景演示用。串口含棋盘快照 / 开局空棋盘 / 光标移动反馈 / 难度切档反馈 / AI 思考提示 / 落子失败提示** | `f4e78dc6` |
+
+> [!] **两块 85 MHz 位流的区别只在固件**（同一个网表、同一份 RTL）：
+> `coremark_*` 是跑分固件，`gomoku_*` 是五子棋固件。**烧错的现象是完全相反的两件事** ——
+> 烧成 coremark 版：串口打 CoreMark 报告、按键无反应；烧成 gomoku 版：串口打棋盘、不跑分。
+> **`generate_bitstream\cpu_top_board.sbit` 永远只代表"最后一次综合的那版"**，别靠它猜。
 
 **怎么生成 / 怎么确认是哪一版**（2026-10-01 首次成功综合）：
 
