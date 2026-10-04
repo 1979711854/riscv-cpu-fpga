@@ -15,7 +15,7 @@
 // 软件怎么写显存 / 寄存器，见 rtl/bus/addr_map.vh 的视频区小节。
 //
 // [重点] 两个时钟域的分工与不变量
-//   * 显存必须真双口：分频比 18.5:45 无整数拍对齐关系，跨域不握手、不留 FIFO。
+//   * 显存必须真双口：分频比 13.5:45 无整数拍对齐关系，跨域不握手、不留 FIFO。
 //   * CPU 口必须遵守 mem_bus 的 1 拍读契约：写通路零寄存器（组合打进 BRAM A
 //     口），读数据由 BRAM A 口自己寄存 —— 与 unified_mem 的 B 口同规格。
 //   * scroll 是准静态量（软件一帧改一次），两级同步足够。多比特同时变理论上
@@ -32,7 +32,7 @@ module video_core (
     // ---- 两个时钟域 ----
     input  wire        pix_clk,     // 25.5MHz（= 1147.5MHz VCO / 45）
     input  wire        vid_resetn,  // pix 域复位，低有效（PLL 锁定前必须为 0）
-    input  wire        clk_sys,     // 62.03MHz CPU 时钟（= 同 VCO / 18.5）
+    input  wire        clk_sys,     // 85.0051MHz CPU 时钟（= 同 VCO / 13.5）
     input  wire        sys_resetn,  // clk_sys 域复位，低有效
 
     // ---- 显存 / 寄存器 CPU 口（来自 mem_bus 的译码结果）----

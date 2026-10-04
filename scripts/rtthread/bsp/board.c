@@ -116,7 +116,7 @@ void rt_hw_us_delay(rt_uint32_t us)
     rt_uint32_t start = REG32(MMIO_MTIME);
     rt_uint32_t ticks = (rt_uint32_t)(((rt_uint64_t)us * BOARD_SYSTEM_CLOCK_HZ) / 1000000u);
 
-    /* mtime 是 32 位、62.03MHz 下约 69 秒回绕一次。用无符号差值比较，
+    /* mtime 是 32 位、85.0051MHz 下约 50 秒回绕一次。用无符号差值比较，
      * 回绕也能正确工作。 */
     while ((rt_uint32_t)(REG32(MMIO_MTIME) - start) < ticks)
     {

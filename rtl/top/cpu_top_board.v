@@ -5,7 +5,7 @@
 // 与 cpu_top 的区别：
 //   ① **不引出 pc[31:0] 和 done 这两个板级调试口**，并把 cpu_top 的 key[7:4]
 //      固定接 1（未按下）；
-//   ② 用 PLL 把板上 27MHz 晶振倍频到 **62.03MHz** 作为系统时钟；
+//   ② 用 PLL 把板上 27MHz 晶振倍频到 **85.0051MHz** 作为系统时钟；
 //   ③ 用 DEBUG_LED 参数决定 led[2:0] 是调试信号还是 GPIO；
 //   ④ 例化 video_top 输出 HDMI 480p（**另一个独立 PLL**，见 video_top.v），
 //      并把 cpu_top 的视频口（显存读写 + scroll 寄存器）接到它上面。
@@ -26,22 +26,29 @@
 // 已实测：从左到右依次按 key[0..3]，串口输出 0x01/0x02/0x04/0x08。
 //
 // ----------------------------------------------------------------------------
-// [!] 时钟：上板 62.03MHz，仿真仍是 27MHz —— 两套口径不要混
+// [!] 时钟：上板 85.01MHz，仿真仍是 27MHz —— 两套口径不要混
 // ----------------------------------------------------------------------------
 //   * 仿真：测试台例化的是 cpu_top（不是本文件），不传 UART_DIV → 234（27MHz），
 //     周期数与风险分析口径全部按 27MHz。本文件**不参与仿真**。
-//   * 上板：PLL 27MHz→62.0309MHz，UART_DIV 传 538，CoreMark 的 EE_TICKS_PER_SEC=62030900。
-//   * 因此 **CPLD 板上的 CoreMark 时长 = Total ticks ÷ 62,030,900**
-//     （不再是 ÷49,892,700，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
+//   * 上板：PLL 27MHz→85.0051MHz，UART_DIV 传 738，CoreMark 的 EE_TICKS_PER_SEC=85005100。
+//   * 因此 **板上的 CoreMark 时长 = Total ticks ÷ 85,005,100**
+//     （不再是 ÷62,030,900，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
 //   * PLL 输出时钟约束由 PDS 从 IP 自动推导（`.fdc` 里只有 27MHz 的
-//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 62.0309 MHz）。
+//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 85.0051 MHz）。
 //   * 频率来历：VCO = 27 ÷ RATIOI(1) × RATIOM(2) × RATIOF(21.25) = 1147.5 MHz，
-//     CLKOUT0 = VCO ÷ STATIC_RATIO0(18.5) = 62.03 MHz。
+//     CLKOUT0 = VCO ÷ STATIC_RATIO0(13.5) = 85.0 MHz。
 //     改频率只需改 ipcore/pll/pll.idf 的 STATIC_RATIO0 再跑
 //     `ip_generate.exe -i pll.idf`（**可命令行完成，不必开 GUI**）。
 //     [重点] 改完必须同步 4 处常量：本文件的 UART_DIV、
 //     coremark_port/core_portme.c 的 EE_TICKS_PER_SEC、demo/addr_map.h 的 CPU_HZ、
 //     rtthread/bsp/board.h 的 BOARD_SYSTEM_CLOCK_HZ，并重算 ITER。
+//   * [!] **为什么是 85：PDS 的 P&R 是"满足约束即收敛"，Estimated Frequency
+//     从来不是设计上限，而是"这次被要求跑多快"。** 同一份 RTL、只改 PLL 分频比：
+//         请求 62.03 → 达 66.87 (slack +1.167)   ← 原设计，被自己卡住
+//         请求 71.72 → 达 73.26 (slack +0.293)
+//         请求 85.01 → 达 91.87 (slack +0.879)   ← 本次采用
+//         请求 99.79 → 失败 (WNS −1.188、282 个失败端点)
+//     故真实上限 ≈90 MHz；取 85 是留 ~7% 余量，与原设计 62.03/66.87 的 7.8% 同一风险档。
 // ============================================================================
 module cpu_top_board #(
     // LED 映射开关（PDS 综合时取默认值，切换需重新综合 —— 或加 `-D` 宏）：
@@ -67,17 +74,18 @@ module cpu_top_board #(
     output wire [2:0]  tmds_data_n  // P25 / P24 / N24
 );
 
-    // ---- PLL：27MHz 晶振 → 62.03MHz 系统时钟 ----
+    // ---- PLL：27MHz 晶振 → 85.0051MHz 系统时钟 ----
     // 例化的是 Pango IP Compiler 生成的 pll（pds/RV32I_1/ipcore/pll/pll.v，
-    // 配置见同目录 pll.idf：CLKIN_FREQ=27.0、CLKOUT0_REQ_FREQ=62.03）。
+    // 配置见同目录 pll.idf：CLKIN_FREQ=27.0、STATIC_RATIO0=13.5
+    // —— 注意 STATIC_RATIO* 才是生成器认的字段，CLKOUT0_REQ_FREQ 改了无效）。
     // [!] 这个 IP 必须在 PDS 工程里以 IP 源文件形式引用（见 RV32I_1.pds 的
     //    wgt_my_ips_src），单纯把 pll.v 当普通源文件加进去综合会报黑盒。
-    wire clk_sys;        // PLL 输出系统时钟（62.03MHz）
+    wire clk_sys;        // PLL 输出系统时钟（85.0051MHz）
     wire pll_locked;     // PLL 锁定指示
 
     pll u_pll (
         .clkin1 (clk),        // 27MHz 晶振输入
-        .clkout0(clk_sys),    // 62.03MHz 输出
+        .clkout0(clk_sys),    // 85.0051MHz 输出
         .lock   (pll_locked)
     );
 
@@ -98,7 +106,7 @@ module cpu_top_board #(
     wire [13:0] vid_waddr_d;
     wire [31:0] vid_rdata;
 
-    cpu_top #(.UART_DIV(10'd538)) u_soc (   // 62.03MHz → 115200 波特（62,030,900/115200 = 538.5）
+    cpu_top #(.UART_DIV(10'd738)) u_soc (   // 85.0051MHz → 115200 波特（85,005,100/115200 = 737.9）
         .clk      (clk_sys),
         .resetn   (sys_resetn),
 

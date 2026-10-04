@@ -24,7 +24,7 @@
 scripts\build_bitstream.ps1 rtthread
 ```
 
-它做的事（全部串好，不用手工分步）：编 RT-Thread 固件（**上板口径** 62.0309MHz /
+它做的事（全部串好，不用手工分步）：编 RT-Thread 固件（**上板口径** 85.0051MHz /
 乒乓 500ms）→ 同步进 PDS 工程 → **sha256 校验**（9498 行 / 4749 字）→ 综合布线出 `.sbit`。
 
 > [!] **别用 `scripts\rtthread\build.ps1 -Sim` 的产物上板** —— 那是仿真口径
@@ -52,7 +52,7 @@ scripts\build_bitstream.ps1 rtthread
  2006 - 2026 Copyright by RT-Thread team
 
 ========================================
- RISC-V RV32IM @ 62.0309MHz  RT-Thread
+ RISC-V RV32IM @ 85.0051MHz  RT-Thread
 ========================================
 [boot] tick period  = 1000 Hz
 [boot] heap         = 7151 bytes
@@ -67,7 +67,7 @@ scripts\build_bitstream.ps1 rtthread
 
 | 判据 | 期望 |
 |---|---|
-| 控制台 | 打出 RT-Thread banner（**串口不乱码** —— 顺带验了 62.03MHz 下 `UART_DIV=538` 对上了）|
+| 控制台 | 打出 RT-Thread banner（**串口不乱码** —— 顺带验了 85.0051MHz 下 `UART_DIV=738` 对上了）|
 | **系统 tick** | `delta` **精确等于 500**，且连续多轮不漂 |
 | **上下文切换** | ping / pong 交替，`total` 递增 |
 
@@ -86,7 +86,7 @@ scripts\build_bitstream.ps1 rtthread
 scripts\rtthread\run_sim.ps1
 
 # 只编不跑
-scripts\rtthread\build.ps1              # 上板口径（62.0309MHz）
+scripts\rtthread\build.ps1              # 上板口径（85.0051MHz）
 scripts\rtthread\build.ps1 -Firmware    # 再出 mem.hex（送 PDS 综合）
 scripts\rtthread\build.ps1 -Sim         # 仿真口径（100MHz + 短延时 + 出 hex）
 ```
@@ -102,7 +102,7 @@ scripts\rtthread\build.ps1 -Sim         # 仿真口径（100MHz + 短延时 + �
  2006 - 2026 Copyright by RT-Thread team
 
 ========================================
- RISC-V RV32IM @ 62.0309MHz  RT-Thread
+ RISC-V RV32IM @ 85.0051MHz  RT-Thread
 ========================================
 [boot] tick         = 0
 [boot] tick period  = 1000 Hz
@@ -127,9 +127,9 @@ scripts\rtthread\build.ps1 -Sim         # 仿真口径（100MHz + 短延时 + �
 **RT-Thread 的内核在这颗 CPU 上真的跑起来了。**
 
 > [!] **仿真口径与上板不同**：仿真时钟 **100MHz**（`sim/` 下所有测试台都是 `always #5`），
-> 所以 tick 换算按 100MHz；上板是 62.0309MHz。`-Sim` 会自动传对。
+> 所以 tick 换算按 100MHz；上板是 85.0051MHz。`-Sim` 会自动传对。
 > （CLAUDE.md 里说的"仿真 27MHz"指的是 UART_DIV 默认值 234 那套**标称**口径 ——
-> 意思是"别把 62.03MHz 的 538 带进仿真"，不是说仿真节拍是 27MHz。）
+> 意思是"别把 85.0051MHz 的 738 带进仿真"，不是说仿真节拍是 27MHz。）
 
 ## 目录
 

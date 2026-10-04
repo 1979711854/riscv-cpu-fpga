@@ -20,7 +20,7 @@ periph/   外设
           uart_rx.v   UART 接收（16 深 FIFO，读弹出）
           gpio.v      8 位 LED 输出 + 8 位按键输入
 top/      cpu_top.v   SoC 顶层，只做连线（仿真用）
-          cpu_top_board.v  上板顶层（PDS 的 top）：包住 cpu_top，PLL 27→62.03MHz，不引出 pc/done
+          cpu_top_board.v  上板顶层（PDS 的 top）：包住 cpu_top，PLL 27→85.01MHz，不引出 pc/done
 top.v     早期 LED 点灯练习工程顶层（保留，不在 PDS 源文件列表里）
 ```
 

@@ -10,7 +10,7 @@
 //   字节，全都 1 拍完成，且与统一存储器 B 口（unified_mem）语义一致。
 //
 // 两个端口，各自时钟（真双口；理由见 vram_dp.v 文件头 —— CPU 在 clk_sys
-// 62.03MHz、PPU 在 pix_clk 25.5MHz，比 18.5:45 无整数对齐关系）：
+// 85.0051MHz、PPU 在 pix_clk 25.5MHz，比 13.5:45 无整数对齐关系）：
 //
 //   A 口 CPU ▸ clk_sys  32bit 读 + 字节使能写   满足 mem_bus 的 1 拍读契约
 //   B 口 PPU ▸ pix_clk  字节地址进、字节数据出

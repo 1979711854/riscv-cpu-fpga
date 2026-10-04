@@ -37,26 +37,48 @@ powershell -NoProfile -Command "Get-CimInstance Win32_PnPEntity | Where-Object {
 
 ## 2. 引脚表（`.fdc` 里生效的约束）
 
-### 时钟：板载 27 MHz 经 PLL 倍频到 **62.03 MHz**（2026-09-28 起，两拍乘法器腾时序后提频）
+### 时钟：板载 27 MHz 经 PLL 倍频到 **85.01 MHz**（2026-10-04 起）
 
 系统时钟不是晶振直连，而是走 PLL：
 
 ```
-clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(62.03MHz) ──> cpu_top
+clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
                           └─> lock ──> 门控 resetn（锁定前一直复位 CPU）
 ```
 
+> [!] **先说清楚 85 是怎么定的 —— 别再用"Estimated Frequency 是设计上限"那套推理。**
+> PDS 的 P&R 是**满足约束即收敛**：约束给多高，它就优化到多高就停手。
+> 2026-10-04 用同一份 RTL、只改 `STATIC_RATIO0` 实测：
+>
+> | 请求频率 | 实际达到 | CPU 域 Slack |
+> |---|---|---|
+> | 62.03 MHz | 66.87 MHz | +1.167（**旧设计，被自己卡住**）|
+> | 71.72 MHz | 73.26 MHz | +0.293 |
+> | **85.01 MHz** | **91.87 MHz** | **+0.879** ← 本次采用 |
+> | 99.79 MHz | 89.21 MHz | −1.188（失败，282 端点）|
+>
+> **真实上限 ≈90 MHz**；取 85 是留 ~7% 余量，与旧设计 62.03/66.87 的 7.8% 同一风险档。
+>
+> [!] 上表是**探针运行**（只跑到 `report_timing`）的数字。两次**正式构建**
+> （coremark 与 gomoku，都走完整 P&R 并出 `.sbit`）实测为
+> `Requested 85.0051 / Estimated **91.3993 MHz** / Slack **+0.823 ns**，CPU 域失败端点 0`。
+> 与探针同档（差 0.5%），说明 P&R 抖动在预期范围内。
+> **引用时序余量时用正式构建那一组数字**（归档位流 md5 `4d0b9966` / `1062095c` 出自同一网表）。
+
 * `.fdc` 里只有输入晶振的 `create_clock ... -period 37.037`（27 MHz），**这句别改**。
   PLL 输出的约束由 **PDS 从 PLL IP 自动推导**，只在时序报告里显示
-  （当前 `clk 62.0309 MHz`；CPU 线估计可达 67.78 MHz，本工程带 PPU 需重新综合实测）。**别以为约束没生效。**
+  （当前 `clk 85.0051 MHz`）。**别以为约束没生效。**
 * PLL 是 Pango IP，在工程里以 `wgt_my_ips_src` 引用（`ipcore/pll/`）。
   **不能只把 `pll.v` 当普通源文件加进去** —— 那样综合会报 `pll` 是黑盒。
-* **由此产生的连带改动**：UART 分频 **538**（`cpu_top_board` 传 `UART_DIV`）、
-  CoreMark 的 `EE_TICKS_PER_SEC = 62030900`、`addr_map.h` 的 `CPU_HZ = 62030900u`、
-  rtthread 的 `BOARD_SYSTEM_CLOCK_HZ = 62030900u`。
+* **由此产生的连带改动**：UART 分频 **738**（`cpu_top_board` 传 `UART_DIV`）、
+  CoreMark 的 `EE_TICKS_PER_SEC = 85005100`、`addr_map.h` 的 `CPU_HZ = 85005100u`、
+  rtthread 的 `BOARD_SYSTEM_CLOCK_HZ = 85005100u`，外加 CoreMark 的 ITER 重算。
 * [!] **仿真仍然是 27 MHz**（测试台例化 `cpu_top`，不传参数 → 分频 234）。
-  所以：**仿真 27 MHz / 上板 62.03 MHz**，两套口径别混。
+  所以：**仿真 27 MHz / 上板 85.01 MHz**，两套口径别混。
   远程 FPGA 平台**没有 PLL，也是 27 MHz**。
+* **降频的出路**（若板上不稳）：改 `ipcore/pll/pll.idf` 的 `STATIC_RATIO0` 再跑
+  `ip_generate.exe -i pll.idf`，然后同步上面 4 处常量重算 ITER。
+  `CLKOUT0 = 1147.5 ÷ STATIC_RATIO0`：`16.0 → 71.72`、`14.5 → 79.14`、`13.5 → 85.0`（当前）。
 
 | 信号 | 管脚 | 板上丝印 | 说明 |
 |---|---|---|---|

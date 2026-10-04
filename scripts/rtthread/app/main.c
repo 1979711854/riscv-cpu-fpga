@@ -105,7 +105,7 @@ int main(void)
 
     rt_kprintf("\n");
     rt_kprintf("========================================\n");
-    rt_kprintf(" RISC-V RV32IM @ 62.0309MHz  RT-Thread  \n");
+    rt_kprintf(" RISC-V RV32IM @ 85.0051MHz  RT-Thread  \n");
     rt_kprintf("========================================\n");
     rt_kprintf("[boot] tick         = %d\n", rt_tick_get());
     rt_kprintf("[boot] tick period  = %d Hz\n", RT_TICK_PER_SECOND);

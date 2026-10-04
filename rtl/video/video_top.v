@@ -52,7 +52,7 @@ module video_top (
     input  wire        clk27,       // D18：板载 27MHz 晶振（与 CPU PLL 同一个输入）
     input  wire        resetn,      // C22：KEY0，低有效（视频域用）
 
-    input  wire        clk_sys,     // CPU 时钟 62.03MHz：只给显存 A 口与滚动寄存器
+    input  wire        clk_sys,     // CPU 时钟 85.0051MHz：只给显存 A 口与滚动寄存器
     input  wire        sys_resetn,  // CPU 域复位（板上 = resetn & pll_locked）
 
     // ---- 显存 / 寄存器 CPU 口（来自 mem_bus 的译码，见 rtl/bus/mem_bus.v）----
