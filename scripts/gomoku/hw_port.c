@@ -38,8 +38,8 @@ void hw_uart_puts(const char *s)
 
 uint32_t hw_ticks_per_ms(void)
 {
-    /* 板上时钟见 addr_map.h 的 CPU_HZ（当前 62,030,900）。
-     * **别写死 27e6 / 49.89e6** —— 那些是历史口径，以 PDS 时序报告的实际频率为准。 */
+    /* 板上时钟见 addr_map.h 的 CPU_HZ（当前 85,005,100）。
+     * **别写死 27e6 / 49.89e6 / 62.03e6** —— 那些是历史口径，以 PDS 时序报告的实际频率为准。 */
     return CPU_HZ / 1000u;
 }
 

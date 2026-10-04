@@ -17,7 +17,7 @@
  *     所以调用方必须自己去抖 —— 这就是 input.c 存在的理由。 */
 uint8_t hw_key_raw(void);
 
-/* 自由跑的周期计数器（mtime），板上是 62.0309 MHz。
+/* 自由跑的周期计数器（mtime），板上是 85.0051 MHz。
  * 只用来算【时间差】，不要当绝对时间用。 */
 uint32_t hw_mtime(void);
 
@@ -32,7 +32,7 @@ uint32_t hw_ticks_to_ms(uint32_t ticks);
 
 /* 每毫秒多少计数（板上 = CPU_HZ/1000）。**init 类函数的阈值参数就是这么来的**：
  *      input_init(&in, t, keys, INPUT_DEBOUNCE_MS * hw_ticks_per_ms(), ...)
- * 不要自己在别处写 62031 之类的常数 —— 换主频时那会变成静默的错。 */
+ * 不要自己在别处写 85005 之类的常数 —— 换主频时那会变成静默的错。 */
 uint32_t hw_ticks_per_ms(void);
 
 #endif /* GOMOKU_HW_PORT_H */
