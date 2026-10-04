@@ -4,8 +4,9 @@
 
 | 文件 | 内容 | md5 |
 |---|---|---|
-| `video_colorbar_pll62mhz_75871d8a.sbit` | **HDMI 彩条版**（首次上板用）—— `build_bitstream.ps1 video` 产物 | `75871d8a` |
-| **`gomoku_pll62mhz_2cee98c9.sbit`** | **五子棋版（能玩了）—— 当前最新** | `2cee98c9` |
+| `video_colorbar_pll62mhz_75871d8a.sbit` | HDMI 彩条版（62 MHz 时代）| `75871d8a` |
+| `gomoku_pll62mhz_2cee98c9.sbit` | 五子棋版（62 MHz 时代）—— **提频出问题时的一键回退版** | `2cee98c9` |
+| **`gomoku_pll85mhz_f4e78dc6.sbit`** | **五子棋版 @ 85 MHz —— 当前最新。串口含棋盘快照 / 开局空棋盘 / 光标移动反馈 / 难度切档反馈 / AI 思考提示 / 落子失败提示** | `f4e78dc6` |
 
 **怎么生成 / 怎么确认是哪一版**（2026-10-01 首次成功综合）：
 
