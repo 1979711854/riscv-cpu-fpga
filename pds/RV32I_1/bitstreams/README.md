@@ -7,6 +7,7 @@
 | `gomoku_pll62mhz_2cee98c9.sbit` | 五子棋版（62 MHz 时代）—— 提频出问题时的回退版 | `2cee98c9` |
 | `coremark_pll85mhz_ae4deea9.sbit` | **单发射** CoreMark @ 85 MHz —— **已板上实测 233.85 分**（ITER=2740）| `ae4deea9` |
 | `gomoku_pll85mhz_f4e78dc6.sbit` | **单发射** 五子棋 @ 85 MHz —— 已上板跑通（含串口棋盘快照等）| `f4e78dc6` |
+| **`gomoku_dual_85mhz_3976aebd.sbit`** | **双发射** 五子棋 @ 85 MHz —— **当前最新，板上待验**（同 CoreMark 双发射网表，只有固件不同）| `3976aebd` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
 
 > [!] **"单发射 / 双发射"现在是位流名字的一部分**（2026-10-06 起）。两者文件名与字节数
