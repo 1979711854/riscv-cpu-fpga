@@ -2,7 +2,8 @@
     [int]$Iter = 1,                                                        # CoreMark 迭代次数（板上跑 ≥10s 需 ≥650，用 700）
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin",
     [switch]$SkipBuild,                                                    # 跳过编译，复用已有 ELF
-    [switch]$SkipSim                                                       # 只生成固件、不跑仿真
+    [switch]$SkipSim,                                                      # 只生成固件、不跑仿真
+    [switch]$Single                                                        # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
 )
 
 # -SkipSim 的用途：上板流程只需要 mem.hex，不需要仿真。
@@ -10,7 +11,13 @@
 #   想核实 CoreMark 数值时再去掉这个开关跑一遍。
 
 # CoreMark 一键：编译 ELF -> 拆 hex 到 sim/programs -> iverilog 编译 tb_coremark -> vvp 跑分
+#
+# [重点] 配置必须显式、且与板上比特流对齐：
+#   默认 = 双发射（传 -DDUAL，每迭代 313,886 拍）；-Single = 单发射（363,515 拍）。
+#   得分 = 时钟 ÷ 每迭代周期数 ⇒ 配置不同得分不同，混了会把分数算错。
+#   日志首行 "SIM CONFIG: DUAL_ISSUE=?" 会自证本次跑的是哪一种。
 $ErrorActionPreference = "Stop"
+$dualIssue = if ($Single) { 0 } else { 1 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $env:PATH = "$Toolchain;$env:PATH"
@@ -52,16 +59,22 @@ if ($SkipSim) {
     exit 0
 }
 
-Write-Host "[3/3] 编译 testbench 并仿真 ..."
+$vvpName = if ($dualIssue -eq 1) { "tb_coremark_dual.vvp" } else { "tb_coremark_single.vvp" }
+Write-Host "[3/3] 编译 testbench 并仿真 ... DUAL_ISSUE=$dualIssue（$vvpName）"
 $sim = Join-Path $repo "sim"
-$vvp = Join-Path $sim "tb_coremark.vvp"
+$vvp = Join-Path $sim $vvpName
 $rtl = @()
 foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
     $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
 }
-& iverilog -g2012 -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
-    -I (Join-Path $repo "rtl\bus") -I $sim `
-    -o $vvp (Join-Path $sim "tb_coremark.v") @rtl
+$defs = @()
+if ($dualIssue -eq 1) { $defs += "-DDUAL" }
+$iverilogArgs = @("-g2012") + $defs + @(
+    "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
+    "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
+    "-o", $vvp, (Join-Path $sim "tb_coremark.v")
+) + $rtl
+& iverilog @iverilogArgs
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 
 Push-Location $sim

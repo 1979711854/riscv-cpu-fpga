@@ -19,15 +19,31 @@ module coremark_tb;
     // core ↔ mem_bus 的取指口与访存口
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
+    wire [12:0] imem_addr2;
+    wire [31:0] imem_rd2;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
     wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
 
-    core u_core (
+    // 双发射开关：编译时加 -DDUAL 即用 DUAL_ISSUE=1 核跑分。
+    // [!] 脚本必须【显式】传该宏：run_coremark.ps1 默认双发射，加 -Single 才切单发射。
+    //     不传 = 单发射，会与板上（双发射）比特流对不上 —— 每迭代周期数也随之不同
+    //     （单发射 363,515 / 双发射 313,886），混了会把得分算错（2026-10-06 修）。
+`ifdef DUAL
+    localparam DUAL_OUT = 1;
+`else
+    localparam DUAL_OUT = 0;
+`endif
+
+    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d", DUAL_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
+        .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -43,6 +59,7 @@ module coremark_tb;
     mem_bus u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
+        .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -73,6 +90,12 @@ module coremark_tb;
     integer      prof_on;
     integer      trace_start_cyc, trace_len, trace_left, trace_fd;
     reg [1023:0] trace_fname;
+
+    // +PAIRTRACE：默认关。**纯被动观测**（同 +PROF 纪律），不影响周期数。
+    // 在 CoreMark 计时区间内逐条流出 retired {pc, instr}，供 Python 复放双发射
+    // 配对规则、估算动态配对率 p。影子链镜像 v_* 的推进/清零，{pc,instr} 取自 IF/ID。
+    integer      pairtr_on, pairtr_fd;
+    reg [63:0]   pr_ex, pr_mem, pr_wb;   // {pc[31:0], instr[31:0]}
 
     // 周期构成累计
     reg [63:0] c_stall, c_div, c_mul, c_flush;
@@ -150,12 +173,18 @@ module coremark_tb;
     // 剖析开关与 trace 参数
     initial begin
         prof_on         = 0;
+        pairtr_on       = 0;
+        pairtr_fd       = 0;
         trace_start_cyc = -1;
         trace_len       = 64;
         trace_left      = 0;
         trace_fd        = 0;
         trace_fname     = "programs/trace.txt";
         if ($test$plusargs("PROF")) prof_on = 1;
+        if ($test$plusargs("PAIRTRACE")) begin
+            pairtr_on = 1;
+            pairtr_fd = $fopen("programs/pairtrace.txt", "w");
+        end
         $value$plusargs("TRACE_START=%d", trace_start_cyc);
         $value$plusargs("TRACE_LEN=%d",   trace_len);
         $value$plusargs("TRACE_FILE=%s",  trace_fname);
@@ -273,6 +302,7 @@ module coremark_tb;
                     $display("h %0d stall=%0d flush=%0d mem=%0d commit=%0d",
                              ph, h_stall[ph], h_flush[ph], h_mem[ph], h_cmt[ph]);
             end
+            if (pairtr_on && pairtr_fd != 0) $fclose(pairtr_fd);
             $finish;
         end
     end
@@ -297,6 +327,7 @@ module coremark_tb;
             c_redir <= 64'd0; c_mispred <= 64'd0;
             c_commit <= 64'd0; c_inst_in <= 64'd0;
             v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
+            pr_ex <= 64'd0; pr_mem <= 64'd0; pr_wb <= 64'd0;
             h_idx <= 0; h_cnt <= 0;
             t_timer_n <= 0;
             in_timed  <= 1'b0;
@@ -308,7 +339,7 @@ module coremark_tb;
             tc_br_bwd <= 64'd0; tc_br_bwd_tk <= 64'd0;
             tc_jal <= 64'd0; tc_jalr <= 64'd0;
             tc_redir <= 64'd0; tc_mispred <= 64'd0;
-        end else if (prof_on) begin
+        end else if (prof_on || pairtr_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             // [!] 冻结判据一律用 core 的 mc_stall（多拍功能单元停顿的并集：
             //     除法 or 乘法），不能只用 div_stall —— 那样乘法的 1 拍停顿
@@ -320,6 +351,14 @@ module coremark_tb;
             v_id  <= (u_core.ex_flush || u_core.ex_mispred || u_core.id_redirect) ? 1'b0 :
                      ((!u_core.stall && !u_core.mc_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
+
+            // ---- +PAIRTRACE 影子链：镜像 v_* 的推进/清零，携带 {pc,instr} ----
+            pr_wb  <= pr_mem;
+            pr_mem <= u_core.mc_stall ? 64'd0 : pr_ex;
+            pr_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.stall) ? 64'd0 :
+                      (u_core.mc_stall ? pr_ex : {u_core.if_id_pc, u_core.if_id_instr});
+            if (pairtr_on && in_timed && v_wb)
+                $fdisplay(pairtr_fd, "%08h %08h", pr_wb[63:32], pr_wb[31:0]);
             if (!u_core.ex_flush && !u_core.ex_mispred && !u_core.id_redirect &&
                 !u_core.stall && !u_core.mc_stall)
                 c_inst_in <= c_inst_in + 64'd1;

@@ -31,9 +31,13 @@ module mem_bus (
     input  wire        clk,
     input  wire        resetn,
 
-    // ---- 取指口（直通统一存储器的 A 口，不做任何仲裁/缓冲）----
+    // ---- 取指口（直通统一存储器的 A1/A2 口，不做任何仲裁/缓冲）----
+    // A2 是双发射的第二取指读口：与 A1 同拍、同延迟，读 unified_mem 的复制阵列。
+    // 单发射（DUAL_ISSUE=0）时 core 仍驱动它、但结果被丢弃，行为逐位不变。
     input  wire [12:0] imem_addr,
     output wire [31:0] imem_rd,
+    input  wire [12:0] imem_addr2,
+    output wire [31:0] imem_rd2,
 
     // ---- 访存口（来自 core 的 MEM 级）----
     input  wire [31:0] mem_addr,
@@ -176,11 +180,14 @@ module mem_bus (
     wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 
     unified_mem u_mem (
-        // A 口：取指（只读）
+        // A1 口：取指 1（只读）
         .a_addr   (imem_addr),
         .a_rd_data(imem_rd),
         .a_clk    (clk),
         .a_rst    (~resetn),
+        // A2 口：取指 2（只读，双发射第二读口；与 A1 同域）
+        .a2_addr  (imem_addr2),
+        .a2_rd_data(imem_rd2),
         // B 口：访存（读写）
         .b_addr   (ram_word),
         .b_wr_data(mem_wdata),

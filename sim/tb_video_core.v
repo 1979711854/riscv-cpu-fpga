@@ -88,6 +88,8 @@ module tb_video_core;
         .resetn       (rstn_sys),
         .imem_addr    (13'd0),
         .imem_rd      (),
+        .imem_addr2   (13'd0),
+        .imem_rd2     (),
         .mem_addr     (d_addr),
         .mem_wdata    (d_wdata),
         .mem_byte_en  (d_be),

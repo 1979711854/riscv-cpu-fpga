@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # 自写汇编测试（sim/tests/*.S）的汇编 + 运行脚本
 # ----------------------------------------------------------------------------
 # 与 run_riscv_tests.ps1 的区别：
@@ -15,10 +15,12 @@
 # ============================================================================
 param(
     [string]$Name = "",
-    [switch]$KeepHex
+    [switch]$KeepHex,
+    [switch]$Single     # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
 )
 
 $ErrorActionPreference = "Stop"
+$dualIssue = if ($Single) { 0 } else { 1 }
 $repo = Split-Path -Parent $PSScriptRoot
 
 $gcc = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gcc.exe"
@@ -56,22 +58,28 @@ foreach ($s in $srcs) {
 # ---------------------------------------------------------------------------
 # [2/3] 编译测试台（只编 core/bus/periph，SoC 级顶层不参与）
 # ---------------------------------------------------------------------------
-Write-Host "[2/3] 编译测试台 ..."
-$vvp  = Join-Path $sim "tb_riscv.vvp"
+# vvp 文件名带配置后缀（与 run_riscv_tests.ps1 同名同配置可复用），避免配置混用。
+$vvpName = if ($dualIssue -eq 1) { "tb_riscv_dual.vvp" } else { "tb_riscv_single.vvp" }
+Write-Host "[2/3] 编译测试台 ... DUAL_ISSUE=$dualIssue（$vvpName）"
+$vvp  = Join-Path $sim $vvpName
 $rtl = @()
 foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
     $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
 }
-& iverilog -g2012 `
-    -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
-    -I (Join-Path $repo "rtl\bus") -I $sim `
-    -o $vvp (Join-Path $sim "tb_riscv.v") @rtl
+$defs = @()
+if ($dualIssue -eq 1) { $defs += "-DDUAL" }
+$iverilogArgs = @("-g2012") + $defs + @(
+    "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
+    "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
+    "-o", $vvp, (Join-Path $sim "tb_riscv.v")
+) + $rtl
+& iverilog @iverilogArgs
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 
 # ---------------------------------------------------------------------------
 # [3/3] 逐个跑
 # ---------------------------------------------------------------------------
-Write-Host "[3/3] 运行 ..."
+Write-Host "[3/3] 运行 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue）"
 $pass = 0; $fail = 0; $other = 0
 $results = @()
 foreach ($s in $srcs) {
@@ -98,6 +106,7 @@ foreach ($s in $srcs) {
 
 Write-Host ""
 Write-Host "======== 汇总 ========"
+Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue" -ForegroundColor Cyan
 Write-Host "PASS=$pass  FAIL=$fail  OTHER=$other"
 $results | Format-Table -AutoSize | Out-String | Write-Host
 

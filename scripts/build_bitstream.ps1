@@ -30,18 +30,30 @@
          video    -> DEBUG_LED=1（led[1]=video_locked，HDMI 黑屏先看这一颗）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 2740。
+    仅 coremark 用，默认 3170。
 [!] **改了流水线/取指逻辑或主频必须重算**：
         ITER = 时钟频率 × 10s ÷ 每迭代周期数
-    当前：85,005,100 × 10 ÷ 363,515 = 2,338（恰好 10s），默认取 2740 → 11.72s（余量 17%）。
-    （仿真/远程平台是 27MHz，那边用 270,000,000。别混。）
-[!] 每迭代周期数当前是 **363,515**（两拍乘法器之后）；再往前是 354,119。
-    改完 RTL 先跑 `run_coremark.ps1 -Iter 1` 看 Total ticks 现是多少，再套上面的式子。
+    当前（双发射，板上口径）：85,005,100 × 10 ÷ 313,886 = 2,708（恰好 10s），
+    默认取 3170 → **11.71s（余量 17%）**，与本项目一贯的余量政策一致。
+[!] **别再用 2740**：那是按单发射口径算的，在双发射下只有 10.12s ——
+    离赛题要求的 10s 只剩 **1.2% 余量**，任何抖动都会判 invalid。
+[!] 每迭代周期数**取决于配置**：双发射 **313,886** / 单发射 363,515（回退版口径）。
+    **板上跑的是双发射**，所以算 ITER 用 313,886 —— 用 363,515 会把秒数和得分算错。
+    改完 RTL 要量它，跑仿真加 `+PROF`（默认脚本不打印 region cycles 这一行），
+    读 `region cycles`；板上的 `Total ticks` 要再 ÷ 当前时钟。别把两个口径混用。
 [!] 主频 62.03 → 85.01 MHz（2026-10-04）是按"PDS 满足约束即收敛"实测定的：
     请求 85.01 → 达 91.87、slack +0.879；请求 99.79 → 失败。上限 ≈90，取 85 留 ~7% 余量。
 
 .PARAMETER NoBuild
     只生成并同步固件，不跑 PDS 综合（想自己在 GUI 里点时用）。
+
+.PARAMETER Single
+    综合【单发射】回退版（把 cpu_top.v 的 DUAL_ISSUE 临时改成 0，结束后自动还原）。
+    默认是双发射(1)。
+[!] 回退版会**自动**把期望值换成单发射口径（每迭代 363,515 / 得分 233.85）——
+    因为脚本按 DUAL_ISSUE 自动选，不会把双发射的秒数套到单发射上。
+[!] 位流归档名要带配置后缀（`..._dual_...` / `..._single_...`）——
+    两种位流的文件名和字节数完全一样，分不出来（这个坑踩过好几次）。
 
 .EXAMPLE
     scripts\build_bitstream.ps1 coremark
@@ -54,7 +66,9 @@ param(
     [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku")]
     [string]$Variant,
 
-    [int]$Iter = 2740,
+    [int]$Iter = 3170,
+
+    [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
 
     [switch]$NoBuild
 )
@@ -88,8 +102,47 @@ $expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字"
 $topBoard = Join-Path $repo "rtl\top\cpu_top_board.v"
 $debugLed = @{ coremark = 1; demo = 0; rtthread = 1; video = 1; gomoku = 1 }[$Variant]
 
+# ---- 拟综合的双发射开关：从 cpu_top.v 读（这是"板上是哪一版"的唯一真相）----
+# cpu_top_board 例化 cpu_top 时不传该参数，所以综合取 cpu_top.v 里的默认值。
+# 打印它、并写进含 md5 的完成摘要，是为了让比特流口径可追溯：板上跑的必须是
+# 双发射(1)；若这里读到 0，就与仿真默认(1)不一致 —— 正是"两边不是一个配置"的坑
+# （2026-10-06 修）。注意：PDS 命令行传不了 -D 宏，只能靠这个参数默认值。
+$cpuTopFile = Join-Path $repo "rtl\top\cpu_top.v"
+$cpuTopTxt  = [System.IO.File]::ReadAllText($cpuTopFile)
+if ($cpuTopTxt -notmatch 'parameter\s+DUAL_ISSUE\s*=\s*(\d+)') {
+    Write-Host "!! 在 cpu_top.v 里找不到 parameter DUAL_ISSUE —— 版本不匹配，停下。" -ForegroundColor Red
+    exit 1
+}
+$dualOrig  = [int]$Matches[1]   # cpu_top.v 里的原值（还原时要用）
+$dualIssue = $dualOrig
+
+# ---- -Single：综合【单发射】回退版 ----
+# [!] 和 DEBUG_LED 同一个理由：PDS 综合取 parameter 默认值、命令行传不了 -D 宏，
+#     所以只能"改默认值 → 综合 → 还原"。以前切回退版要【手改 cpu_top.v:52】——
+#     那正是"配置靠人记"这类坑的温床（2026-10-06 加）。
+#     还原在下面的 finally 里，和 DEBUG_LED 一起。
+$cpuTopOrig = $cpuTopTxt
+if ($Single -and $dualIssue -ne 0) {
+    $noBomCpuTop = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($cpuTopFile,
+        ($cpuTopTxt -replace 'parameter\s+DUAL_ISSUE\s*=\s*\d+', 'parameter DUAL_ISSUE = 0'),
+        $noBomCpuTop)
+    $dualIssue = 0
+    Write-Host "    -Single：cpu_top.v 的 DUAL_ISSUE 临时改为 0（结束时自动还原）" -ForegroundColor Green
+}
+
+# 每迭代周期数（取决于配置）—— 别再写死：算 ITER 和算得分都用它
+$cpiCycles = if ($dualIssue -eq 1) { 313886 } else { 363515 }
+$dualNote  = if ($dualIssue -eq 1) { "双发射（与仿真默认一致）" } else { "单发射（-Single 回退版）" }
+
 Write-Host ""
 Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
+Write-Host "    DUAL_ISSUE = $dualIssue  $dualNote"
+if ($dualIssue -ne 1 -and -not $Single) {
+    Write-Host "!! 本次将综合【单发射】比特流(DUAL_ISSUE=0)，而仿真脚本默认跑双发射(1)。" -ForegroundColor Yellow
+    Write-Host "   要烧回退版请用 -Single（它临时改、结束自动还原）；" -ForegroundColor Yellow
+    Write-Host "   否则说明 cpu_top.v:52 被手工改过 —— 改回 1 再跑。" -ForegroundColor Yellow
+}
 Write-Host ""
 
 # ---- 0) 设置 DEBUG_LED（try/finally 保证还原）----
@@ -199,6 +252,11 @@ finally {
         [System.IO.File]::WriteAllText($topBoard, $topOrig, $utf8NoBom)
         Write-Host "    （DEBUG_LED 已还原为 1）" -ForegroundColor DarkGray
     }
+    # 同样还原 cpu_top.v 的 DUAL_ISSUE（-Single 时临时改过）
+    if ($cpuTopOrig -ne [System.IO.File]::ReadAllText($cpuTopFile, $utf8NoBom)) {
+        [System.IO.File]::WriteAllText($cpuTopFile, $cpuTopOrig, $utf8NoBom)
+        Write-Host "    （DUAL_ISSUE 已还原为 $dualOrig）" -ForegroundColor DarkGray
+    }
 }
 
 $fi = Get-Item $sbit
@@ -207,6 +265,7 @@ $md5 = (Get-FileHash $sbit -Algorithm MD5).Hash.Substring(0, 8).ToLower()
 Write-Host ""
 Write-Host "=== 完成 ===" -ForegroundColor Green
 Write-Host "  比特流：$sbit"
+Write-Host "  配置  ：DUAL_ISSUE=$dualIssue [$dualNote]"
 Write-Host "  时间  ：$($fi.LastWriteTime)   大小：$([math]::Round($fi.Length/1MB,2)) MB   md5：$md5..."
 Write-Host ""
 Write-Host "接下来：" -ForegroundColor Cyan
@@ -215,9 +274,10 @@ Write-Host "     配置文件就是上面这个路径（**别用备份/旧文件
 if ($Variant -eq "coremark") {
     Write-Host "  2) 烧完立刻抓串口（一轮约 12 秒，慢一拍就错过）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
-    Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ 996,031,000 -> /85,005,100 = 11.72 s"
+    $expTicks = $Iter * $cpiCycles
+    Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / 363,515 × 1000 = 233.8 CoreMark（62.03MHz 时是 170.64）"
+    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射是 233.85，双发射约 270.8）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"

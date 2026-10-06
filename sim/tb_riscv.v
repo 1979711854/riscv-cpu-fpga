@@ -20,15 +20,31 @@ module cpu_tb_riscv;
     // core ↔ mem_bus 的取指口与访存口
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
+    wire [12:0] imem_addr2;
+    wire [31:0] imem_rd2;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
     wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
 
-    core u_core (
+    // 双发射开关：编译时加 -DDUAL 即用 DUAL_ISSUE=1 核跑回归。
+    // [!] 脚本必须【显式】传该宏：run_riscv_tests.ps1 / run_own_tests.ps1 默认双发射，
+    //     加 -Single 才切单发射。不传 = 单发射，会与板上（双发射）比特流对不上 ——
+    //     这正是一条 49/1/0 单发射结果被拿去给双发射比特流背书的老坑（2026-10-06 修）。
+`ifdef DUAL
+    localparam DUAL_OUT = 1;
+`else
+    localparam DUAL_OUT = 0;
+`endif
+
+    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d", DUAL_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
+        .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -43,6 +59,7 @@ module cpu_tb_riscv;
     mem_bus u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
+        .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),

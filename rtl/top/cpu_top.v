@@ -45,9 +45,17 @@ module cpu_top (
     //   * 上板顶层 cpu_top_board 传 390（45MHz），见该文件头的 PLL 说明。
     parameter [9:0] UART_DIV = 10'd234;   // 27MHz→234（误差 0.16%），45MHz→390
 
-    // ---- core ↔ mem_bus：取指口 ----
+    // ---- 双发射开关（透传给 core）----
+    // 0 = 位不变单发射（已归档 85MHz 版；综合网表与旧版一致）。
+    // 1 = 有限度 2-wide 双发射。综合测 Fmax 时把这里改成 1（只有这一处需要动）。
+    //   仿真侧另有编译期开关：tb_riscv / tb_coremark 加 -DDUAL 即用 1。
+    parameter DUAL_ISSUE = 1;
+
+    // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [12:0] imem_addr;
     wire [31:0] imem_rd;
+    wire [12:0] imem_addr2;
+    wire [31:0] imem_rd2;
 
     // ---- core ↔ mem_bus：访存口 ----
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
@@ -82,6 +90,8 @@ module cpu_top (
         .resetn       (resetn),
         .imem_addr    (imem_addr),
         .imem_rd      (imem_rd),
+        .imem_addr2   (imem_addr2),
+        .imem_rd2     (imem_rd2),
         .mem_addr     (mem_addr),
         .mem_wdata    (mem_wdata),
         .mem_byte_en  (mem_byte_en),
@@ -108,12 +118,14 @@ module cpu_top (
         .vid_rdata    (vid_rdata)
     );
 
-    core u_core (
+    core #(.DUAL_ISSUE(DUAL_ISSUE)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),
         .imem_addr   (imem_addr),
         .imem_rd     (imem_rd),
+        .imem_addr2  (imem_addr2),
+        .imem_rd2    (imem_rd2),
         .mem_addr    (mem_addr),
         .mem_wdata   (mem_wdata),
         .mem_byte_en (mem_byte_en),

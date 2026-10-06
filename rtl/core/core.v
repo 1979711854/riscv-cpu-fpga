@@ -1,15 +1,23 @@
 `timescale 1ns/1ps
-module core (
+module core #(
+    // 0 = 位不变的单发射回退版（slot B 恒 invalid、第二取指结果丢弃、相关逻辑被综合裁掉）
+    // 1 = 有限度 2-wide in-order 双发射
+    parameter DUAL_ISSUE = 0
+) (
     input  wire        clk,
     input  wire        resetn,
     output wire [31:0] pc,            // = pc_r，板级调试/示波用
 
-    // ---- 取指口（A 口）----
+    // ---- 取指口（A1 口）----
     // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
     // 且【不做任何仲裁/冲突检测】。本模块的 stall/flush 补偿逻辑依赖 A 口
     // 每拍都能独立工作，加仲裁会直接破坏取指时序。
     output wire [12:0] imem_addr,     // word 索引；注意是 stall mux 之后的值
     input  wire [31:0] imem_rd,       // 同步读 1 拍延迟
+    // ---- 取指口（A2 口，双发射第二读口）----
+    // 与 A1 同拍、同延迟，读 unified_mem 的复制阵列。DUAL_ISSUE=0 时被丢弃。
+    output wire [12:0] imem_addr2,
+    input  wire [31:0] imem_rd2,
 
     // ---- 访存口（MEM 级）----
     // 时序契约见 rtl/bus/mem_bus.v 头注释：
@@ -73,6 +81,11 @@ module core (
     wire [31:0] id_target;      // ID 级算出的预测目标
     wire        ex_mispred;     // 预测 taken 但实际 not-taken
     wire [31:0] ex_mispred_target;
+    // [双发射] 本拍 ID 是否把 lane A + lane B 两条一起放走。恒 0 即单发射。
+    //   它同时决定【取指跳步】：pair=0 → 下次取 +4；pair=1 → 下次取 +8。
+    //   因为 fetch_addr 直接由它组合算出（见下），lane A/B 无需队列即可自对齐：
+    //   A2 口恒取 lane A 的相邻字，正好就是 lane B。
+    wire        pair_now;
 
     // ---- 异常 / 中断 ----
     wire        trap;           // 本拍在 EX 级发生异常或中断（最高优先级重定向）
@@ -126,6 +139,28 @@ module core (
     reg [1:0]  mem_wb_addr_low;
     // 写回数据
     wire [31:0] wb_data;
+
+    // ---- lane B（双发射第二槽）流水线寄存器 ----
+    // 只带 ALU 类指令用得到的字段：pairable_b 保证 lane B 不是 load/store/branch/
+    //   jump/csr/sys，所以不需要 funct3、不需要任何访存/重定向/系统标志。
+    // ID/EX
+    reg        id_ex_b_reg_write, id_ex_b_alu_a_sel, id_ex_b_alu_b_sel, id_ex_b_valid;
+    reg [4:0]  id_ex_b_alu_op;
+    reg [1:0]  id_ex_b_wb_sel;
+    reg [31:0] id_ex_b_pc, id_ex_b_rdata1, id_ex_b_rdata2, id_ex_b_imm;
+    reg [4:0]  id_ex_b_rd, id_ex_b_rs1, id_ex_b_rs2;
+    // EX/MEM
+    reg        ex_mem_b_reg_write, ex_mem_b_valid;
+    reg [1:0]  ex_mem_b_wb_sel;
+    reg [31:0] ex_mem_b_alu_result, ex_mem_b_pc, ex_mem_b_imm;
+    reg [4:0]  ex_mem_b_rd;
+    // MEM/WB
+    reg        mem_wb_b_reg_write;
+    reg [1:0]  mem_wb_b_wb_sel;
+    reg [31:0] mem_wb_b_alu_result, mem_wb_b_pc, mem_wb_b_imm;
+    reg [4:0]  mem_wb_b_rd;
+    // lane B 写回数据（无 load 分支：wb_sel=01 对 lane B 不可能）
+    wire [31:0] wb_data_b;
     // ------------------------------------------------------------------
 
     // 访存口：MEM 级组合输出，一拍的稳定窗口，直接进总线（写通路零寄存器）
@@ -181,12 +216,23 @@ module core (
     //     永远补不回来 → 程序从停顿点开始整段错位。
     //     2026-09-27 实测：漏了它时 +MEMWAIT=2 下 RT-Thread 一个字节都打不出来，
     //     pc 停在 0x18d0；补上后同样的等待周期下全部自检通过。
+    // [!] 单发射回退路径（pair_now=0）下，`if_addr_d + 4` 与原来的 `pc_r` 逐拍等价：
+    //     pc_r 正常推进 +4 且 fetch_addr=pc_r，故 fetch_addr[N]=pc_r[N]=pc_r[N-1]+4
+    //     =if_addr_d[N]+4。三路重定向下面两者都旁路成同一个目标；stall 都退回
+    //     if_addr_d。所以 DUAL_ISSUE=0 时行为逐位不变。
+    //
+    // [双发射] 取指源头由 pc_r 改成「最后发出的地址 + 4」，并再加「本拍配对了就 +4」。
+    //   这样【本拍发射的地址 = 本拍槽 A 的地址 + 4*(1+pair)】——正好是下一条未消费
+    //   指令，A/B 两槽于是每拍天然对齐，不需要取指队列去吸收可变宽度弹出。
+    //   代价是 pair→fetch_addr 组合路径（BRAM 出 → 译码 → pair → 本 mux → BRAM 地址），
+    //   无环路（中间隔 BRAM 寄存器），正是 Stage B/C 要测的 Fmax 风险点。
     wire [31:0] fetch_addr = trap                ? trap_target :
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              id_redirect         ? id_target :
                              (stall || mc_stall || !mem_ready) ? if_addr_d :
-                                                    pc_r;
+                             if_addr_d + 32'd4 + (pair_now ? 32'd4 : 32'd0);
+    // （pair_now 的实际赋值在下面 ID 级预测/stall 之后 —— 它要引用 id_pred_taken。）
 
     // 更新【无门控】：fetch_addr 在 stall/mc_stall 时就等于 if_addr_d 自身，
     // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !mc_stall)` 门控。
@@ -196,14 +242,26 @@ module core (
     // 那时 fetch_addr = trap_target 而门控会拦住更新 → if_addr_d 停在旧值
     // → 下一拍的 if_id_pc 与指令对不上。这个坑基线测试碰不到，只有自写的
     // trap handler 会炸，属于"静默错位"那一类。
+    // [!] 复位值必须是 **-4**（不是 0）：取指源头是「if_addr_d + 4」，只有初值 -4
+    //     才能让上电第一拍发出地址 0（= 复位向量）。复位期间 imem_rd 是 BRAM 的
+    //     复位值 0，所以第一拍 IF/ID 锁到的是气泡（valid=0），-4 不会变成一条
+    //     带错误 pc 的真指令；第二拍起 if_id_pc 就与 imem_rd 对齐。
     always @(posedge clk or negedge resetn) begin
-        if (!resetn) if_addr_d <= 32'd0;
+        if (!resetn) if_addr_d <= 32'hFFFF_FFFC;
         else if_addr_d <= fetch_addr;
     end
 
     // ================= IF/ID =================
     reg [31:0] if_id_pc;
     reg [31:0] if_id_instr;
+    // [双发射] lane B（较年轻的槽）。A2 口恒取 lane A 的相邻字，所以 lane B 的
+    //   (pc, instr) 与 lane A 同拍对齐：(if_addr_d+4, imem_rd2)，延迟与 lane A 一致。
+    reg [31:0] if_id_pc_b;
+    reg [31:0] if_id_instr_b;
+    // [双发射] lane B 与 lane A 同拍发射的判定，在【到达级】算好、随 IF/ID 一起寄存。
+    //   之后 ID/EX 用这个寄存值收 lane B —— 不能用当拍的 pair_now：pair_now 描述的是
+    //   【下一组取指】，比 IF/ID 里这两条指令年轻一拍，用它收 lane B 会错位。
+    reg        if_id_pair;
 
     // IF/ID 里是否是一条【真指令】（而不是冲刷或取指填充期留下的气泡）。
     // 判据 `|imem_rd` 与"全零字按气泡处理"的约定一致 —— 0x00000000 既不是
@@ -217,6 +275,13 @@ module core (
     wire [4:0] rs1 = if_id_instr[19:15];
     wire [4:0] rs2 = if_id_instr[24:20];
     wire [4:0] rd  = if_id_instr[11:7];
+
+    // ---- lane B 的译码源 ----
+    wire [4:0] rs1_b = if_id_instr_b[19:15];
+    wire [4:0] rs2_b = if_id_instr_b[24:20];
+    wire [4:0] rd_b  = if_id_instr_b[11:7];
+    wire [6:0] opcode_b = if_id_instr_b[6:0];
+    wire [6:0] funct7_b = if_id_instr_b[31:25];
 
     wire        reg_write, alu_a_sel, alu_b_sel, mem_read, mem_write, branch, jump, jump_reg;
     wire [4:0]  alu_op;
@@ -248,14 +313,62 @@ module core (
     );
 
     wire [31:0] rdata1, rdata2;
+    wire [31:0] rdata1_b, rdata2_b;
+    // [双发射] 4 读 2 写寄存器堆。lane A = 现有单发射通路；lane B = 第二槽。
+    //   写口 B 在 A 之后写，所以同址（理论上不会，pairable_b 排掉 rd_a==rd_b）B 赢。
+    //   DUAL_ISSUE=0 时 pair_now 恒 0 ⇒ lane B 恒气泡，B 侧端口无消费者，综合裁掉。
     regfile u_regfile (
-        .clk(clk), .resetn(resetn), .we(mem_wb_reg_write),
-        .rs1(rs1), .rs2(rs2), .rd(mem_wb_rd),
-        .wd(wb_data), .rdata1(rdata1), .rdata2(rdata2)
+        .clk(clk), .resetn(resetn),
+        // 写口 A（lane A）
+        .we_a(mem_wb_reg_write), .rd_a(mem_wb_rd), .wd_a(wb_data),
+        // 写口 B（lane B）
+        .we_b(mem_wb_b_reg_write), .rd_b(mem_wb_b_rd), .wd_b(wb_data_b),
+        // 读口 1/2（lane A）
+        .rs1_a(rs1), .rdata1_a(rdata1),
+        .rs2_a(rs2), .rdata2_a(rdata2),
+        // 读口 3/4（lane B）
+        .rs1_b(rs1_b), .rdata1_b(rdata1_b),
+        .rs2_b(rs2_b), .rdata2_b(rdata2_b)
     );
 
     wire [31:0] imm;
     imm_gen u_imm (.instr(if_id_instr), .imm(imm));
+
+    // ---- lane B 的第二套 control/imm_gen（原文件不改，只多实例化）----
+    //   只消费其中 {reg_write, alu_a_sel, alu_b_sel, alu_op, wb_sel, imm}；
+    //   其余输出（mem/branch/jump/csr/sys/illegal）对 lane B 恒无意义，综合会裁掉。
+    //   pairable_b 已保证 lane B 只能是 {OP_REG, OP_IMM, LUI, AUIPC}，它们在这套
+    //   译码下 mem_read/mem_write/branch/jump/jump_reg/is_csr/sys_* 全为 0。
+    wire        reg_write_b, alu_a_sel_b, alu_b_sel_b;
+    wire [4:0]  alu_op_b;
+    wire [1:0]  wb_sel_b;
+    wire        mem_read_b, mem_write_b, branch_b, jump_b, jump_reg_b;
+    wire        sys_ebreak_b, is_csr_b, csr_imm_b, sys_ecall_b, sys_mret_b, id_illegal_b;
+    wire [11:0] csr_addr_b;
+    wire [1:0]  csr_cmd_b;
+    control u_ctrl_b (
+        .instr      (if_id_instr_b),
+        .reg_write  (reg_write_b),
+        .alu_a_sel  (alu_a_sel_b),
+        .alu_b_sel  (alu_b_sel_b),
+        .alu_op     (alu_op_b),
+        .mem_read   (mem_read_b),
+        .mem_write  (mem_write_b),
+        .branch     (branch_b),
+        .jump       (jump_b),
+        .jump_reg   (jump_reg_b),
+        .wb_sel     (wb_sel_b),
+        .sys_ebreak (sys_ebreak_b),
+        .is_csr     (is_csr_b),
+        .csr_addr   (csr_addr_b),
+        .csr_cmd    (csr_cmd_b),
+        .csr_imm    (csr_imm_b),
+        .sys_ecall  (sys_ecall_b),
+        .sys_mret   (sys_mret_b),
+        .illegal    (id_illegal_b)
+    );
+    wire [31:0] imm_b;
+    imm_gen u_imm_b (.instr(if_id_instr_b), .imm(imm_b));
 
     // ================= ID 级分支预测 =================
     // 静态规则（作为 BHT 未命中 / jal 的兜底）：条件分支且偏移为负（后向）→ 预测跳转；
@@ -313,38 +426,155 @@ module core (
     assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !mc_stall && mem_ready;
 
     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
+    // [双发射] load 的 rd 要对 **4 个** ID 源比较：lane A 的 rs1/rs2 + lane B 的 rs1/rs2。
+    //   lane B 自己不会是 load（pairable_b 只放 ALU 类），所以只需 lane A 这一侧。
+    //   若漏掉 rs1_b/rs2_b，"load 后紧跟一条同拍发射、依赖它的 lane B" 会拿到陈旧值。
+    // [!] lane B 那两项必须用 if_id_pair 门控 —— if_id_instr_b 每拍都在锁存（它就是
+    //   imem_addr2 的读结果），但只有 if_id_pair=1 时那条指令才真会进 ID/EX。
+    //   不门控的话，单发射（pair 恒 0）下"load 后面恰好跟着一条用到该 rd 的指令"
+    //   也会误报一次停拍 —— 那条指令根本不在同拍发射，停它纯属浪费。
+    //   实测（CoreMark ITER=1）：漏门控时每迭代多 9,906 拍（363,515 → 373,421），
+    //   且 riscv-tests 全 PASS 也照样查不出来（那批测试几乎没有 load 后紧接依赖）。
     assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
-                    ((id_ex_rd == rs1) || (id_ex_rd == rs2)));
+                    ((id_ex_rd == rs1) || (id_ex_rd == rs2) ||
+                     (if_id_pair && ((id_ex_rd == rs1_b) || (id_ex_rd == rs2_b)))));
+
+    // ================= 保守配对规则（lane B 是否随 lane A 同拍发射）=================
+    // [!] 判据必须建立在【BRAM 数据到达级】的原始信号上（imem_rd / imem_rd2 /
+    //     if_addr_d），【不能】用 ID 级已寄存的 if_id_*。
+    //     原因：pair 要驱动取指跳步（+4 / +8），而取指比 ID 早 2 拍（BRAM 1 拍 +
+    //     IF/ID 1 拍）。决定若在 ID 做，取指永远慢一拍，IF/ID 会把 lane B 重复
+    //     消费一次 —— 这正是"必须加取指队列"那个结论的来源。把决定提前到达级，
+    //     队列就不需要了：fetch_addr 直接由 pair 组合算出，A/B 两槽天然对齐。
+    //     代价是 imem_rd → pair → fetch_addr → BRAM 地址 这条组合路径（无环路，
+    //     中间隔 BRAM 寄存器），正是要测的 Fmax 风险点。
+    //
+    // 规则：lane B 只允许 OP_REG / OP_IMM / LUI / AUIPC —— 这四个 opcode 结构上
+    //   不产生 branch/jump/mem/csr/sys，所以 B **永远不碰**重定向、陷阱、BHT、
+    //   访存、乘除单元，控制/重定向逻辑一个门都不加（只多驱动 1 份寄存器）。
+    //   排除 M 扩展（funct7=1）是因为 mul/div 走共享多拍单元。
+    //   rd_a 与 rs1_b/rs2_b/rd_b 相等：同拍无 A→B 旁路，且同址写回语义会打架。
+    wire [6:0] p_op_a  = imem_rd[6:0];
+    wire [6:0] p_f7_a  = imem_rd[31:25];
+    wire [4:0] p_rd_a  = imem_rd[11:7];
+    wire [6:0] p_op_b  = imem_rd2[6:0];
+    wire [6:0] p_f7_b  = imem_rd2[31:25];
+    wire [4:0] p_rd_b  = imem_rd2[11:7];
+    wire [4:0] p_rs1_b = imem_rd2[19:15];
+    wire [4:0] p_rs2_b = imem_rd2[24:20];
+
+    // [!] lane A 是 M 扩展（mul/div/rem，funct7=0000001 且 OP_REG）时【禁止配对】。
+    //   它们是唯一会让 lane A 走多拍单元（mc_stall）的指令，而 mc_stall 期间：
+    //     * EX/MEM 被清成气泡、MEM/WB 照常前进 ⇒ 前递窗口在下游"排空"；
+    //     * 但 lane B 却和 lane A 一起【冻在 ID/EX 里】不动。
+    //   等到 mc_stall 释放那一拍，lane B 要用的源可能已经滑出 EX/MEM 与 MEM/WB，
+    //   只能回落到进入 ID/EX 时锁存的 id_ex_b_rdata*，而那是【陈旧】的寄存器值。
+    //   实测（mul.elf）：`li tp,0` 与 `mul` 相隔两条，lane B 的 `addi tp,tp,1` 读到
+    //   未更新的 tp=2，得到 3 而不是 1 ⇒ 循环永不退出 ⇒ TIMEOUT。
+    //   单发射永远不会有这个"两条同处 ID/EX 又同时被冻"的局面，所以只在此排除即可；
+    //   其余停顿源（stall 清 ID/EX、mem_ready=0 冻结整个前递窗口）都不受影响。
+    wire p_muldiv_a = (p_op_a == 7'b0110011) && (p_f7_a == 7'b0000001);
+
+    wire p_branch = (p_op_a == 7'b1100011);
+    wire p_jump   = (p_op_a == 7'b1101111);
+    wire [7:0] bht_idx_p   = if_addr_d[9:2];
+    wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[31:8]);
+    wire       bht_taken_p = bht_ctr[bht_idx_p][1];
+    // 与 ID 级 id_pred_taken 同一套规则，只是 pc 用 if_addr_d（到达级）
+    wire       p_pred_taken = (p_branch && bht_hit_p) ? bht_taken_p
+                            : ((p_branch && imem_rd[31]) || p_jump);
+    wire p_opcode_b_ok = (p_op_b == 7'b0110011) || (p_op_b == 7'b0010011) ||
+                         (p_op_b == 7'b0110111) || (p_op_b == 7'b0010111);
+
+    assign pair_now = (DUAL_ISSUE != 0) &&
+                      (imem_rd != 32'd0) && (imem_rd2 != 32'd0) && !p_pred_taken &&
+                      !p_muldiv_a &&
+                      p_opcode_b_ok && (p_f7_b != 7'b0000001) && (p_rd_b != 5'd0) &&
+                      (p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b) && (p_rd_a != p_rd_b);
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
     // 跳转时当拍旁路到目标（见上面 fetch_addr 的说明）。
     assign imem_addr = fetch_addr[14:2];
 
+    // [暂定] 第二取指地址：双发射前端（取指 FIFO + 成对取指）落地前先固定指向下一个
+    //   word。DUAL_ISSUE=0 时它在核内没有任何消费者，综合会连同 A2 口的读结果一起裁掉。
+    assign imem_addr2 = imem_addr + 13'd1;
+
     // ================= ID/EX =================
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
 
     // ================= EX =================
-    // ---- EX 阶段 forwarding（优先级：EX/MEM > MEM/WB > 寄存器读） ----
-    // EX/MEM 写回候选值；load(wb_sel=01) 的数据要 WB 才有效，不从此处前递
+    // ---- EX 阶段 forwarding ----
+    // [双发射] 优先级（同 stage 内【年轻的赢】）：
+    //     ex_mem_b > ex_mem_a > mem_wb_b > mem_wb_a > regfile
+    //   两个 lane 的源操作数都用这同一套源。intra-pair 依赖（lane B 依赖同拍 lane A）
+    //   已被 pairable_b 排掉，所以不需要 A→B 同拍旁路（那是 Stage D 的可选项）。
+    //
+    // EX/MEM 写回候选值；lane A 的 load(wb_sel=01) 数据要 WB 才有效，不从此处前递。
+    // lane B 结构上不会是 load，故无需排除。
     wire [31:0] ex_mem_forward_val =
         (ex_mem_wb_sel == 2'b10) ? (ex_mem_pc + 32'd4) :
         (ex_mem_wb_sel == 2'b11) ? ex_mem_imm :
         ex_mem_alu_result;
-    wire fwd_a_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
-                    (ex_mem_rd == id_ex_rs1) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_a_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
-    wire fwd_b_ex = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
-                    (ex_mem_rd == id_ex_rs2) && (ex_mem_wb_sel != 2'b01);
-    wire fwd_b_wb = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
-    wire [31:0] rs1_val = fwd_a_ex ? ex_mem_forward_val :
-                          fwd_a_wb ? wb_data : id_ex_rdata1;
-    wire [31:0] rs2_val = fwd_b_ex ? ex_mem_forward_val :
-                          fwd_b_wb ? wb_data : id_ex_rdata2;
+    wire [31:0] ex_mem_forward_val_b =
+        (ex_mem_b_wb_sel == 2'b10) ? (ex_mem_b_pc + 32'd4) :
+        (ex_mem_b_wb_sel == 2'b11) ? ex_mem_b_imm :
+        ex_mem_b_alu_result;
+
+    // lane A 操作数 1（id_ex_rs1）
+    wire fwd_a_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_rs1);
+    wire fwd_a_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+                     (ex_mem_rd == id_ex_rs1) && (ex_mem_wb_sel != 2'b01);
+    wire fwd_a_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_rs1);
+    wire fwd_a_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs1);
+    // lane A 操作数 2（id_ex_rs2）
+    wire fwd_b_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_rs2);
+    wire fwd_b_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+                     (ex_mem_rd == id_ex_rs2) && (ex_mem_wb_sel != 2'b01);
+    wire fwd_b_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_rs2);
+    wire fwd_b_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
+
+    wire [31:0] rs1_val = fwd_a_exb ? ex_mem_forward_val_b :
+                          fwd_a_ex  ? ex_mem_forward_val :
+                          fwd_a_wbb ? wb_data_b :
+                          fwd_a_wb  ? wb_data : id_ex_rdata1;
+    wire [31:0] rs2_val = fwd_b_exb ? ex_mem_forward_val_b :
+                          fwd_b_ex  ? ex_mem_forward_val :
+                          fwd_b_wbb ? wb_data_b :
+                          fwd_b_wb  ? wb_data : id_ex_rdata2;
 
     wire [31:0] alu_a = id_ex_alu_a_sel ? id_ex_pc  : rs1_val;
     wire [31:0] alu_b = id_ex_alu_b_sel ? id_ex_imm : rs2_val;
     wire [31:0] alu_raw;
     alu u_alu (.a(alu_a), .b(alu_b), .alu_op(id_ex_alu_op), .result(alu_raw));
+
+    // ---- lane B 的 EX：只有 ALU ----
+    // lane B 操作数 1（id_ex_b_rs1）
+    wire fwd_ba_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_b_rs1);
+    wire fwd_ba_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+                      (ex_mem_rd == id_ex_b_rs1) && (ex_mem_wb_sel != 2'b01);
+    wire fwd_ba_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs1);
+    wire fwd_ba_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_b_rs1);
+    // lane B 操作数 2（id_ex_b_rs2）
+    wire fwd_bb_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_b_rs2);
+    wire fwd_bb_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
+                      (ex_mem_rd == id_ex_b_rs2) && (ex_mem_wb_sel != 2'b01);
+    wire fwd_bb_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs2);
+    wire fwd_bb_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_b_rs2);
+
+    wire [31:0] rs1_val_b = fwd_ba_exb ? ex_mem_forward_val_b :
+                            fwd_ba_ex  ? ex_mem_forward_val :
+                            fwd_ba_wbb ? wb_data_b :
+                            fwd_ba_wb  ? wb_data : id_ex_b_rdata1;
+    wire [31:0] rs2_val_b = fwd_bb_exb ? ex_mem_forward_val_b :
+                            fwd_bb_ex  ? ex_mem_forward_val :
+                            fwd_bb_wbb ? wb_data_b :
+                            fwd_bb_wb  ? wb_data : id_ex_b_rdata2;
+
+    wire [31:0] b_alu_a = id_ex_b_alu_a_sel ? id_ex_b_pc  : rs1_val_b;
+    wire [31:0] b_alu_b = id_ex_b_alu_b_sel ? id_ex_b_imm : rs2_val_b;
+    wire [31:0] alu_result_b;
+    alu u_alu_b (.a(b_alu_a), .b(b_alu_b), .alu_op(id_ex_b_alu_op), .result(alu_result_b));
 
     // 多拍除法：DIV/DIVU/REM/REMU 由迭代除法器接管（单拍组合除法会拖垮 Fmax）
     wire id_ex_is_div = (id_ex_alu_op >= 5'd14);
@@ -622,6 +852,11 @@ module core (
                      (mem_wb_wb_sel == 2'b11) ? mem_wb_imm :
                      mem_wb_alu_result;
 
+    // lane B 写回数据：无 load 分支（wb_sel=01 对 lane B 不可能）
+    assign wb_data_b = (mem_wb_b_wb_sel == 2'b10) ? (mem_wb_b_pc + 32'd4) :
+                       (mem_wb_b_wb_sel == 2'b11) ? mem_wb_b_imm :
+                       mem_wb_b_alu_result;
+
     // ================= PC =================
     // 同步读 BRAM 使取指有 2 拍延迟，【无跳转的稳态】不变量：
     //     imem_rd   = mem[pc_r-4]   （在途，下一拍进 IF/ID）
@@ -662,8 +897,10 @@ module core (
             pc_r <= id_target + 32'd4;
         // [!] mem_ready 也要或进来：访存没完成时 pc_r 必须停住，
         //     否则取指会跑到前面去、把停在 MEM 的那条指令的后续全冲掉。
+        // [双发射] 配对时一步跨两条（+8）。pc_r 现在只作 pc 输出/调试用，
+        //   取指实际源头是 if_addr_d（见 fetch_addr）。
         else if (!stall && !mc_stall && mem_ready)
-            pc_r <= pc_r + 32'd4;
+            pc_r <= pc_r + (pair_now ? 32'd8 : 32'd4);
     end
 
     // ================= IF/ID 寄存器 =================
@@ -672,6 +909,9 @@ module core (
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
             if_id_valid <= 1'b0;
+            if_id_pc_b    <= 32'd0;
+            if_id_instr_b <= 32'h00000013;
+            if_id_pair    <= 1'b0;
         end else if (ex_flush || ex_mispred || id_redirect || trap) begin
             // 三条都只清【一拍】：重定向那一拍 fetch_addr 已经把新地址发出去了，
             // 目标指令的数据下一拍就回来，多清一拍反而会把它杀掉。
@@ -686,10 +926,18 @@ module core (
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
             if_id_valid <= 1'b0;          // 冲刷插入的是气泡，不是真指令
+            if_id_pc_b    <= 32'd0;
+            if_id_instr_b <= 32'h00000013;
+            if_id_pair    <= 1'b0;
         end else if (!stall && !mc_stall && mem_ready) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
             if_id_instr <= imem_rd;
+            // lane B 与 lane A 同拍锁存，pc 恒为 lane A 的 +4（A2 口取的就是这个字）
+            // pair_now 就是这一对 (imem_rd, imem_rd2) 的发射判定 —— 同拍寄存。
+            if_id_pair    <= pair_now;
+            if_id_pc_b    <= if_addr_d + 32'd4;
+            if_id_instr_b <= imem_rd2;
         end
         // [!] 注意这里是"三者都不成立就【保持】"，不是清 ——
         //     访存停顿（mem_ready=0）属于这一类：停住不动，不清成气泡。
@@ -728,6 +976,20 @@ module core (
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
             id_ex_valid     <= 1'b0;
+            // lane B 一并清成气泡（pair_now=0 时本来就该是气泡）
+            id_ex_b_reg_write <= 1'b0;
+            id_ex_b_alu_a_sel <= 1'b0;
+            id_ex_b_alu_b_sel <= 1'b0;
+            id_ex_b_alu_op    <= 5'd0;
+            id_ex_b_wb_sel    <= 2'b00;
+            id_ex_b_pc        <= 32'd0;
+            id_ex_b_rdata1    <= 32'd0;
+            id_ex_b_rdata2    <= 32'd0;
+            id_ex_b_imm       <= 32'd0;
+            id_ex_b_rd        <= 5'd0;
+            id_ex_b_rs1       <= 5'd0;
+            id_ex_b_rs2       <= 5'd0;
+            id_ex_b_valid     <= 1'b0;
         // [!] mem_ready=0 时和 mc_stall 一样【保持】：停在 MEM 的那条指令
         //     还在 ID/EX 的下游，这里必须冻住，不能推进也不能清。
         end else if (!mc_stall && mem_ready) begin
@@ -766,6 +1028,22 @@ module core (
             // 跟随 IF/ID 的实际内容：冲刷/填充期的气泡不能算有效，
             // 否则中断会拿气泡的 id_ex_pc(=0) 去写 mepc
             id_ex_valid     <= if_id_valid;
+            // ---- lane B ----
+            // if_id_pair（随 IF/ID 一起寄存的发射判定）才把 lane B 收进 ID/EX；
+            // 否则恒气泡。用 if_id_pair 而非当拍 pair_now：后者属于更年轻的一组取指。
+            id_ex_b_valid     <= if_id_pair;
+            id_ex_b_reg_write <= if_id_pair ? reg_write_b : 1'b0;
+            id_ex_b_alu_a_sel <= if_id_pair ? alu_a_sel_b : 1'b0;
+            id_ex_b_alu_b_sel <= if_id_pair ? alu_b_sel_b : 1'b0;
+            id_ex_b_alu_op    <= if_id_pair ? alu_op_b    : 5'd0;
+            id_ex_b_wb_sel    <= if_id_pair ? wb_sel_b    : 2'b00;
+            id_ex_b_pc        <= if_id_pc_b;
+            id_ex_b_rdata1    <= rdata1_b;
+            id_ex_b_rdata2    <= rdata2_b;
+            id_ex_b_imm       <= imm_b;
+            id_ex_b_rd        <= rd_b;
+            id_ex_b_rs1       <= rs1_b;
+            id_ex_b_rs2       <= rs2_b;
         end
     end
 
@@ -791,6 +1069,14 @@ module core (
             ex_mem_rd         <= 5'd0;
             ex_mem_funct3     <= 3'd0;
             ex_mem_sys_ebreak <= 1'b0;
+            // lane B（trap/mc_stall 一并清）
+            ex_mem_b_reg_write  <= 1'b0;
+            ex_mem_b_valid      <= 1'b0;
+            ex_mem_b_wb_sel     <= 2'b00;
+            ex_mem_b_alu_result <= 32'd0;
+            ex_mem_b_pc         <= 32'd0;
+            ex_mem_b_imm        <= 32'd0;
+            ex_mem_b_rd         <= 5'd0;
         // [!] mem_ready=0 时必须【保持】EX/MEM —— 这一处不能省，实测踩过：
         //     冻结和"EX/MEM <= ID/EX"是【同一个沿】发生的，而那一拍的 ID/EX 里
         //     已经是【下一条】指令了。不门控的话，没完成的 store 会被下一条覆盖，
@@ -812,6 +1098,20 @@ module core (
             ex_mem_rd         <= id_ex_rd;
             ex_mem_funct3     <= id_ex_funct3;
             ex_mem_sys_ebreak <= id_ex_sys_ebreak;
+            // ---- lane B ----
+            // [!] `&& !ex_flush` 是承重的：ex_flush 那拍 lane A（跳转）与其同拍
+            //     lane B 一起躺在 ID/EX 里，而 EX/MEM <= ID/EX 是同一个沿发生的。
+            //     lane B 是【更年轻】的那条、【更不会】走错的路径上的写寄存器指令
+            //     （jalr、或预测 not-taken 实际 taken 的分支后的那条）。不抑制它
+            //     就会漏写一次寄存器 —— 静默错算。lane A 本身不写（分支/跳转的
+            //     reg_write=0），所以只需压 lane B。
+            ex_mem_b_reg_write  <= id_ex_b_reg_write && !ex_flush;
+            ex_mem_b_valid      <= id_ex_b_valid && !ex_flush;
+            ex_mem_b_wb_sel     <= id_ex_b_wb_sel;
+            ex_mem_b_alu_result <= alu_result_b;
+            ex_mem_b_pc         <= id_ex_b_pc;
+            ex_mem_b_imm        <= id_ex_b_imm;
+            ex_mem_b_rd         <= id_ex_b_rd;
         end
     end
 
@@ -826,6 +1126,12 @@ module core (
             mem_wb_rd         <= 5'd0;
             mem_wb_funct3     <= 3'd0;
             mem_wb_addr_low   <= 2'd0;
+            mem_wb_b_reg_write  <= 1'b0;
+            mem_wb_b_wb_sel     <= 2'b00;
+            mem_wb_b_alu_result <= 32'd0;
+            mem_wb_b_pc         <= 32'd0;
+            mem_wb_b_imm        <= 32'd0;
+            mem_wb_b_rd         <= 5'd0;
         end else if (mem_ready) begin
             mem_wb_reg_write  <= ex_mem_reg_write;
             mem_wb_wb_sel     <= ex_mem_wb_sel;
@@ -835,6 +1141,12 @@ module core (
             mem_wb_rd         <= ex_mem_rd;
             mem_wb_funct3     <= ex_mem_funct3;
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
+            mem_wb_b_reg_write  <= ex_mem_b_reg_write;
+            mem_wb_b_wb_sel     <= ex_mem_b_wb_sel;
+            mem_wb_b_alu_result <= ex_mem_b_alu_result;
+            mem_wb_b_pc         <= ex_mem_b_pc;
+            mem_wb_b_imm        <= ex_mem_b_imm;
+            mem_wb_b_rd         <= ex_mem_b_rd;
         end
     end
 

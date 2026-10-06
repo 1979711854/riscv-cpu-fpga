@@ -2,13 +2,21 @@
     [string]$TestsDir = "",     # riscv-tests 源码目录（含 isa/rv32ui）。默认 third_party/riscv-tests
     [string]$ElfDir = "",       # 已有 ELF 的目录：给了就跳过编译，直接跑这些 ELF
     [int]$FirstN = 0,           # >0 时只跑前 N 个测试（快速回归用）
+    [switch]$Single,            # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
 )
 
 # riscv-tests (rv32ui) 一键：编译全部 .S -> 逐个跑 tb_riscv -> 汇总 PASS/FAIL
 # 没有源码时可用 -ElfDir 指向一份现成的 ELF 目录，跳过编译直接回归。例如：
 #   scripts\run_riscv_tests.ps1 -ElfDir riscv32-FPGA-pds\riscv-tests-run\build
+#
+# [重点] 配置必须显式、且与板上比特流对齐：
+#   默认 = 双发射（编译传 -DDUAL）—— 与 cpu_top.v 的 DUAL_ISSUE=1（板上口径）一致。
+#   -Single = 单发射（不传 -DDUAL）—— 只有为回退版比特流把关时才用。
+#   两条基线不同（双发射 49/1/0 + CoreMark 313,886；单发射 49/1/0 + 363,515），别混。
+#   日志首行 "SIM CONFIG: DUAL_ISSUE=?" 与 results.txt 首行会自证本次跑的是哪一种。
 $ErrorActionPreference = "Stop"
+$dualIssue = if ($Single) { 0 } else { 1 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $env:PATH = "$Toolchain;$env:PATH"
@@ -73,20 +81,27 @@ else {
 if ($FirstN -gt 0) { $elfs = $elfs[0..([Math]::Min($FirstN, $elfs.Count) - 1)] }
 
 # ---- 2) 编译 testbench（只编一次）----
-Write-Host "[2/3] 编译 testbench ..."
+# vvp 文件名带配置后缀，避免"单发射产物"被误当成双发射的构建结果。
+$vvpName = if ($dualIssue -eq 1) { "tb_riscv_dual.vvp" } else { "tb_riscv_single.vvp" }
+Write-Host "[2/3] 编译 testbench ... DUAL_ISSUE=$dualIssue（$vvpName）"
 $sim = Join-Path $repo "sim"
-$vvp = Join-Path $sim "tb_riscv.vvp"
+$vvp = Join-Path $sim $vvpName
 $rtl = @()
 foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
     $rtl += Get-ChildItem (Join-Path $repo $d) -Filter "*.v" | ForEach-Object { $_.FullName }
 }
-& iverilog -g2012 -I (Join-Path $repo "rtl\core") -I (Join-Path $repo "rtl\periph") `
-    -I (Join-Path $repo "rtl\bus") -I $sim `
-    -o $vvp (Join-Path $sim "tb_riscv.v") @rtl
+$defs = @()
+if ($dualIssue -eq 1) { $defs += "-DDUAL" }
+$iverilogArgs = @("-g2012") + $defs + @(
+    "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
+    "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
+    "-o", $vvp, (Join-Path $sim "tb_riscv.v")
+) + $rtl
+& iverilog @iverilogArgs
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 
 # ---- 3) 逐个跑 ----
-Write-Host "[3/3] 逐个仿真 ..."
+Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue）"
 $pass = 0; $fail = 0; $timeout = 0; $other = 0
 $lines = @()
 foreach ($elf in $elfs) {
@@ -106,8 +121,9 @@ foreach ($elf in $elfs) {
     Write-Host ("  {0,-10} {1}" -f $name, $txt)
 }
 
-$lines | Set-Content (Join-Path $prog "results.txt")
+@("SIM CONFIG: DUAL_ISSUE=$dualIssue") + $lines | Set-Content (Join-Path $prog "results.txt")
 Write-Host ""
 Write-Host "======== 汇总 ========"
+Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue" -ForegroundColor Cyan
 Write-Host "PASS=$pass  FAIL=$fail  TIMEOUT=$timeout  OTHER=$other"
-Write-Host "明细: sim/programs/results.txt"
+Write-Host "明细: sim/programs/results.txt（首行即本次配置）"
