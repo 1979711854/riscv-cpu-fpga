@@ -1,0 +1,9 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-06 17:15:12
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+level=1 NORMAL (4-ply)
+# 结束于 2026-10-06 17:16:12，共 7 行
