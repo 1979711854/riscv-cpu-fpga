@@ -59,11 +59,14 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 >
 > **真实上限 ≈90 MHz**；取 85 是留 ~7% 余量，与旧设计 62.03/66.87 的 7.8% 同一风险档。
 >
-> [!] 上表是**探针运行**（只跑到 `report_timing`）的数字。两次**正式构建**
-> （coremark 与 gomoku，都走完整 P&R 并出 `.sbit`）实测为
-> `Requested 85.0051 / Estimated **91.3993 MHz** / Slack **+0.823 ns**，CPU 域失败端点 0`。
-> 与探针同档（差 0.5%），说明 P&R 抖动在预期范围内。
-> **引用时序余量时用正式构建那一组数字**（归档位流 md5 `4d0b9966` / `1062095c` 出自同一网表）。
+> [!] 上表是**探针运行**（只跑到 `report_timing`）的数字。**单发射**正式构建
+> （coremark 与 gomoku，走完整 P&R 并出 `.sbit`）实测为
+> `Requested 85.0051 / Estimated **91.3993 MHz** / Slack **+0.823 ns**，CPU 域失败端点 0`
+> （归档位流 md5 `ae4deea9` / `f4e78dc6` 出自同一网表）。
+> **双发射**（2026-10-06 起，当前）同一约束下为
+> `Requested 85.0051 / Estimated **87.0019 MHz** / Slack **+0.270 ns**，CPU 域失败端点 0`
+> （位流 md5 `5c4893de` / `3976aebd`）—— Fmax 比单发射低 4.8%、余量只剩 2.3%，是换效率的代价。
+> **引用时序余量时按配置取对应那一组数字**（与探针都同档，差 <1%）。
 
 * `.fdc` 里只有输入晶振的 `create_clock ... -period 37.037`（27 MHz），**这句别改**。
   PLL 输出的约束由 **PDS 从 PLL IP 自动推导**，只在时序报告里显示
@@ -113,10 +116,11 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 **队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
 ```powershell
-scripts\build_bitstream.ps1 coremark    # 跑分版（ITER=1663，板上约 11.8 s）
+scripts\build_bitstream.ps1 coremark    # 跑分版（双发射，ITER=3170，板上约 11.7 s）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
 scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版（banner + 两个线程交替打印）
 scripts\build_bitstream.ps1 video       # HDMI 彩条版（填显存画 8 条竖条 + 串口读回自检）
+# 任一变体加 -Single 出【单发射】回退版位流（期望值按 DUAL_ISSUE 自动算）
 ```
 
 脚本做三件事：生成固件 → 同步进 PDS 工程并**校验 `mem.hex` 字数** → 综合布线出比特流。
@@ -183,7 +187,7 @@ User Guide》第 4 章）：
 
 ```powershell
 # ① 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 1663 -SkipSim     # 跑分版（当前板上时钟 49.8927 MHz 的取值）
+scripts\run_coremark.ps1 -Iter 3170 -SkipSim     # 跑分版（双发射，85.0051 MHz 的取值）
 scripts\run_demo.ps1 -SkipSim                    # 演示程序版
 
 # ② 同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
@@ -274,22 +278,25 @@ KEY=0x00 LED=0x00
 
 **约 12 秒后**打印。
 
-**当前设计（49.8927 MHz / ITER=1663）的板上实测原始输出**
-（日志 `doc/board/uart_20260925_172318.txt`，2026-09-25 17:23）：
+**当前设计（85.0051 MHz，双发射，ITER=3170）的板上实测原始输出**
+（日志 `doc/board/uart_20261006_162410.txt`，2026-10-06）：
 
 ```
 CoreMark Size    : 666
-Total ticks      : 588890651
+Total ticks      : 994988178
 Total time (secs): 11
-Iterations/Sec   : 151
-Iterations       : 1663
+Iterations/Sec   : 270
+Iterations       : 3170
 Compiler flags   : -O2 -march=rv32im -mabi=ilp32
 seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 Correct operation validated.
 ```
 
-实测：588,890,651 ÷ 49,892,700 = **11.8031 s** → **140.89 CoreMark**（满足赛题 ≥10 s）。
-推算值 588,900,000 / 140.89 与实测**分毫不差**。
+实测：994,988,178 ÷ 85,005,100 = **11.7050 s** → **270.82 CoreMark**（满足赛题 ≥10 s）。
+推算值 3.186 × 85.0051 = 270.82 与实测**分毫不差**。
+
+**历史（单发射 85.0051 MHz / ITER=2740）**：`Total ticks 996,015,474` ÷ 85,005,100 =
+**11.7171 s / 233.85 CoreMark**（日志 `doc/board/uart_20261004_114730.txt`）。
 
 **45 MHz 版（ITER=1500）的板上实测原始输出（历史，留作对照）**（已确认，
 日志 `doc/board/uart_20260925_005201.txt`）：
@@ -303,14 +310,15 @@ Correct operation validated.
 实测 538,285,445 ÷ 45,000,000 = **11.9619 s** → **125.40 CoreMark**。
 
 [!] **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
-当前这版显示 `11`（实际 11.8031）、`151`（= 1663 ÷ 11 的截断值，**真实 140.89**）；历史 45 MHz 那次显示 `11`（实际 11.9619）、`136`（**真实 125.40**）。
+当前这版显示 `11`（实际 11.7050）、`270`（= 3170 ÷ 11 的截断值，**真实 270.82**）；
+历史单发射 85 MHz 那次显示 `11`（实际 11.7171）、`249`（**真实 233.85**）。
 **真实时长一定要自己算：**
 
 ```
-板上时长 = Total ticks ÷ 49,892,700      <- 当前板上时钟
+板上时长 = Total ticks ÷ 85,005,100      <- 当前板上时钟
 ```
 
-> 历史口径：`÷27e6`（27 MHz 时代）、`÷45e6`（45 MHz 时代）。
+> 历史口径：`÷62,030,900`（62.03 MHz）、`÷49,892,700`（49.89 MHz）、`÷45e6`（45 MHz）、`÷27e6`（27 MHz）。
 > **一律以 PDS 时序报告里 `Requested Frequency` 的实际值为准**，不要用标称值。
 
 `seedcrc / crclist / crcmatrix / crcstate`（`0xe9f5 / 0xe714 / 0x1fd7 / 0x8e3a`）
@@ -325,13 +333,13 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 
 | 现象 | 最可能原因 |
 |---|---|
-| **串口乱码** | 时钟不是 49.89 MHz（波特率是按时钟分频的）—— 这是判断时钟最快的方法。先看 `led[0]`（`pll_locked`）亮不亮。**也可能是固件是 27 MHz 那版**（`EE_TICKS_PER_SEC`/`UART_DIV` 口径不对） |
+| **串口乱码** | 时钟不是 85.0051 MHz（波特率是按时钟分频的）—— 这是判断时钟最快的方法。先看 `led[0]`（`pll_locked`）亮不亮。**也可能是固件是别的时钟口径那版**（`EE_TICKS_PER_SEC`/`UART_DIV` 不对） |
 | **串口完全没输出 + `led[0]` 不亮** | **PLL 没锁定** → CPU 一直被 `sys_resetn` 复位。检查 `ipcore/pll/` 是否在工程里、`pll.v` 是否经 IP 源引用（§6 第 5 条） |
 | 完全没输出（`led[0]` 亮） | ① 板子没配置（掉电/拔过 USB → 重烧）② 只插了 Jtag 没插 USB-UART ③ 读错 COM 口（读成 FTDI 那个）④ UART 引脚 |
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[2:0]` 被 `pll_locked`/`video_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
-| **`Iterations/Sec` 显示 151** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（1663 ÷ 11 ≈ 151）。**真实得分是 140.89 CoreMark**（= 1663 ÷ 11.8031）。历史 45 MHz 那版对应显示 `136` / 真实 125.40。见 §4 的说明 |
+| **`Iterations/Sec` 显示 270** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（3170 ÷ 11 ≈ 270）。**真实得分是 270.82 CoreMark**（= 3170 ÷ 11.7050）。历史单发射 85 MHz 那版显示 `249` / 真实 233.85；45 MHz 那版显示 `136` / 真实 125.40。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。
@@ -355,7 +363,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
    只把 `pll.v` 当普通 Verilog 源文件添加，综合会报 `pll` 是黑盒。
    队友 clone 后若工程里缺这条，从 `pds/RV32I_1/ipcore/pll/` 补齐 `.idf` 与 `.v` 两个文件。
    （`.pds` 已入库并带着这条引用，正常不会缺。）
-6. **`.fdc` 里看不到 49.89 MHz 是正常的**，别去"修" —— 见 §2 的时钟说明。
+6. **`.fdc` 里看不到 85.0051 MHz 是正常的**，别去"修" —— 见 §2 的时钟说明。
 
 ---
 
@@ -364,7 +372,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 `rtl/top/cpu_top_board.v` 做三件事：
 
 1. **包住 `cpu_top`，不引出 `pc[31:0]` 和 `done`**，并把 `key[7:4]` 恒定接 1；
-2. **例化 PLL**（27 MHz → 49.89 MHz），并用 `lock` 门控 `resetn`；
+2. **例化 PLL**（27 MHz → 85.0051 MHz），并用 `lock` 门控 `resetn`；
 3. **按 `DEBUG_LED` 决定 `led[1:0]` 的归属**（见 §3）。
 
 * **为什么不在 `cpu_top` 里直接删端口**：`pc` 是**仿真侧的分析数据源** ——
@@ -373,8 +381,8 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
   `doc/ila_analysis.md` 里那套分析方法。
 * **为什么 PLL 不放进 `cpu_top`**：仿真测试台例化的是 `cpu_top`，
   放进去就得在仿真里也跑 PLL（Pango 原语仿真模型、锁定延时……纯属负担）。
-  挡在板级这一层，**仿真就天然是 27 MHz，上板才是 49.89 MHz**。
+  挡在板级这一层，**仿真就天然是 27 MHz，上板才是 85.0051 MHz**。
 * **为什么要挡在外层**：见 §6 第 4 条。
 
-所以：**仿真继续用 `cpu_top`（27 MHz），上板用 `cpu_top_board`（49.89 MHz）**。
+所以：**仿真继续用 `cpu_top`（27 MHz），上板用 `cpu_top_board`（85.0051 MHz）**。
 除时钟与端口裁剪外，两者行为完全一致。

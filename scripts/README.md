@@ -13,31 +13,38 @@
 | `run_video.ps1` | 彩条固件（填显存画 8 条竖条 + 串口读回自检）编译 + 端到端仿真 |
 | `sync_firmware.ps1` | 把 `sim/programs/mem.hex` 同步到 `pds/RV32I_1/` 供 BRAM 初始化 |
 
+> [!] **配置口径（双发射 / 单发射）**：`run_riscv_tests.ps1` / `run_coremark.ps1` / `run_own_tests.ps1`
+> **默认双发射**，加 `-Single` 出单发射。测试台靠编译期 `-DDUAL` 选配置、t=0 打印
+> `SIM CONFIG: DUAL_ISSUE=`（也进 `sim/programs/results.txt` 首行）；
+> `run_demo` / `run_rtthread` / `run_gomoku` / `run_video` 例化 `cpu_top`，**本来就是双发射**。
+
 ```powershell
-# 例：完整回归（改完 RTL 后必跑）
+# 例：完整回归（改完 RTL 后必跑，默认双发射）
 scripts\run_riscv_tests.ps1                 # 期望 49 PASS / 1 FAIL
-scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 363,515 拍（测试台总周期 1,467,276）
+scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 313,886 拍（双发射）；单发射加 -Single → 363,515
 scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
 ```
 
-> [!] **上板前记得换回 ITER=2740 并同步**：跑过 `-Iter 1` 之后
+> [!] **上板前记得换回 ITER=3170 并同步**：跑过 `-Iter 1` 之后
 > `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有几毫秒（85.0051 MHz 板上约 0.004 s）、
 > CoreMark 判 invalid。
 > ```powershell
-> scripts\run_coremark.ps1 -Iter 2740 -SkipSim
+> scripts\run_coremark.ps1 -Iter 3170 -SkipSim
 > scripts\sync_firmware.ps1
 > ```
-> **为什么是 2740**：ITER 要按**板上系统时钟**算 —— 本地盘古板已用 PLL 把板载 27 MHz
+> **为什么是 3170**：ITER 要按**板上系统时钟**算 —— 本地盘古板用 PLL 把板载 27 MHz
 > 倍频到 **85.0051 MHz**（2026-10-04 提频；仿真与远程平台仍是 27 MHz），
-> `2740 × 363,515 ÷ 85,005,100 = 11.72 s`（余量 17%，满足赛题 ≥10 s）。
-> [!] **85.0051 MHz 版只有综合/时序证据，板上待验**（预期 `996,031,000` ÷ 85,005,100 ≈ 11.72 s / 233.8 CoreMark）。
-> [OK] **62.03 MHz 版已上板实测（历史）**：`727,018,199` ÷ 62,030,900 = **11.7203 s / 170.64 CoreMark**
-> （CPU 线实测，见 `doc/reports/2026-09-28_cpu_opt_handoff.md`）；49.89 MHz 版（历史）实测
-> `588,890,651` ÷ 49,892,700 = 11.8031 s / 140.89 CoreMark。
-> 速算式：**`ITER = 目标时长 × 板上时钟 ÷ 每迭代周期数`**，其中每迭代周期数
-> **363,515** 见上面的回归示例（这个数与时钟无关；两拍乘法器之前是 354,119）。
-> 上板也可以直接走一条龙 `scripts\build_bitstream.ps1 coremark`（生成固件 → 同步 → 综合）。
+> 当前**双发射**每迭代 **313,886** 拍，`3170 × 313,886 ÷ 85,005,100 = 11.70 s`（余量 17%，满足 ≥10 s）。
+> [!] **双发射已板上实测**（2026-10-06）：`994,988,178` ÷ 85,005,100 = **11.7050 s / 270.82 CoreMark**，
+> 位流 md5 `5c4893de`，日志 `doc/board/uart_20261006_162410.txt`。
+> 历史（**单发射** 85.0051 MHz）：ITER=2740，`996,015,474` ÷ 85,005,100 = 11.7171 s / 233.85 CoreMark（md5 `ae4deea9`）。
+> [OK] 更早历史：62.03 MHz 版 `727,018,199` ÷ 62,030,900 = **11.7203 s / 170.64**；
+> 49.89 MHz 版 `588,890,651` ÷ 49,892,700 = 11.8031 s / 140.89。
+> 速算式：**`ITER = 目标时长 × 板上时钟 ÷ 每迭代周期数`**，**双发射每迭代周期数
+> `313,886`**（单发射 363,515）见上面的回归示例（这个数与时钟无关）。
+> 上板也可以直接走一条龙 `scripts\build_bitstream.ps1 coremark`（生成固件 → 同步 → 综合），
+> 加 `-Single` 出单发射回退版位流。
 
 > `run_riscv_tests.ps1` 的三条路，按优先级：
 > 1. `-ElfDir <目录>` —— 直接用指定目录里的现成 ELF
