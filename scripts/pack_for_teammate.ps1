@@ -15,12 +15,13 @@
 #      actually contains .git -- so we verify the resulting archive afterwards.
 $repo  = 'D:\riscv-cpu-fpga_merged'
 $stage = 'D:\_stage_dualissue'
-# 输出到桌面 RV32I 文件夹 —— 队友发来的包也在那里，方便对照整理（2026-10-07 约定）
+# Output goes to Desktop\RV32I (same folder as the packages teammates send us,
+# so hand-offs stay in one place) -- settled 2026-10-07.
 $out   = 'C:\Users\zjn\Desktop\RV32I\riscv-cpu-fpga_dualissue.zip'
 
 # Trap 4: console/pipe encoding. PowerShell decodes native-command output as GBK
-# on a zh-CN box, so `git ls-files` names like "doc/RV32I指令集参考.md" arrive
-# mangled and Copy-Item cannot find them. Force UTF-8 both ways.
+# on a zh-CN box, so non-ASCII file names from `git ls-files` arrive mangled
+# and Copy-Item cannot find them. Force UTF-8 both ways.
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
