@@ -18,6 +18,7 @@
 #include "board.h"
 #include "render.h"
 #include "tiles.h"
+#include "font.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -210,7 +211,42 @@ static void test_init(void)
 
     /* 相邻图块不能互相踩（地址偏移算错的话会串） */
     CHECK(g_pat[TILE_BYTES - 1] == TILE_PATTERN[0][TILE_BYTES - 1], "第 0/1 块边界不应串");
-    CHECK(g_pat[(unsigned)TILE_N_TOTAL * TILE_BYTES] == 0xAA, "图块区之后不该被写");
+
+    /* ---- 字库图块：render_init 应把紧凑字库放大写进 tile 36..130 ---- */
+    {
+        int blank_ok = 1, f_ok = 1;
+        int g;
+
+        /* 空格字模（tile 36）应全是背景色 */
+        for (y = 0; y < TILE_W; y++)
+            for (x = 0; x < TILE_W; x++)
+                if (g_pat[FONT_TILE_BASE * TILE_BYTES + y * TILE_W + x] != FONT_BG)
+                    blank_ok = 0;
+        CHECK(blank_ok, "空格字模（tile 36）应全是背景色 FONT_BG");
+
+        /* 'A' 字模应有前景色像素（不是空白）*/
+        {
+            int a_tile = FONT_TILE_BASE + ('A' - FONT_BASE);
+            int fg = 0;
+            for (y = 0; y < TILE_W && !fg; y++)
+                for (x = 0; x < TILE_W && !fg; x++)
+                    if (g_pat[a_tile * TILE_BYTES + y * TILE_W + x] == FONT_FG) fg = 1;
+            CHECK(fg, "'A' 字模应含前景色像素");
+        }
+
+        /* 每个字模都只由 FONT_FG / FONT_BG 两种颜色组成（展开不能引入杂色）*/
+        for (g = 0; g < FONT_N_GLYPHS; g++)
+            for (y = 0; y < TILE_W; y++)
+                for (x = 0; x < TILE_W; x++) {
+                    uint8_t v = g_pat[(FONT_TILE_BASE + g) * TILE_BYTES + y * TILE_W + x];
+                    if (v != FONT_FG && v != FONT_BG) f_ok = 0;
+                }
+        CHECK(f_ok, "字库图块只应含 FONT_FG/FONT_BG 两种颜色");
+    }
+
+    /* 字库之后（tile 131 起）不该被写 */
+    CHECK(g_pat[(unsigned)(FONT_TILE_BASE + FONT_N_GLYPHS) * TILE_BYTES] == 0xAA,
+          "字库图块区之后不该被写");
 }
 
 /* ---------------------------------------------------------------------------
@@ -320,6 +356,38 @@ static void test_cursor_cost(void)
     CHECK(g_writes - before == 225, "全盘重画应恰好 225 字节");
 }
 
+/* ---------------------------------------------------------------------------
+ * F. HUD 文字：字符 -> 字库图块号、小写折叠、居中、越界落空格
+ * ------------------------------------------------------------------------- */
+static void test_text(void)
+{
+    printf("---- F. HUD 文字 ----\n");
+    memset(g_nt, 0xAA, sizeof(g_nt));
+    render_init();
+
+    /* 写一行文字，验证 nametable 里每个字符落到正确的字库图块 */
+    render_text(1, 0, "TURN: BLACK");
+    CHECK(g_nt[1 * 256 + 0] == FONT_TILE_BASE + ('T' - FONT_BASE), "第 0 列应是 'T' 字模");
+    CHECK(g_nt[1 * 256 + 4] == FONT_TILE_BASE + (':' - FONT_BASE), "第 4 列应是 ':' 字模");
+    CHECK(g_nt[1 * 256 + 5] == FONT_TILE_BASE, "第 5 列应是空格字模");
+    CHECK(g_nt[1 * 256 + 6] == FONT_TILE_BASE + ('B' - FONT_BASE), "第 6 列应是 'B' 字模");
+
+    /* 小写折叠到大写：'a' 应映射到 'A' 的字模 */
+    render_text(2, 0, "abc");
+    CHECK(g_nt[2 * 256 + 0] == FONT_TILE_BASE + ('A' - FONT_BASE), "'a' 应折叠到 'A'");
+    CHECK(g_nt[2 * 256 + 1] == FONT_TILE_BASE + ('B' - FONT_BASE), "'b' 应折叠到 'B'");
+    CHECK(g_nt[2 * 256 + 2] == FONT_TILE_BASE + ('C' - FONT_BASE), "'c' 应折叠到 'C'");
+
+    /* 居中：len=5 的字符串起点应在 (40-5)/2 = 17 列 */
+    render_text_center(3, "HELLO");
+    CHECK(g_nt[3 * 256 + 17] == FONT_TILE_BASE + ('H' - FONT_BASE), "居中起点应在列 17");
+
+    /* 未定义字符 -> 空格字模。用 0x7F（DEL，在 0x20..0x7E 之外）当未定义字符；
+     * 别用 '@' —— '@' 是 0x40，本来就在字库范围内，会命中它自己的字模。 */
+    render_text(4, 0, "\x7F");
+    CHECK(g_nt[4 * 256 + 0] == FONT_TILE_BASE, "未定义字符应落空格字模");
+}
+
 /* ------------------------------------------------------------------------- */
 int main(void)
 {
@@ -334,6 +402,7 @@ int main(void)
     test_nt_address();
     test_render_states();
     test_cursor_cost();
+    test_text();
 
     /* ---- 把画面显示出来（没有显示器时唯一能看见棋盘的办法）---- */
     printf("\n================ 画面预览（模拟 PPU 读显存后的结果）================\n");

@@ -74,7 +74,18 @@ void render_cell(const gomoku_t *g, int r, int c, int cr, int cc);
 /* 移动光标：只写 2 个字节（旧格重画成普通，新格画成带光标） */
 void render_move_cursor(const gomoku_t *g, int oldr, int oldc, int newr, int newc);
 
-/* 清屏成纯底色（用 shape 0 的空图块铺满）。标题画面之前调一次。 */
+/* 清屏成纯底色（用【空格字模】铺满）。标题画面之前调一次。
+ * 空格字模是 16x16 的纯底色图块 —— 比原来的"内部形状空格"干净，
+ * 后者带网格线，会让 HUD 留白区看起来像网格底。 */
 void render_clear(void);
+
+/* ---- HUD 文字 ----
+ * 字库见 font.h：render_init() 已把紧凑 5x7 位图放大成 16x16 图块写到
+ * tile FONT_TILE_BASE .. FONT_TILE_BASE+FONT_N_GLYPHS-1。这里按【绝对】屏幕
+ * 行/列（0..29 / 0..39）写 nametable。小写自动折叠到大写，未定义字符落空格。 */
+void render_text(int row, int col, const char *s);
+
+/* 同一行水平居中写一段文字。 */
+void render_text_center(int row, const char *s);
 
 #endif /* GOMOKU_RENDER_H */

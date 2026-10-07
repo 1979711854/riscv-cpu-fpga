@@ -34,6 +34,9 @@
 /* 光标闪烁半周期（毫秒）。300ms ⇒ 亮 300 / 灭 300，够醒目又不闪眼 */
 #define BLINK_MS   300u
 
+/* 演示模式（AI 自对弈）每手之间的间隔（毫秒）。1.5s 看得清又不拖。 */
+#define DEMO_DELAY_MS 1500u
+
 /* ---- 全局对象 ------------------------------------------------------------
  * 放静态区而不是栈上：栈顶只有 0x7000，而 game_t 里光 gomoku_t 就 232 字节，
  * 加上 AI 搜索的递归栈，放局部变量会把栈压穿。
@@ -52,6 +55,27 @@ static void uart_putdec(unsigned v)
 }
 
 static void uart_puts(const char *s) { hw_uart_puts(s); }
+
+/* ---- 字符串拼接 / 数字格式化（固件没有 libc，自己写）---- */
+/* 把 s 拷贝到 d 末尾，返回指向结束符的指针（便于链式拼字符串）。 */
+static char *buf_append(char *d, const char *s)
+{
+    while (*s) *d++ = *s++;
+    *d = '\0';
+    return d;
+}
+
+/* 无符号十进制写进 buf（补结束符），返回指向结束符的指针。 */
+static char *u32_to_str(char *buf, unsigned v)
+{
+    char tmp[11];
+    int  n = 0;
+    if (v == 0) { buf[0] = '0'; buf[1] = '\0'; return buf + 1; }
+    while (v && n < 11) { tmp[n++] = (char)('0' + (v % 10)); v /= 10; }
+    while (n--) *buf++ = tmp[n];
+    *buf = '\0';
+    return buf;
+}
 
 /* ---- 串口棋盘快照 ---------------------------------------------------------
  * [!] **没有 HDMI 显示器时的唯一目视手段。** 板上跑的时候靠它验证棋局：
@@ -94,6 +118,54 @@ static void uart_dump_board(const game_t *gm)
     uart_puts("\r\n");
 }
 
+/* ---- HUD 文字 ----
+ * 把轮次/难度/AI 统计/胜负写到屏幕上下留白区（棋盘列 12..26、行 7..21 之外）。 */
+static const char *level_name(int level)
+{
+    return level == AI_EASY   ? "EASY" :
+           level == AI_NORMAL ? "NORMAL" : "HARD";
+}
+
+static void draw_hud(void)
+{
+    char line[SCREEN_COLS + 1];
+    char *p;
+
+    if (g_game.phase == GAME_TITLE) {
+        render_text_center(1, "GOMOKU");
+        p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level));
+        render_text_center(3, line);
+        render_text_center(27, "START: HOLD ANY KEY");
+        render_text_center(28, "DEMO: HOLD UP");
+        return;
+    }
+
+    /* 顶部：轮次 / 难度（演示模式显示 DEMO）*/
+    if (g_game.demo)
+        render_text(1, 1, "DEMO: AI VS AI");
+    else
+        render_text(1, 1, g_game.board.turn == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
+    p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level));
+    render_text(2, 1, line);
+
+    /* 底部：AI 统计（最有展示价值的一行）*/
+    p = line; p = buf_append(p, "AI: NODES ");
+    p = u32_to_str(p, g_game.ai_nodes);
+    p = buf_append(p, " DEPTH ");
+    p = u32_to_str(p, (unsigned)g_game.ai_depth);
+    p = buf_append(p, " ");
+    p = u32_to_str(p, g_game.ai_ms);
+    p = buf_append(p, "MS");
+    render_text(28, 1, line);
+
+    /* 胜负横幅 */
+    if (g_game.phase == GAME_OVER) {
+        const char *msg = g_game.winner == GOMOKU_BLACK ? "BLACK WINS" :
+                          g_game.winner == GOMOKU_WHITE ? "WHITE WINS" : "DRAW";
+        render_text_center(24, msg);
+    }
+}
+
 /* 画一帧。光标只在"该显示"的时候才画 —— 闪烁灭的那半拍、以及胜负之后都不画。 */
 static void draw_frame(void)
 {
@@ -103,6 +175,7 @@ static void draw_frame(void)
         cc = g_game.cursor_c;
     }
     render_full(&g_game.board, cr, cc);
+    draw_hud();
 }
 
 /* ---------------------------------------------------------------------------
@@ -131,10 +204,12 @@ int main(void)
      * NORMAL(4 层) 一次搜索约 2 亿拍，仿真里要跑十几分钟真实时间；
      * EASY 是纯贪心、一次函数调用，秒出。见 build.ps1 -Sim。 */
     game_init(&g_game, GOMOKU_AI_LEVEL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
+    g_game.demo_delay = DEMO_DELAY_MS * hw_ticks_per_ms();   /* 演示每手间隔 1.5s */
 
     uart_puts("\r\n=== GOMOKU on RV32I ===\r\n");
     uart_puts("keys: SW4/5/6/7 = left/right/up/down\r\n");
     uart_puts("      tap = move cursor, hold 0.6s = place, hold on title = start\r\n");
+    uart_puts("      hold UP on title = AI self-play demo (NORMAL vs NORMAL)\r\n");
     uart_puts("      SW3 = reset\r\n");
     uart_puts("board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)\r\n");
 
@@ -149,6 +224,7 @@ int main(void)
         uint32_t now;
         uint32_t t0;
         uint8_t  smask = 0, lmask = 0;
+        int      moves_before;
 
         /* 与帧同步。这一句同时也是主循环的节拍器。 */
         video_wait_vblank();
@@ -172,7 +248,7 @@ int main(void)
          *     "AI thinking..." 却因为落子失败而没有下文 —— 看着比不打还糟，
          *     用户直接以为是卡死了（H6 已经有一颗黑子，实测复现）。
          *     所以落子失败也【必须】给一行话：串口上没有输出 = 用户以为按键没生效。 */
-        if (lmask != 0 && g_game.phase == GAME_PLAYING && game_ai_turn(&g_game)) {
+        if (!g_game.demo && lmask != 0 && g_game.phase == GAME_PLAYING && game_ai_turn(&g_game)) {
             if (g_game.board.cell[g_game.cursor_r][g_game.cursor_c] != GOMOKU_EMPTY) {
                 uart_puts("occupied -- move the cursor and try again\r\n");
             } else {
@@ -181,9 +257,13 @@ int main(void)
                                                       "AI thinking (EASY)...\r\n");
             }
         }
+        /* 只有【这一拍真的走了 AI】才刷新 ai_ms —— 否则空闲帧会把"上次 AI 耗时"
+         * 覆盖成 0~1ms，HUD 那行 AI 统计看着像抽风。 */
+        moves_before = g_game.ai_moves;
         t0 = hw_mtime();
         game_tick(&g_game, now, smask, lmask);
-        g_game.ai_ms = hw_ticks_to_ms(hw_mtime() - t0);
+        if (g_game.ai_moves != moves_before)
+            g_game.ai_ms = hw_ticks_to_ms(hw_mtime() - t0);
 
         /* ---- 刷屏 ---- */
         draw_frame();
@@ -191,9 +271,13 @@ int main(void)
         /* ---- 状态变化就打串口（一次性事件，不刷屏）---- */
         if (g_game.phase != (game_phase_t)prev_phase) {
             if (g_game.phase == GAME_PLAYING) {
-                uart_puts("start, level=");
-                uart_putdec((unsigned)g_game.level);
-                uart_puts("\r\n");
+                if (g_game.demo) {
+                    uart_puts("demo mode (AI vs AI, NORMAL)\r\n");
+                } else {
+                    uart_puts("start, level=");
+                    uart_putdec((unsigned)g_game.level);
+                    uart_puts("\r\n");
+                }
             } else if (g_game.phase == GAME_OVER) {
                 uart_puts(g_game.winner == GOMOKU_BLACK ? "BLACK wins\r\n" :
                           g_game.winner == GOMOKU_WHITE ? "WHITE wins\r\n" :
@@ -211,7 +295,7 @@ int main(void)
         if (g_game.board.stones != prev_stones) {
             int delta = g_game.board.stones - prev_stones;
             /* AI 落子时 stones 会 +2（人一手 + AI 一手）；单独打印 AI 那手的统计 */
-            if (delta > 1 || g_game.board.turn == g_game.human) {
+            if (delta > 1 || g_game.board.turn == g_game.human || g_game.demo) {
                 uart_puts("AI moved, nodes=");
                 uart_putdec((unsigned)g_game.ai_nodes);
                 uart_puts(" depth=");

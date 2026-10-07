@@ -178,57 +178,104 @@ static void test_basic(void)
  * C. 自对弈：跑完整局，判出胜负，全程不非法
  * ------------------------------------------------------------------------- */
 static int play_game(int lv_black, int lv_white, uint32_t seed, int *moves_out,
-                     uint32_t *nodes_out, uint32_t *maxnodes_out)
+                     uint32_t *nodes_out, uint32_t *maxnodes_out,
+                     uint32_t *hard_max_out)
 {
     gomoku_t g;
     uint32_t lcg = seed * 2654435761u + 1u;
-    int guard = 0, mv = 0;
-    uint32_t nodes = 0, mx = 0;
+    int guard = 0, mv = 0, open;
+    uint32_t nodes = 0, mx = 0, hard_mx = 0;
 
     gomoku_reset(&g);
+
+    /* 用 seed 先铺 4 手伪随机开局（2 黑 2 白），让不同 seed = 不同局面。
+     * 否则确定性引擎从空盘对弈，每局棋谱一模一样 —— "N 局"实际只有 1 个样本。
+     * 开局只落在天元附近 7x7（行/列 4..10），不会铺成一边倒的残局。 */
+    for (open = 0; open < 4 && g.winner == 0; open++) {
+        int r, c, tries;
+        for (tries = 0; tries < 200; tries++) {
+            lcg = lcg * 1103515245u + 12345u;
+            r = 4 + (int)(lcg % 7);
+            lcg = lcg * 1103515245u + 12345u;
+            c = 4 + (int)(lcg % 7);
+            if (g.cell[r][c] == GOMOKU_EMPTY) break;
+        }
+        if (tries >= 200) break;
+        if (gomoku_place(&g, r, c) != GOMOKU_OK) break;
+    }
+
     while (g.winner == 0 && !gomoku_is_full(&g) && guard++ < 400) {
         ai_stats_t st;
         int lv = (g.turn == GOMOKU_BLACK) ? lv_black : lv_white;
         int ret;
-        lcg = lcg * 1103515245u + 12345u;   /* 给随机玩家用（本函数暂不用，留接口） */
-        (void)lcg;
 
         ret = ai_play(&g, lv, &st);
         if (ret != GOMOKU_OK) return -1;
         mv++;
         nodes += st.nodes;
         if (st.nodes > mx) mx = st.nodes;
+        if (lv == AI_HARD && st.nodes > hard_mx) hard_mx = st.nodes;
     }
     if (moves_out)    *moves_out = mv;
     if (nodes_out)    *nodes_out = nodes;
     if (maxnodes_out) *maxnodes_out = mx;
+    if (hard_max_out) *hard_max_out = hard_mx;
     return g.winner;
+}
+
+/* 统计一局胜负：HARD 执黑时黑赢、执白时白赢，都算 HARD 赢 */
+static void tally(int w, int hard_is_black, int *hard_wins, int *normal_wins, int *draws)
+{
+    if (w == 0) { (*draws)++; return; }
+    if ((hard_is_black && w == GOMOKU_BLACK) || (!hard_is_black && w == GOMOKU_WHITE))
+        (*hard_wins)++;
+    else
+        (*normal_wins)++;
 }
 
 static void test_selfplay(void)
 {
-    int i, w, mv;
-    uint32_t nodes, mx;
-    int wins_b = 0, wins_w = 0, draws = 0;
-    uint32_t worst_nodes = 0;
+    int i, w;
+    uint32_t hard_mx;
+    int hard_wins = 0, normal_wins = 0, draws = 0;
+    uint32_t worst_hard_nodes = 0;
 
-    printf("---- C. 自对弈（HARD 6 层 对 NORMAL 4 层，跑 6 局）----\n");
+    printf("---- C. 自对弈（HARD 6 层 对 NORMAL 4 层，10 开局 x 黑白互换 = 20 局）----\n");
 
-    for (i = 0; i < 6; i++) {
-        int lv_b = (i % 2 == 0) ? AI_HARD : AI_NORMAL;
-        int lv_w = (i % 2 == 0) ? AI_NORMAL : AI_HARD;
-        w = play_game(lv_b, lv_w, (uint32_t)(i + 1), &mv, &nodes, &mx);
+    for (i = 0; i < 10; i++) {
+        uint32_t seed = (uint32_t)(i + 1);
+
+        /* 同一个开局打两局：HARD 执黑 / HARD 执白，抵消开局对某方的天然偏袒 */
+        w = play_game(AI_HARD, AI_NORMAL, seed, NULL, NULL, NULL, &hard_mx);
         CHECK(w >= 0, "自对弈不应中途出现非法走法");
-        if (mx > worst_nodes) worst_nodes = mx;
-        if (w == GOMOKU_BLACK)      wins_b++;
-        else if (w == GOMOKU_WHITE) wins_w++;
-        else                        draws++;
-        printf("       第 %d 局：%d 手，赢家=%s，本局最多 %u 节点\n",
-               i + 1, mv, w == 0 ? "平" : (w == GOMOKU_BLACK ? "黑" : "白"), mx);
+        tally(w, 1, &hard_wins, &normal_wins, &draws);
+        if (hard_mx > worst_hard_nodes) worst_hard_nodes = hard_mx;
+
+        w = play_game(AI_NORMAL, AI_HARD, seed, NULL, NULL, NULL, &hard_mx);
+        CHECK(w >= 0, "自对弈不应中途出现非法走法");
+        tally(w, 0, &hard_wins, &normal_wins, &draws);
+        if (hard_mx > worst_hard_nodes) worst_hard_nodes = hard_mx;
     }
-    printf("       合计：黑胜 %d / 白胜 %d / 平 %d；单步最多 %u 节点\n",
-           wins_b, wins_w, draws, worst_nodes);
-    CHECK(wins_b + wins_w + draws == 6, "应有 6 局结果");
+
+    printf("       HARD 赢 %d 局 / NORMAL 赢 %d 局 / 平 %d 局；HARD 单步最多 %u 节点\n",
+           hard_wins, normal_wins, draws, worst_hard_nodes);
+    CHECK(hard_wins + normal_wins + draws == 20, "应有 20 局结果");
+
+    /* B3 验收（任务书）：**两条都要过** ——
+     *   ① HARD 收窄宽度后仍应强于 NORMAL（否则这个档位没有存在意义）
+     *   ② 最坏一手不能慢到被误判成死机
+     *
+     * [!] 2026-10-07 修正：原稿把「≤4000 节点」删了，理由是它和①冲突 —— 冲突属实，
+     *     但**删掉标准不等于解决，只是把目标丢了**。真正的控制量是 ai.c 的
+     *     `AI_NODE_BUDGET`：宽度只管【典型】节点数，**最坏情况永远被预算兜住**。
+     *     所以②改成卡【板上换算的秒数】，而不是卡一个死节点数 —— 这样两条不再冲突：
+     *     典型局面 808 节点（≈0.5s）离预算很远，6 层照样完整搜完；
+     *     只有极端局面才中途降级，而那时它被预算兜在 7 秒内。
+     *
+     * 板上秒数 = 节点数 × 0.6 ms（2026-10-06 双发射板上实测系数，见 measure_ai.c）。 */
+    CHECK(hard_wins > normal_wins, "HARD 应比 NORMAL 多赢（B3 验收①）");
+    CHECK(worst_hard_nodes * 0.6 <= 8000.0,
+          "HARD 最坏单步应 ≤ 8 秒（板上换算，B3 验收②）");
 }
 
 /* ---------------------------------------------------------------------------
@@ -276,7 +323,18 @@ static void test_strength_vs_random(void)
 /* ---------------------------------------------------------------------------
  * E. 性能：节点数与耗时 —— D4 的唯一数据源
  * ------------------------------------------------------------------------- */
-#define CAL_X86_TO_BOARD  20.0   /* x86 时间 × 这个系数 ≈ 62MHz RV32 上的时间（粗估）*/
+/* x86 时间 × 这个系数 ≈ 板上 RV32 的时间。
+ *
+ * [!] 2026-10-07 修正：原值 20.0 差了 **6 倍**（注释还写着"62MHz"，那是提频前、
+ *     而且当时是单发射）。按板上实测反推：
+ *         x86    NORMAL 1400 us / 342 节点 = 4.094 us/节点
+ *         板上   NORMAL  552 ms / 1287 节点 = 0.4289 ms/节点（2026-10-06 双发射实测）
+ *         ⇒ 系数 = 428.9 / 4.094 ≈ 105
+ *     取 120 是**偏保守**的一端（对同样的 x86 时间给出更高的板上估计，
+ *     于是 D4 那条"单步 < 1 秒"的验收更严，不会放过慢局面）。
+ *     更准的做法是直接用 `节点数 × 0.6 ms`（见 scripts/gomoku/measure_ai.c 的实测）。
+ * [!] 这个数会随 CPU 配置变：单发射比双发射慢约 18%。改 CPU 后要重新标定。 */
+#define CAL_X86_TO_BOARD  120.0
 
 static void test_perf(void)
 {
@@ -321,8 +379,15 @@ static void test_perf(void)
                "x86 %8.0f us/步   板上粗估 %6.1f ms\n",
                nm[k], (int)st.depth, worst, total / 5, x86_us, board_ms);
 
-        /* D4 的验收：单步 ≤ 1 秒（用粗估判定，留一倍余量） */
-        CHECK(board_ms < 1000.0, "单步估算应 < 1 秒");
+        /* D4 的验收：单步 ≤ 1 秒。
+         * [!] 2026-10-07 改：原来拿 `board_ms`（= x86 墙钟时间 × 系数）判定 ——
+         *     但 **x86 时间不稳定**：同一个 808 节点的局面，实测在 4000~8400 us 之间
+         *     （差 2.1 倍，取决于机器忙不忙），于是这条验收会**随机变红**。
+         *     拿一个抖动的量去卡硬指标，判据本身就不可信。
+         *     引擎没有随机源 ⇒ **节点数是确定性的**，改用节点数换算：
+         *     判据可复现，而且直接对应"板上跑多久"。
+         * 板上每节点 ≈ 0.6 ms（2026-10-06 双发射实测，取保守端）。 */
+        CHECK(worst * 0.6 < 1000.0, "单步应按节点数估算 < 1 秒");
     }
 }
 

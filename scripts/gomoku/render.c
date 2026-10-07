@@ -6,6 +6,7 @@
  * ==========================================================================*/
 #include "render.h"
 #include "tiles.h"
+#include "font.h"
 
 /* 四条边哪几条有线（up<<3 | down<<2 | left<<1 | right）-> shape 0..8
  * 只有 9 种组合会出现在 15x15 的棋盘上：
@@ -89,13 +90,41 @@ void render_move_cursor(const gomoku_t *g, int oldr, int oldc, int newr, int new
 
 void render_clear(void)
 {
-    /* 用"内部形状的空格"铺满整屏 40x30。角落形状不对无所谓 —— 标题画面之后
-     * 马上会被 render_full 覆盖，这里只是别让屏幕上留着雪花。 */
+    /* 用【空格字模】（16x16 纯底色图块）铺满整屏 40x30。HUD 文字画在上面，
+     * 底色干净才好看 —— 原来的"内部形状空格"带网格线，会让留白区变成网格底。 */
     uint8_t row[SCREEN_COLS];
     int r, c;
-    for (c = 0; c < SCREEN_COLS; c++) row[c] = RENDER_TILE(TILE_SHAPE_INNER, RENDER_ST_EMPTY);
+    for (c = 0; c < SCREEN_COLS; c++) row[c] = (uint8_t)FONT_TILE_BASE;
     for (r = 0; r < SCREEN_ROWS; r++)
         vid_bulk_write(VID_REGION_NT, (uint16_t)(r * 256), row, (uint16_t)SCREEN_COLS);
+}
+
+/* ---------------------------------------------------------------------------
+ * HUD 文字
+ * ------------------------------------------------------------------------- */
+void render_text(int row, int col, const char *s)
+{
+    int i = 0;
+    while (s[i] != '\0' && col + i < SCREEN_COLS) {
+        int     ch = (int)(unsigned char)s[i];
+        uint8_t tile;
+
+        if (ch >= 'a' && ch <= 'z') ch -= 32;              /* 小写折叠到大写 */
+        if (ch >= FONT_BASE && ch < FONT_BASE + FONT_N_GLYPHS)
+            tile = (uint8_t)(FONT_TILE_BASE + (ch - FONT_BASE));
+        else
+            tile = (uint8_t)FONT_TILE_BASE;                /* 未定义 -> 空格 */
+
+        vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256 + col + i), &tile, 1);
+        i++;
+    }
+}
+
+void render_text_center(int row, const char *s)
+{
+    int len = 0;
+    while (s[len] != '\0' && len < SCREEN_COLS) len++;
+    render_text(row, (SCREEN_COLS - len) / 2, s);
 }
 
 void render_init(void)
@@ -120,5 +149,31 @@ void render_init(void)
     for (t = 0; t < TILE_N_TOTAL; t++) {
         for (py = 0; py < TILE_BYTES; py++) tile[py] = TILE_PATTERN[t][py];
         vid_bulk_write(VID_REGION_PAT, (uint16_t)(t * TILE_BYTES), tile, TILE_BYTES);
+    }
+
+    /* ---- 字库图块：把紧凑 5x7 位图放大 FONT_SCALE 倍成 16x16，写到 tile 36..130。
+     * [!] 这里 95 x 256 = 24KB 是写进【显存】的；固件只存 95 x 7 字节的紧凑位图，
+     *     不占那 24KB RAM（见 build.ps1 的 28KB 限制）。 ---- */
+    {
+        int  g, y, x;
+        int  ox = (TILE_W - FONT_W * FONT_SCALE) / 2;
+        int  oy = (TILE_W - FONT_H * FONT_SCALE) / 2;
+
+        for (g = 0; g < FONT_N_GLYPHS; g++) {
+            for (y = 0; y < TILE_W; y++) {
+                for (x = 0; x < TILE_W; x++) {
+                    int fx = (x - ox) / FONT_SCALE;
+                    int fy = (y - oy) / FONT_SCALE;
+                    uint8_t v = (uint8_t)FONT_BG;
+                    if (fx >= 0 && fx < FONT_W && fy >= 0 && fy < FONT_H &&
+                        ((FONT_GLYPH[g][fy] >> (FONT_W - 1 - fx)) & 1u))
+                        v = (uint8_t)FONT_FG;
+                    tile[y * TILE_W + x] = v;
+                }
+            }
+            vid_bulk_write(VID_REGION_PAT,
+                           (uint16_t)((FONT_TILE_BASE + g) * TILE_BYTES),
+                           tile, (uint16_t)TILE_BYTES);
+        }
     }
 }

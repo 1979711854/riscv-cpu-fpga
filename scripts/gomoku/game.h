@@ -8,7 +8,7 @@
  *
  * 按键方案（板上只有 4 个用户键 SW4..SW7 = key[0..3]，见 input.h 的论证）：
  *
- *   标题屏    短按 ←/→ 切难度        长按任意键 开始对局
+ *   标题屏    短按 ←/→ 切难度        长按 ↑ 自对弈演示，长按其它键 开始对局
  *   对局中    短按 ←/→/↑/↓ 移动光标   长按任意方向键 在光标处落子
  *   胜负后    长按任意键 回标题
  *
@@ -44,6 +44,11 @@ typedef struct {
     int level;                  /* AI_EASY / AI_NORMAL / AI_HARD */
     int human;                  /* 人执哪一方（GOMOKU_BLACK / GOMOKU_WHITE）*/
     int winner;                 /* 0 = 未分胜负 */
+
+    /* 自对弈演示模式：双方都是 AI，每手之间停 demo_delay。 */
+    int      demo;              /* 1 = 演示（AI vs AI）*/
+    uint32_t demo_delay;        /* 每手之间的间隔（单位与 now 相同）*/
+    uint32_t t_next_ai;         /* 演示模式下下一手 AI 的时刻 */
 
     /* AI 最近一步的统计 —— 给上层打串口用（工作清单要求"打印节点数/耗时"）*/
     uint32_t ai_nodes;

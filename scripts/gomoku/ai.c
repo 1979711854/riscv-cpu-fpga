@@ -48,15 +48,36 @@
 /* 每个节点保留的候选走法数（搜索宽度）。调大 = 更强更慢，改完必须重测耗时 */
 #define AI_WIDTH    14
 
+/* HARD 档的搜索宽度（任务书 B3）：6 层 × 14 宽在板上实测一手要 14.5 秒，太慢。
+ * 收窄宽度是唯一正确的方向（「开局库」「调小 NODE_BUDGET」都被 2026-10-04 实测否掉）。
+ * 但 8 宽"少看太多"：2026-10-07 自对弈实测 8 宽和 NORMAL 打平（执黑方全胜、无强弱差），
+ * 每层少看 6 个候选的损失 > 多 2 层挣回的收益。所以取 10~12 之间的平衡点：
+ * 比 14 宽明显快，又足够宽到深度 6 仍强于 NORMAL。板上秒数 = 节点数 × 0.6ms，
+ * 具体值由 test_ai.c 自对弈 + 板上实测标定，先取 10。 */
+#define AI_WIDTH_HARD 10
+
 /* 单步搜索的节点数上限 —— D4「落子不卡死输入」的保险丝。
  * 超了就退回上一轮【完整搜完】的结果（迭代加深保证总有上一轮）。
  *
- * [!] 这个值【必须由板上实测标定】，现在是"先保证不扭曲棋力"的临时值：
- *     实测无预算时 6 层的峰值是 34,037 节点，所以取 4 万 —— 6 层能完整搜完，
- *     测试结果才有意义。**但板上耗时尚未实测**，换算见 README 的"下一步"。
- *     板上量出来之后：把预算调成 (目标秒数 × 62e6) / (每节点周期数)。
- *     调小不会崩，只会优雅降级到更浅的一轮 —— 那正是迭代加深的意义。 */
-#define AI_NODE_BUDGET  40000u
+ * [!] **这个值才是"最坏一手多久"的真正控制量，宽度不是。**
+ *     宽度（AI_WIDTH_HARD）只决定【典型】一手的节点数；
+ *     最坏情况永远被这个预算兜住 —— 所以 HARD 的延迟上限 = 预算 × 每节点耗时。
+ *
+ * [重点] 2026-10-07 按板上实测标定（原值 40000 是"先保证不扭曲棋力"的临时值，
+ *     在板上意味着最坏 4 万 × 0.6ms ≈ 24 秒，比动工前那 14.5 秒还差）：
+ *
+ *         板上每节点耗时：双发射实测 0.429 ms（NORMAL 552ms/1287 节点，2026-10-06）
+ *                         保守取 **0.6 ms**（盘面越满越贵，实测见过 0.88）
+ *         目标最坏一手：**≈ 7 秒**（配合串口的 "AI thinking..." 提示，可接受）
+ *         ⇒ 预算 = 7000ms / 0.6ms ≈ 11,700 → 取 **12000**
+ *
+ *     典型局面（808 节点）离预算很远，**6 层照样完整搜完**；
+ *     只有极端局面才会中途降级到 4 层。**这是按局面自适应，不是一刀切降档。**
+ *
+ * [!] 改这个值必须重跑 `test_ai.c` 的自对弈：预算压太小会让 HARD 频繁降级、
+ *     棋力掉回 NORMAL —— 那这个档位就没有存在意义了，应该直接删掉。
+ * [!] 换 CPU 配置（单发射/双发射、改主频）后要重新标定：单发射慢约 18%。 */
+#define AI_NODE_BUDGET  12000u
 
 /* 候选点只取"离已有棋子切比雪夫距离 ≤ AI_NEIGH"的空点。
  * 这是五子棋搜索的标准剪枝：离棋子很远的点没有战术意义。 */
@@ -255,9 +276,9 @@ static void undo_move(gomoku_t *g, int r, int c, const ai_undo_t *u)
 }
 
 static int32_t search(gomoku_t *g, int who, int depth, int ply,
-                      int32_t alpha, int32_t beta, ai_stats_t *st)
+                      int32_t alpha, int32_t beta, int width, ai_stats_t *st)
 {
-    ai_move_t cand[AI_WIDTH];
+    ai_move_t cand[AI_WIDTH];      /* 数组恒按最大宽度开；实际用 width 个 */
     int       n, i;
     int32_t   best;
 
@@ -268,7 +289,7 @@ static int32_t search(gomoku_t *g, int who, int depth, int ply,
     st->nodes++;
     if (st->nodes > AI_NODE_BUDGET) { st->aborted = 1; return 0; }
 
-    n = gen_top(g, who, cand, AI_WIDTH);
+    n = gen_top(g, who, cand, width);
     if (n == 0) return 0;                       /* 满盘 = 平局 */
 
     if (depth == 0) {
@@ -289,7 +310,7 @@ static int32_t search(gomoku_t *g, int who, int depth, int ply,
             return SC_WIN - ply;                /* 越早赢分越高 */
 
         do_move(g, r, c, who, &u);
-        v = -search(g, ai_opp(who), depth - 1, ply + 1, -beta, -alpha, st);
+        v = -search(g, ai_opp(who), depth - 1, ply + 1, -beta, -alpha, width, st);
         undo_move(g, r, c, &u);
 
         if (st->aborted) return 0;
@@ -311,6 +332,7 @@ int ai_choose_move(const gomoku_t *g, int level, int *out_r, int *out_c,
     ai_stats_t st;
     int       n, i, picked = -1;
     int       depth;
+    int       width;
     int32_t   best = -AI_INF;
 
     /* 显式清零，不用 memset（固件侧没有 libc） */
@@ -327,10 +349,15 @@ int ai_choose_move(const gomoku_t *g, int level, int *out_r, int *out_c,
     depth = (level == AI_HARD)   ? 6 :
             (level == AI_NORMAL) ? 4 : 1;
 
+    /* 搜索宽度：EASY/NORMAL 保持 14，HARD 收窄到 AI_WIDTH_HARD（任务书 B3）。
+     * 宽度贯穿搜索的每一层，不只根节点 —— 否则根窄了、下面几层还是 14 宽，
+     * 节点数根本降不下来。 */
+    width = (level == AI_HARD) ? AI_WIDTH_HARD : AI_WIDTH;
+
     /* 拷贝一份来搜 —— 绝不动调用方的棋盘 */
     work = *g;
 
-    n = gen_top(&work, work.turn, cand, AI_WIDTH);
+    n = gen_top(&work, work.turn, cand, width);
     if (n == 0) return 2;
 
     st.depth = (uint8_t)depth;
@@ -374,7 +401,7 @@ int ai_choose_move(const gomoku_t *g, int level, int *out_r, int *out_c,
                 }
 
                 do_move(&work, r, c, me, &u);        /* 内部会把 turn 翻成对手 */
-                v = -search(&work, ai_opp(me), d - 1, 1, -AI_INF, -alpha, &st);
+                v = -search(&work, ai_opp(me), d - 1, 1, -AI_INF, -alpha, width, &st);
                 undo_move(&work, r, c, &u);          /* turn 会一起还原 */
 
                 if (st.aborted) { done = 0; break; } /* 本轮作废，保留上一轮 */

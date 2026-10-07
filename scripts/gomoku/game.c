@@ -29,6 +29,9 @@ void game_init(game_t *gm, int level, int human, uint32_t blink_ticks)
     gm->blink_ticks  = blink_ticks ? blink_ticks : 1;
     gm->level        = level;
     gm->human        = human;
+    gm->demo         = 0;
+    gm->demo_delay   = blink_ticks ? blink_ticks : 1;
+    gm->t_next_ai    = 0;
     gm->winner       = 0;
     gm->ai_nodes     = 0;
     gm->ai_ms        = 0;
@@ -76,6 +79,7 @@ static void after_move(game_t *gm)
 int game_ai_turn(const game_t *gm)
 {
     if (gm->phase != GAME_PLAYING) return 0;
+    if (gm->demo) return 1;              /* 演示：双方都是 AI */
     return (gm->board.turn != gm->human);
 }
 
@@ -89,14 +93,13 @@ int game_cursor_shown(const game_t *gm)
  * ------------------------------------------------------------------------- */
 static void tick_title(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask)
 {
-    (void)now;      /* 标题屏不重置闪烁计时 —— 光标那时还没画出来 */
     if (short_mask & (1u << KEY_LEFT)) {
         if (gm->level > AI_EASY) gm->level--;
     }
     if (short_mask & (1u << KEY_RIGHT)) {
         if (gm->level < AI_HARD) gm->level++;
     }
-    if (long_mask) {                        /* 长按任意键 = 开始 */
+    if (long_mask & (1u << KEY_UP)) {       /* 长按 ↑ = 自对弈演示（任务书 B2）*/
         gomoku_reset(&gm->board);
         gm->winner    = 0;
         gm->ai_nodes  = 0;
@@ -108,6 +111,23 @@ static void tick_title(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t lon
         gm->cursor_r  = CURSOR_HOME_R;
         gm->cursor_c  = CURSOR_HOME_C;
         gm->cursor_on = 1;
+        gm->demo      = 1;
+        gm->level     = AI_NORMAL;          /* 演示固定 NORMAL */
+        gm->phase     = GAME_PLAYING;
+        gm->t_next_ai = now + gm->demo_delay;  /* 空盘先停一拍再下第一手 */
+    } else if (long_mask) {                 /* 长按其它键 = 正常开始 */
+        gomoku_reset(&gm->board);
+        gm->winner    = 0;
+        gm->ai_nodes  = 0;
+        gm->ai_ms     = 0;
+        gm->ai_depth  = 0;
+        gm->ai_moves  = 0;
+        gm->last_ai_r = -1;
+        gm->last_ai_c = -1;
+        gm->cursor_r  = CURSOR_HOME_R;
+        gm->cursor_c  = CURSOR_HOME_C;
+        gm->cursor_on = 1;
+        gm->demo      = 0;
         gm->phase     = GAME_PLAYING;
 
         /* 人若执白，AI 要先走一步 —— 在这里直接下掉，免得主循环要为
@@ -122,6 +142,23 @@ static void tick_title(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t lon
 static void tick_playing(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask)
 {
     int dr = 0, dc = 0;
+
+    if (gm->demo) {
+        /* 演示模式：忽略人类按键，按节拍让 AI 走；长按任意键 = 中途退回标题。 */
+        if (long_mask) {
+            gomoku_reset(&gm->board);
+            gm->winner = 0;
+            gm->demo   = 0;
+            gm->phase  = GAME_TITLE;
+            return;
+        }
+        if ((int32_t)(now - gm->t_next_ai) >= 0) {
+            run_ai_move(gm);
+            after_move(gm);
+            gm->t_next_ai = now + gm->demo_delay;
+        }
+        return;
+    }
 
     if (!game_ai_turn(gm)) {                /* AI 思考时不吃按键 */
         if (short_mask & (1u << KEY_LEFT))  dc -= 1;
@@ -166,6 +203,7 @@ static void tick_over(game_t *gm, uint32_t now, uint8_t long_mask)
     if (long_mask) {
         gomoku_reset(&gm->board);
         gm->winner = 0;
+        gm->demo   = 0;
         gm->phase  = GAME_TITLE;
     }
 }
