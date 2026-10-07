@@ -8,8 +8,13 @@
 | `coremark_pll85mhz_ae4deea9.sbit` | **单发射** CoreMark @ 85 MHz —— **已板上实测 233.85 分**（ITER=2740）| `ae4deea9` |
 | `gomoku_pll85mhz_f4e78dc6.sbit` | **单发射** 五子棋 @ 85 MHz —— 已上板跑通（含串口棋盘快照等）| `f4e78dc6` |
 | `gomoku_dual_85mhz_3976aebd.sbit` | **双发射** 五子棋 @ 85 MHz（无 HUD 的上一版）—— 已板上跑通 | `3976aebd` |
-| **`gomoku_dual_hud_85mhz_e5bc227a.sbit`** | **双发射 + HUD** @ 85 MHz —— **当前最新，板上待验**。屏幕上有 `TURN:` / `LEVEL:` / `AI: NODES…` / 胜负横幅；AI 预算标定为 12000 | `e5bc227a` |
+| `gomoku_dual_hud_85mhz_e5bc227a.sbit` | 双发射 + HUD @ 85 MHz（**60.71Hz 刷新**，画面会抖/撕裂）| `e5bc227a` |
+| **`gomoku_dual_hud_60hz_50c4e364.sbit`** | 双发射 + HUD @ **标准 60Hz**（刷新率修正，屏幕正常）—— 有一处 HUD 残字 bug | `50c4e364` |
+| **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
+
+> [!] 旧的 `gomoku_dual_hud_85mhz_e5bc227a.sbit`（60.71Hz）保留作对照 ——
+> **它能复现"画面抖动/撕裂"那个症状**，是刷新率那条结论的证据。
 
 > [!] **"单发射 / 双发射"现在是位流名字的一部分**（2026-10-06 起）。两者文件名与字节数
 > 完全一样，**不标配置就分不出来** —— 而烧错的表现是"分数差 15.8%"这种不显眼的差别，
