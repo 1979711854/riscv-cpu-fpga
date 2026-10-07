@@ -15,7 +15,8 @@
 #      actually contains .git -- so we verify the resulting archive afterwards.
 $repo  = 'D:\riscv-cpu-fpga_merged'
 $stage = 'D:\_stage_dualissue'
-$out   = 'D:\riscv-cpu-fpga_dualissue_20261006.zip'
+# 输出到桌面 RV32I 文件夹 —— 队友发来的包也在那里，方便对照整理（2026-10-07 约定）
+$out   = 'C:\Users\zjn\Desktop\RV32I\riscv-cpu-fpga_dualissue.zip'
 
 # Trap 4: console/pipe encoding. PowerShell decodes native-command output as GBK
 # on a zh-CN box, so `git ls-files` names like "doc/RV32I指令集参考.md" arrive
