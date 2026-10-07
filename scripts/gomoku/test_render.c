@@ -386,6 +386,21 @@ static void test_text(void)
      * 别用 '@' —— '@' 是 0x40，本来就在字库范围内，会命中它自己的字模。 */
     render_text(4, 0, "\x7F");
     CHECK(g_nt[4 * 256 + 0] == FONT_TILE_BASE, "未定义字符应落空格字模");
+
+    /* [!] 2026-10-07 板上实踩：**变短的字符串会留下上一次的残字**。
+     * 标题屏从 "LEVEL: NORMAL"(13 字) 切到 "LEVEL: EASY"(11 字) 时，居中起点由
+     * 列 13 变成列 14，两端各留一个 'L' ⇒ 屏幕显示成 "LLEVEL: EASYL"。
+     * 修法是 render_text 写完补空格到行尾。下面两段把这个行为锁住。 */
+    render_text(5, 0, "LEVEL: NORMAL");
+    render_text(5, 0, "LEVEL: EASY");
+    CHECK(g_nt[5 * 256 + 11] == FONT_TILE_BASE, "变短后第 11 列应被补成空格");
+    CHECK(g_nt[5 * 256 + 12] == FONT_TILE_BASE, "变短后第 12 列应被补成空格");
+
+    /* 居中：13 字占列 13..25，换成 11 字后占列 14..24 —— 两端都不该有残字 */
+    render_text_center(6, "LEVEL: NORMAL");
+    render_text_center(6, "LEVEL: EASY");
+    CHECK(g_nt[6 * 256 + 13] == FONT_TILE_BASE, "居中变短后左端应被补成空格");
+    CHECK(g_nt[6 * 256 + 25] == FONT_TILE_BASE, "居中变短后右端应被补成空格");
 }
 
 /* ------------------------------------------------------------------------- */

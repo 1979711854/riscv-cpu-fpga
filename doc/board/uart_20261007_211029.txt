@@ -1,0 +1,83 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-07 21:10:29
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+level=1 NORMAL (4-ply)
+level=0 EASY (greedy)
+level=1 NORMAL (4-ply)
+level=0 EASY (greedy)
+level=1 NORMAL (4-ply)
+level=0 EASY (greedy)
+level=1 NORMAL (4-ply)
+level=0 EASY (greedy)
+level=1 NORMAL (4-ply)
+level=0 EASY (greedy)
+start, level=0
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+cursor=H7
+cursor=H6
+cursor=G6
+cursor=F6
+AI moved, nodes=14 depth=1 t=0ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . * . . . . . . . . . . 
+ 6 . . . . . X . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=F6 you=BLACK turn=BLACK
+cursor=F5
+AI moved, nodes=14 depth=1 t=0ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . * . . . . . . . . . 
+ 5 . . . . O X . . . . . . . . . 
+ 6 . . . . . X . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=F5 you=BLACK turn=BLACK
+cursor=F4
+cursor=F3
+# 结束于 2026-10-07 21:11:29，共 81 行
