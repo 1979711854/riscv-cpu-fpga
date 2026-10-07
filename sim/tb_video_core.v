@@ -50,7 +50,7 @@ module tb_video_core;
 
     integer errors = 0;
 
-    localparam integer H_TOTAL = 800;
+    localparam integer H_TOTAL = 810;   // 与 video_core.v 同步（60Hz 修正，2026-10-07）
     localparam integer V_TOTAL = 525;
     localparam integer FRAME   = H_TOTAL * V_TOTAL;   // 420000 个 pix 拍
     localparam integer H_ACT   = 640;
