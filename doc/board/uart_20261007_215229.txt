@@ -1,0 +1,670 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-07 21:52:29
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+level=1 NORMAL (4-ply)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (ser
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALd
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMA=
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALt
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALe
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMA 
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALm
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAe
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALn
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAX
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAi
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL*
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMALAI moved, nodes=21783 depth=1379930351 t=1380254995ms
+
+    A B C D E F G H I J K L M N O
+ 1 * . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=A1 you=WHITE turn=WHITE
+level=251930499 HARD (6-ply)
+cursor=?285484932
+AI moved, nodes=21783 depth=1379930351 t=1380254995ms
+
+    A B C D E F G H I J K L M N O
+ 1 * . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=A1 you=WHITE turn=WHITE
+level=251930499 HARD (6-ply)
+cursor=?285484932
+# 结束于 2026-10-07 21:53:29，共 668 行
