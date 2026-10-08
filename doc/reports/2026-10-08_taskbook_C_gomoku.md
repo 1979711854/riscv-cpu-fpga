@@ -67,7 +67,7 @@ scripts\gomoku\run_sim.ps1       # 端到端仿真（真 CPU + 真 PPU，慢，2
 
 ### 现象与根因
 
-AI 是**同步阻塞**跑的，`main.c:222` 的主循环：
+AI 是**同步阻塞**跑的，`main.c:223` 的主循环：
 
 ```c
 for (;;) {
