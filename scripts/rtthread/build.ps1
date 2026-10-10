@@ -57,6 +57,22 @@ foreach ($d in $srcDirs) {
     $sSrcs += Get-ChildItem $d -Filter *.S -File | ForEach-Object { $_.FullName }
 }
 
+# ---- 五子棋（任务 H：把游戏跑在 RT-Thread 上）------------------------------
+# [!] **必须显式列文件，不能把 scripts\gomoku 整个目录加进去** ——
+#     那个目录下有 **7 个带 main() 的文件**（test_board/ai/game/input/render、
+#     gomoku_cli、measure_ai、main_entry），整目录加会在链接期撞 main()。
+# [!] 清单里**不含 main_entry.c** —— 那是【裸机】入口（见该文件头）。
+#     这里的入口是 app\main.c，它建线程调 gomoku_run()。
+$gomokuDir  = Join-Path $Repo "scripts\gomoku"
+$gomokuSrcs = @("board.c", "ai.c", "render.c", "video_port.c",
+                "input.c", "hw_port.c", "game.c", "main.c") |
+              ForEach-Object { Join-Path $gomokuDir $_ }
+foreach ($f in $gomokuSrcs) {
+    if (-not (Test-Path $f)) { throw "五子棋源文件缺失：$f" }
+}
+$cSrcs += $gomokuSrcs
+Write-Host ("      含五子棋 {0} 个源文件（显式列出，不含 main_entry.c）" -f $gomokuSrcs.Count) -ForegroundColor DarkGray
+
 # ---- 按 rtconfig.h 排除不编的源文件 ----------------------------------------
 # 依据：RT-Thread 官方 src/SConscript 的 SrcRemove 规则，逐条对应到我们的 rtconfig.h。
 # 我们没开的组件，其 .c 一律不编 —— 既省编译时间，也避免它们引用不存在的配置宏。
@@ -95,6 +111,14 @@ $incs = @(
     (Join-Path $RtRoot "libcpu\risc-v\common"),
     (Join-Path $Here   "bsp")
 ) | ForEach-Object { "-I$_" }
+# [!] **顺序有讲究**：`-I bsp` 和 `-I gomoku` 都会提供 `board.h`
+#     （RT 的 BSP 板级支持 vs 五子棋的棋盘逻辑）。
+#     同目录内的 `#include "board.h"` 由"先在本文件所在目录找"的规则自动解决；
+#     但 `app\main.c` 两个目录都不在 —— 它要的是 RT 的 `bsp\board.h`。
+#     所以 **bsp 必须排在 gomoku 前面**。
+#     `-I demo` 是给五子棋的 `video_port.c` 用的（它 include "addr_map.h"）。
+$incs += @("-I$(Join-Path $Repo 'scripts\gomoku')",
+           "-I$(Join-Path $Repo 'scripts\demo')")
 
 # -Os                          体积优先（32KB 硬墙，这个最重要）
 # -ffunction-sections/-fdata-sections + --gc-sections
@@ -133,9 +157,14 @@ $cflags = @(
 #     mtime 数的是 CPU 时钟周期，所以 tick 换算必须按 100MHz，否则 tick 不是 1ms。
 # APP_DELAY_MS 调小是为了让仿真跑得动：500ms @100MHz = 5000 万周期，几轮就几分钟。
 if ($Sim) {
-    $cflags += @("-DBOARD_SYSTEM_CLOCK_HZ=100000000", "-DAPP_DELAY_MS=5")
+    # HB_DELAY_MS：主线程心跳调小（5000ms @100MHz = 5 亿周期，iverilog 跑不完）
+    # INPUT_*/GOMOKU_AI_LEVEL：五子棋的仿真口径，和 scripts\gomoku\build.ps1 -Sim 一致
+    #   （长按 600ms 在仿真里是 3700 万周期，整盘棋永远下不完）
+    $cflags += @("-DBOARD_SYSTEM_CLOCK_HZ=100000000", "-DHB_DELAY_MS=20",
+                 "-DINPUT_DEBOUNCE_MS=1", "-DINPUT_LONG_MS=5",
+                 "-DGOMOKU_AI_LEVEL=AI_EASY")
     $Firmware = $true
-    Write-Host "      [仿真口径] 时钟 100MHz，乒乓节奏 5ms，并生成 hex" -ForegroundColor Yellow
+    Write-Host "      [仿真口径] 时钟 100MHz，心跳 20ms，五子棋短按键阈值" -ForegroundColor Yellow
 }
 
 $ldflags = @(

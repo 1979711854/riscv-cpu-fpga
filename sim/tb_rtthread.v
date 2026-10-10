@@ -5,9 +5,14 @@
 // 跑整个 SoC（core + mem_bus + gpio + uart_tx + uart_rx），把 UART TX 按真实波特率
 // 解码成字节流，然后检查 scripts/rtthread/app/main.c 那三个自检是否成立：
 //
-//   [1] 控制台通了        —— 出现 banner
-//   [2] 系统 tick 在走     —— ping 打印的 tick 差值 ≈ APP_DELAY_MS，且反复出现
-//   [3] 上下文切换正确     —— ping / pong 两个线程靠信号量交替，次数对得上
+//   [1] 控制台通了        —— 出现 RT-Thread banner
+//   [2] 游戏线程起来了     —— 出现 "[boot] gomoku thread running"（任务 H）
+//   [3] 调度器在跑         —— 主线程心跳 "[hb] alive" 出现。
+//       这一条一举证明两件事：**调度器正常**，且**游戏线程没把 CPU 独占死**
+//       （心跳还挤得进来）。
+//
+// [任务 H 说明] 本测试台原来验的是 ping/pong 双线程移植（信号量 + 上下文切换）。
+// 那条已经完成使命，应用换成五子棋后判据跟着换。ping/pong 版本在 git 历史里。
 //
 // [!] 跑之前要先按【仿真口径】编固件（时钟 100MHz、短延时、出 hex）：
 //       scripts\rtthread\build.ps1 -Sim
@@ -81,8 +86,14 @@ module tb_rtthread;
 
     // 需要看的字符串（用 CRLF 常量拼，不要写字面量 \r）
     localparam [16*9-1:0]  S_BANNER = "RT-Thread";
-    localparam [16*6-1:0]  S_PING   = "[ping]";
-    localparam [16*6-1:0]  S_PONG   = "[pong]";
+    // [任务 H] 应用从"ping/pong 移植验证"换成了【五子棋】，判据跟着换：
+    //   [2] gomoku 线程真的起来了 —— app/main.c 打的 "[boot] gomoku thread running"
+    //   [3] 主线程心跳在跳 —— "[hb] alive"。它一举证明两件事：
+    //       **调度器在跑**，且**游戏线程没有独占 CPU**（心跳还能挤进来）。
+    // [!] S_GOMOKU 用小写：那行是 rt_kprintf 打的。五子棋自己的 banner 是
+    //     "GOMOKU on RV32I"（大写），两者大小写不同，正好分开。
+    localparam [16*6-1:0]  S_GOMOKU = "gomoku";
+    localparam [16*6-1:0]  S_HB     = "[hb] a";
 
     // 等 UART 上再收到 n 个字节
     task wait_rx;
@@ -96,8 +107,8 @@ module tb_rtthread;
 
     integer i;
     integer errors   = 0;
-    integer seen_ping = 0;
-    integer seen_pong = 0;
+    integer seen_gomoku = 0;
+    integer seen_hb     = 0;
 
     // ------------------------------------------------------------------
     // 主流程
@@ -127,44 +138,36 @@ module tb_rtthread;
             if (rxtext[8*RXBUF-1:0] === rxtext) ; // 占位，避免 lint 抱怨
         end
 
-        // ---- [2][3] 等几轮 ping/pong 交替 ----
-        // 每轮 = 1 次 ping 打印 + 1 次 pong 打印。等够字节数再统计。
-        for (i = 0; i < 3000000 && seen_ping < 3; i = i + 1) @(negedge clk);
+        // ---- [2][3] 等程序把该打的都打完，再【一次性】扫描窗口 ----
+        // [!] 别写成"每拍扫一遍 1024 字节窗口" —— 那是 4M × 1024 次比较，仿真跑不动。
+        //     等固定拍数 -> 扫一次，和原来一样。
+        //     3M 拍 @100MHz = 30ms，够等到第一次心跳（HB_DELAY_MS=20ms）。
+        for (i = 0; i < 3000000; i = i + 1) @(negedge clk);
 
-        // 统计两种标记各出现多少次（在 1024 字节窗口里滑动匹配）
-        seen_ping = 0;
-        seen_pong = 0;
+        seen_gomoku = 0;
+        seen_hb     = 0;
         for (i = 0; i < RXBUF - 6; i = i + 1) begin
-            if (rxtext[i*8 +: 8*6] === S_PING) seen_ping = seen_ping + 1;
-            if (rxtext[i*8 +: 8*6] === S_PONG) seen_pong = seen_pong + 1;
+            if (rxtext[i*8 +: 8*6] === S_GOMOKU) seen_gomoku = seen_gomoku + 1;
+            if (rxtext[i*8 +: 8*6] === S_HB)     seen_hb     = seen_hb + 1;
         end
 
         $display("----------------------------------------");
-        $display("  ping 打印 %0d 次 / pong 打印 %0d 次", seen_ping, seen_pong);
+        $display("  gomoku 标记 %0d 次 / 心跳标记 %0d 次", seen_gomoku, seen_hb);
         $display("  串口共收到 %0d 字节", rxcount);
 
-        if (seen_ping == 0) begin
-            $display("[FAIL] 一次 [ping] 都没打印 —— 调度器/时基没跑起来");
+        if (seen_gomoku == 0) begin
+            $display("[FAIL] 没看到 gomoku 线程启动 —— 线程没起来，或链接错了");
             errors = errors + 1;
         end else begin
-            $display("[OK]   [ping] 出现了 %0d 次（tick 在走，mdelay 会返回）", seen_ping);
+            $display("[OK]   gomoku 线程已启动（RT-Thread 上跑起了五子棋）");
         end
 
-        if (seen_pong == 0) begin
-            $display("[FAIL] 一次 [pong] 都没打印 —— 信号量或上下文切换有问题");
+        // 心跳这一条一举证明两件事：**调度器在跑**，且**游戏线程没独占 CPU**
+        if (seen_hb == 0) begin
+            $display("[FAIL] 没看到主线程心跳 —— 调度器没跑，或游戏线程把 CPU 占死了");
             errors = errors + 1;
         end else begin
-            $display("[OK]   [pong] 出现了 %0d 次（信号量 + 上下文切换都在工作）", seen_pong);
-        end
-
-        // ping 与 pong 应成对出现（ping 每轮放一次信号量，pong 取一次）
-        if (seen_ping > 0 && seen_pong > 0) begin
-            if (seen_pong < seen_ping && seen_ping - seen_pong > 1) begin
-                $display("[FAIL] pong 比 ping 少了 %0d 次 —— 信号量没被及时取走？", seen_ping - seen_pong);
-                errors = errors + 1;
-            end else begin
-                $display("[OK]   ping / pong 成对交替（差值 %0d，属正常）", seen_ping - seen_pong);
-            end
+            $display("[OK]   主线程心跳在跳（调度正常，游戏线程没独占 CPU）");
         end
 
         $display("----------------------------------------");
