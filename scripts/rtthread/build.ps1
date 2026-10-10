@@ -181,7 +181,7 @@ $text = [int]$sizeLine[0]; $data = [int]$sizeLine[1]; $bss = [int]$sizeLine[2]
 
 # RAM 占用 = .text + .data + .bss（统一存储器，代码和数据抢同一块 32KB）
 $ramUsed = $text + $data + $bss
-$ramTotal = 0x8000          # 32KB
+$ramTotal = 0xF000          # 可用 RAM = 0x0~0xEFFF = 60KB（栈顶 0xF000）
 $stackTop = 0xFFF0
 $heapEnd  = 0xF000
 Write-Host ("      代码 .text = {0,6} 字节" -f $text)
@@ -203,7 +203,7 @@ if ($endAddr -gt 0) {
 }
 
 if ($ramUsed -ge $ramTotal) {
-    throw "镜像 $ramUsed 字节 >= 32KB，装不下！先裁 rtconfig.h（关组件）或缩应用。"
+    throw "镜像 $ramUsed 字节 >= 可用 RAM，装不下！先裁 rtconfig.h（关组件）或缩应用。"
 }
 if ($ramUsed -ge $heapEnd) {
     throw "静态占用 $ramUsed 已越过栈底 0x$('{0:X}' -f $heapEnd)，堆被挤没了。先裁代码。"
