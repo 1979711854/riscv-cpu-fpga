@@ -57,8 +57,12 @@ Write-Host ("[1/2] 编译五子棋固件{0} ..." -f $(if ($Sim) { "（仿真口�
 #   这正是本任务的意义：证明 A 扩展【没有破坏既有应用】。
 #   （CoreMark 同样不含 AMO 指令，应用层与 benchmark 层互为佐证。）
 #   另：别退回 rv32i —— 那会让常量除法走软件例程，白白变慢（M 扩展用得上）。
+# [!] **必须带 _zicsr**：main.c 的 design_rev() 用 `csrr mimpid` 读设计版本号
+#     （打在串口第一行，用来区分装同一份固件的两版位流）。现代 RISC-V 规范把
+#     CSR 指令从基础 I 里拆了出去，只写 rv32ima 的话汇编器直接报
+#     "unrecognized opcode 'csrr ...' extension 'zicsr' required"。
 $gccArgs = @(
-    "-march=rv32ima", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
+    "-march=rv32ima_zicsr", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
     "-ffreestanding", "-nostartfiles",
     "-Wall", "-Wextra",
     "-I$PSScriptRoot", "-I$demo",

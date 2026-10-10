@@ -61,6 +61,23 @@ module csr_file (
     output wire        mie_meie       // 外部中断使能
 );
 
+    // ==========================================================================
+    // 设计版本号 —— 由 `mimpid`（0xF13）读出。
+    // --------------------------------------------------------------------------
+    // 存在的理由（2026-10-10 实踩）：两版位流可以装着**完全相同的固件**，
+    // 串口日志因此一模一样，事后分不出烧的是哪一版。把版本号放在【RTL 侧】，
+    // 固件读出来打在第一行，日志就能自证。
+    //   [!] **改任何 RTL 后、综合前，必须把它改成新值**（见 CLAUDE.md 约定 42）。
+    //       同一天改多次就用最低字节当序号（0x2026_1010 → 0x2026_1011 → …）。
+    //   为什么用 mimpid 而不是新加一个 MMIO 寄存器：它是规范里的只读 ID 寄存器，
+    //   加它**不用动地址映射、不用动 mem_bus、不用改固件的板级头文件**，
+    //   固件一条 `csrr` 就能读到。
+    //   覆盖的值（从新到旧）：
+    //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
+    //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
+    // ==========================================================================
+    localparam [31:0] DESIGN_REV = 32'h2026_1010;
+
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
                       CSR_MISA     = 12'h301,
@@ -116,10 +133,12 @@ module csr_file (
             // minstret 未实现退休计数 —— **只读 0**，属已知限制（见 doc/spec.md）
             CSR_MINSTRET : rd_data = 32'd0;
             CSR_MINSTRETH: rd_data = 32'd0;
-            // 以下四个只读 ID 寄存器恒 0。
+            // 只读 ID 寄存器。mimpid 承载【设计版本号】（见上面的 DESIGN_REV），
+            // 其余三个恒 0。
             // mhartid 必须是 0：riscv-tests 的 RISCV_MULTICORE_DISABLE 里有
             // `csrr a0, mhartid; bnez a0, 1b`，返回非 0 会原地自旋到超时。
-            CSR_MVENDORID, CSR_MARCHID, CSR_MIMPID, CSR_MHARTID: rd_data = 32'd0;
+            CSR_MVENDORID, CSR_MARCHID, CSR_MHARTID: rd_data = 32'd0;
+            CSR_MIMPID   : rd_data = DESIGN_REV;
             // 未实现（含 stvec/medeleg/mideleg/satp/pmp*/mnstatus 等）
             // → 读 0、不抛异常（理由见文件头第 3 条）
             default      : rd_data = 32'd0;

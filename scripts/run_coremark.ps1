@@ -33,7 +33,12 @@ if (-not $SkipBuild) {
     Write-Host "[1/3] 编译 CoreMark (ITER=$Iter) ..."
     # 用参数数组调用，避免 PowerShell 原生参数解析把 -DITERATIONS=$Iter 当字面量
     $gccArgs = @(
-        "-march=rv32im", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
+        # [!] 必须带 _zicsr：core_portme.c 的 portable_init() 用 `csrr mimpid`
+        #     读设计版本号（打在 CoreMark 报告之前，用来区分装同一份固件的
+        #     两版位流）。只写 rv32im 的话汇编器报 "extension 'zicsr' required"。
+        #     理论上不影响代码生成（纯 C 不会自己用 CSR），但**改完要复核
+        #     `Total ticks` 仍是 313,886 / 363,515**。
+        "-march=rv32im_zicsr", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
         "-nostartfiles",
         "-I$src", "-I$port",
         "-DITERATIONS=$Iter",

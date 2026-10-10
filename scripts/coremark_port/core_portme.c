@@ -69,6 +69,19 @@ ee_u32 default_num_contexts = 1;
 void
 portable_init(core_portable *p, int *argc, char *argv[])
 {
+    /* [!] 版本自证（2026-10-10 加）：打在 CoreMark 自己的报告【之前】。
+     *     理由：两版位流可以装着**完全相同的固件**，跑分日志因此一模一样，
+     *     事后分不出烧的是哪一版（见 doc/board/README.md 的 A/B 那一节）。
+     *     版本号来自 RTL 侧的 `mimpid`，常量在 rtl/core/csr_file.v 的 DESIGN_REV。
+     * [!] **这段打印在 `start_time()` 之前**，所以不计入 `Total ticks` ——
+     *     每字符还有 2400 周期的 uart_send_char 忙等，放里面会污染跑分。
+     * [!] mimpid 是只读 CSR，只读不写（写它会抛非法指令）。 */
+    {
+        unsigned rev;
+        __asm__ volatile ("csrr %0, mimpid" : "=r"(rev));
+        ee_printf("[build] FW=COREMARK RTL=0x%x\r\n", rev);
+    }
+
     (void)argc;
     (void)argv;
     p->portable_id = 1;

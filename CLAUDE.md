@@ -493,6 +493,31 @@
       （**不要接 `video_top.v`** —— 它例化 PDS 专有原语 `pll_video` / OSERDES，
       iverilog 里不存在），并在 `run_sim.ps1` 里补上 `rtl/video` 那六个文件。
 
+42. [!] **改 RTL 后、综合前，必须把 `DESIGN_REV` 改成新值**（2026-10-10 加）。
+    常量在 `rtl/core/csr_file.v`，由只读 CSR **`mimpid`（`0xF13`）**读出；
+    固件把它打在串口第一行：
+    ```
+    [build] FW=GOMOKU RTL=0x20261010        <- scripts/gomoku/main.c
+    [build] FW=COREMARK RTL=20261010        <- scripts/coremark_port/core_portme.c
+    [build] FW=RTTHREAD-GOMOKU RTL=20261010 <- scripts/rtthread/app/main.c
+    ```
+    * **为什么需要**：**两版位流可以装着完全相同的固件**，串口日志因此一模一样，
+      事后分不出烧的是哪一版（2026-10-10 实踩：`3418c5fc` vs `f00c6659` 跑出来
+      两份日志完全无法区分）。版本号必须来自 **RTL 侧**才有区分力。
+    * **同一天改多次**就用最低字节当序号（`0x2026_1010` → `0x2026_1011` → …）。
+      旧的位流读出 `0x0`（那时 mimpid 恒 0），正好当"这一代之前"的标识。
+    * 为什么用 `mimpid` 而不是新加 MMIO：它是规范里的只读 ID 寄存器，
+      **不用动地址映射、不用动 `mem_bus`、不用改固件的板级头文件**，
+      固件一条 `csrr` 就读到。写它会抛非法指令（`csr_file.v` 的 `wr_illegal`）。
+    * **`csrr` 需要 `zicsr`** —— `scripts/gomoku/build.ps1`（`rv32ima_zicsr`）与
+      `scripts/run_coremark.ps1`（`rv32im_zicsr`）的 `-march` 里已补上。
+      `core_portme.h` 的 `COMPILER_FLAGS` 字符串是**打印给人看的**，也要跟着改，
+      否则报告里写的编译口径和命令行对不上。
+    * 这段打印**在 `start_time()` 之前**，不计入 `Total ticks`
+      （每字符还有 2400 周期的 `uart_send_char` 忙等，放计时段里会污染跑分）。
+      它会让测试台**总周期**从 1,413,100 涨到约 1,496,100 ——
+      **那不是跑分变了**，跑分看 `Total ticks`（仍是 313,886 / 363,515）。
+
 ## 待办
 -  **【当前主线】应用场景落地：RT-Thread + 掌上游戏机**
   —— **自包含任务书**，可直接交给前端队友：

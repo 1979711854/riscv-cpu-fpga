@@ -56,6 +56,31 @@ static void uart_putdec(unsigned v)
 
 static void uart_puts(const char *s) { hw_uart_puts(s); }
 
+/* ---------------------------------------------------------------------------
+ * 上板自证：读【设计版本号】并打在串口第一行
+ * ---------------------------------------------------------------------------
+ * [!] 为什么要有这个（2026-10-10 实踩）：**两版位流可以装着完全相同的固件**，
+ *     串口日志因此一模一样，事后分不出烧的是哪一版（见 doc/board/README.md 的
+ *     A/B 那一节）。所以版本号必须来自【RTL 侧】—— 它由 `mimpid`（0xF13）读出，
+ *     常量定义在 rtl/core/csr_file.v 的 DESIGN_REV。
+ * [!] mimpid 是规范里的**只读** ID 寄存器：写它会抛非法指令（csr_file.v 的
+ *     `wr_illegal`），只读不写。
+ * [!] 这一行必须用**大写** `FW=GOMOKU` —— tb_rtthread.v 用小写 "gomoku"
+ *     专门匹配 `[boot] gomoku thread running`，这里写小写会让那条自检永远为真。 */
+static uint32_t design_rev(void)
+{
+    uint32_t v;
+    __asm__ volatile ("csrr %0, mimpid" : "=r"(v));
+    return v;
+}
+
+static void uart_puthex32(uint32_t v)
+{
+    static const char hx[] = "0123456789abcdef";
+    int i;
+    for (i = 28; i >= 0; i -= 4) hw_uart_putc(hx[(v >> i) & 0xF]);
+}
+
 /* ---- 字符串拼接 / 数字格式化（固件没有 libc，自己写）---- */
 /* 把 s 拷贝到 d 末尾，返回指向结束符的指针（便于链式拼字符串）。 */
 static char *buf_append(char *d, const char *s)
@@ -222,7 +247,13 @@ void gomoku_run(void)
     game_init(&g_game, GOMOKU_AI_LEVEL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
     g_game.demo_delay = DEMO_DELAY_MS * hw_ticks_per_ms();   /* 演示每手间隔 1.5s */
 
-    uart_puts("\r\n=== GOMOKU on RV32I ===\r\n");
+    /* 第一行就自证版本：FW=固件名，RTL=设计版本号（来自 mimpid）。
+     * 两版位流装同一份固件时，靠 RTL= 那一段区分（见上面 design_rev 的说明）。 */
+    uart_puts("\r\n[build] FW=GOMOKU RTL=0x");
+    uart_puthex32(design_rev());
+    uart_puts("\r\n");
+
+    uart_puts("=== GOMOKU on RV32I ===\r\n");
     uart_puts("keys: SW4/5/6/7 = left/right/up/down\r\n");
     uart_puts("      tap = move cursor, hold 0.6s = place, hold on title = start\r\n");
     uart_puts("      hold UP on title = AI self-play demo (NORMAL vs NORMAL)\r\n");

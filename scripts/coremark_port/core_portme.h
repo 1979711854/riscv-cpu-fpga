@@ -28,7 +28,11 @@
 #endif
 #endif
 #ifndef COMPILER_FLAGS
-#define COMPILER_FLAGS "-O2 -march=rv32im -mabi=ilp32"
+/* [!] 这串是【打印给人看的】，必须与实际编译口径一致 —— 报告里会引用它。
+ *     2026-10-10 起 run_coremark.ps1 用 `-march=rv32im_zicsr`（portable_init
+ *     要读 mimpid 打版本号），所以这里跟着改。**改动不影响代码生成与 CRC**，
+ *     但别让它和命令行对不上 —— 那属于"报告里的数字说不清"。 */
+#define COMPILER_FLAGS "-O2 -march=rv32im_zicsr -mabi=ilp32"
 #endif
 #ifndef MEM_LOCATION
 #define MEM_LOCATION "Static"

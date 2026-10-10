@@ -63,6 +63,15 @@ int main(void)
     rt_uint32_t heap_size = (rt_uint32_t)(&__heap_end - &__heap_start);
 
     rt_kprintf("\n");
+    /* [!] 版本自证（2026-10-10 加）：RT-Thread 自己的 banner 在上面，那一段
+     *     两版位流完全一样；**能区分位流的是这行 RTL=** —— 它读的是 mimpid，
+     *     常量在 rtl/core/csr_file.v 的 DESIGN_REV。理由见
+     *     scripts/gomoku/main.c 里 design_rev() 的注释与 doc/board/README.md。 */
+    {
+        rt_uint32_t rev;
+        __asm__ volatile ("csrr %0, mimpid" : "=r"(rev));
+        rt_kprintf("[build] FW=RTTHREAD-GOMOKU RTL=0x%x\n", (unsigned)rev);
+    }
     rt_kprintf("========================================\n");
     rt_kprintf(" RV32IMA + RT-Thread + GOMOKU @85.0051MHz\n");
     rt_kprintf("========================================\n");
