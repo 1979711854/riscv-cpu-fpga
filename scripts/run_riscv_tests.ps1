@@ -97,8 +97,19 @@ $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
     "-o", $vvp, (Join-Path $sim "tb_riscv.v")
 ) + $rtl
-& iverilog @iverilogArgs
+$ivOut = & iverilog @iverilogArgs 2>&1
+$ivOut | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
+# [!] **端口宽度不一致 = 静默截位，必须当错误处理**（2026-10-10 实踩）。
+#     64KB 扩容时 `imem_addr2` 漏改成 14 位，iverilog 每次都报
+#       "Port 5 (a2_addr) of module unified_mem expects 14 bit(s), given 13"
+#     但没人看这行警告，于是"取指地址 ≥ 0x8000 时 lane B 取错指令"的 bug
+#     躲过了全部四条基线。这类警告没有一条是良性的 —— 现在它们是硬错误。
+$widthWarn = @($ivOut | Where-Object { $_ -match 'expects \d+ bit\(s\), given' })
+if ($widthWarn.Count -gt 0) {
+    $widthWarn | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    throw "iverilog 报了 $($widthWarn.Count) 条端口宽度不一致 —— 那是静默截位，先把宽度对齐再跑回归"
+}
 
 # ---- 3) 逐个跑 ----
 Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue）"

@@ -81,8 +81,15 @@ $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
     "-o", $vvp, (Join-Path $sim "tb_riscv.v")
 ) + $rtl
-& iverilog @iverilogArgs
+$ivOut = & iverilog @iverilogArgs 2>&1
+$ivOut | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
+# [!] **端口宽度不一致 = 静默截位，必须当错误处理**（2026-10-10 实踩，同 run_riscv_tests.ps1）。
+$widthWarn = @($ivOut | Where-Object { $_ -match 'expects \d+ bit\(s\), given' })
+if ($widthWarn.Count -gt 0) {
+    $widthWarn | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    throw "iverilog 报了 $($widthWarn.Count) 条端口宽度不一致 —— 那是静默截位，先把宽度对齐再跑回归"
+}
 
 # ---------------------------------------------------------------------------
 # [3/3] 逐个跑

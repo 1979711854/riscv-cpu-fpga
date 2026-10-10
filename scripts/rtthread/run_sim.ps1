@@ -63,8 +63,15 @@ $srcs = @(
 
 $inc = @("-I", (Join-Path $Repo "rtl\core"), "-I", (Join-Path $Repo "rtl\periph"),
          "-I", (Join-Path $Repo "rtl\bus"),  "-I", (Join-Path $Repo "rtl\video"), "-I", $Sim)
-& iverilog -g2012 @inc -s tb_rtthread -o $vvp @srcs
+$ivOut = & iverilog -g2012 @inc -s tb_rtthread -o $vvp @srcs 2>&1
+$ivOut | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
+# [!] **端口宽度不一致 = 静默截位，必须当错误处理**（2026-10-10 实踩，同 run_riscv_tests.ps1）。
+$widthWarn = @($ivOut | Where-Object { $_ -match 'expects \d+ bit\(s\), given' })
+if ($widthWarn.Count -gt 0) {
+    $widthWarn | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    throw "iverilog 报了 $($widthWarn.Count) 条端口宽度不一致 —— 那是静默截位，先把宽度对齐再跑回归"
+}
 
 # ---- 3) 跑 ----
 Write-Host "[2/2] 跑仿真 ..." -ForegroundColor Cyan
