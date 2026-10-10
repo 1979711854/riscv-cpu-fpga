@@ -92,8 +92,8 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
 #     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
 #     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
-$expectLines = @{ coremark = 8416; demo = 326; rtthread = 9498; video = 758; gomoku = 11194 }
-$expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字"; video = "379 字"; gomoku = "5597 字" }
+$expectLines = @{ coremark = 8416; demo = 326; rtthread = 9498; video = 758; gomoku = 11208 }
+$expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字"; video = "379 字"; gomoku = "5604 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。

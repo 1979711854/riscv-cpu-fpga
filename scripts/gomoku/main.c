@@ -189,7 +189,14 @@ static void draw_frame(void)
 /* ---------------------------------------------------------------------------
  * 主程序
  * ------------------------------------------------------------------------- */
-int main(void)
+/* [!] 入口【不叫 main】—— 叫 gomoku_run()。
+ *     原因：五子棋要同时支持【裸机】和【RT-Thread】两种宿主，
+ *     而 RT-Thread 自己也有一个 main()（入口线程）。两个 main() 在链接期必撞。
+ *     所以把主循环摘成普通函数：
+ *       · 裸机      -> main_entry.c 里的 main() 直接调它
+ *       · RT-Thread -> app/main.c 建一个线程调它（见 scripts/rtthread/）
+ *     本函数【不会返回】（for(;;)）。 */
+void gomoku_run(void)
 {
     int i;
     int prev_phase;
@@ -351,5 +358,5 @@ int main(void)
         }
     }
 
-    return 0;   /* 不会走到 */
+    /* 不会走到（上面是 for(;;)）。函数返回 void，所以直接 return。 */
 }
