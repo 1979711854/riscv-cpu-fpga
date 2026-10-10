@@ -513,10 +513,20 @@
       `scripts/run_coremark.ps1`（`rv32im_zicsr`）的 `-march` 里已补上。
       `core_portme.h` 的 `COMPILER_FLAGS` 字符串是**打印给人看的**，也要跟着改，
       否则报告里写的编译口径和命令行对不上。
-    * 这段打印**在 `start_time()` 之前**，不计入 `Total ticks`
-      （每字符还有 2400 周期的 `uart_send_char` 忙等，放计时段里会污染跑分）。
-      它会让测试台**总周期**从 1,413,100 涨到约 1,496,100 ——
-      **那不是跑分变了**，跑分看 `Total ticks`（仍是 313,886 / 363,515）。
+    * [!] **CoreMark 那行不能用 `ee_printf` —— 必须直写 UART 口、不忙等。**
+      因为 `ee_printf` 的 `uart_send_char()` 每发一个字符都要**读 `0xFFF4` 忙等**，
+      而 `sim/tb_coremark.v` 判定"CoreMark 计时区间"的判据就是
+      **第 1 次 / 第 2 次读 `0xFFF4`**（CoreMark 自己在 `start_time()` 之前一个字都不打，
+      那两个读本来正好是 `start_time` / `stop_time`）。用了 `ee_printf` 之后，
+      区间在 banner 处被提前打开、下一个字符又立刻关上 ——
+      `region cycles / commit / mem acc` **静默全变成 1**，所有流水线分解数据失效，
+      **而 `Total ticks` 仍然是对的，所以从跑分上完全看不出来**。
+      **2026-10-10 我自己踩了这个坑。**
+      **判据**：`+PROF` 跑出来 `region cycles` 必须等于 `Total ticks`
+      （ITER=1 时 **313,886**）。看到 **1** 就是这个坑复发了。
+    * 这段打印在 `start_time()` 之前，所以不计入 `Total ticks`（仍是 313,886 / 363,515）。
+      测试台**总周期**现在约 **1,427,800**（含启动 + 报告打印的一次性开销）——
+      **那不是跑分变了**，跑分一律看 `region cycles` / `Total ticks`。
 
 ## 待办
 -  **【当前主线】应用场景落地：RT-Thread + 掌上游戏机**

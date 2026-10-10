@@ -73,13 +73,31 @@ portable_init(core_portable *p, int *argc, char *argv[])
      *     理由：两版位流可以装着**完全相同的固件**，跑分日志因此一模一样，
      *     事后分不出烧的是哪一版（见 doc/board/README.md 的 A/B 那一节）。
      *     版本号来自 RTL 侧的 `mimpid`，常量在 rtl/core/csr_file.v 的 DESIGN_REV。
-     * [!] **这段打印在 `start_time()` 之前**，所以不计入 `Total ticks` ——
-     *     每字符还有 2400 周期的 uart_send_char 忙等，放里面会污染跑分。
-     * [!] mimpid 是只读 CSR，只读不写（写它会抛非法指令）。 */
+     * [!] mimpid 是只读 CSR，只读不写（写它会抛非法指令）。
+     *
+     * [!] **这里绝对不能用 `ee_printf`** —— 2026-10-10 实踩，我自己踩的：
+     *     `ee_printf` 的 `uart_send_char()` 每发一个字符都要**读 `0xFFF4` 忙等**，
+     *     而 `sim/tb_coremark.v` 判定"CoreMark 计时区间"的判据恰恰是
+     *     **第 1 次 / 第 2 次读 `0xFFF4`**（CoreMark 自己在 `start_time()` 之前
+     *     一个字都不打，所以那两个读本来正好是 `start_time` / `stop_time`）。
+     *     用了 `ee_printf` 之后，区间在 banner 处就被提前打开、下一个字符又立刻关上，
+     *     于是 `region cycles / commit / mem acc` **全部变成 1**，
+     *     所有流水线分解数据静默失效（而 `Total ticks` 仍然是对的，所以看不出来）。
+     *     所以这里**直接写 UART 口、不忙等**：这 30 来个字符进的是 1024 深的
+     *     FIFO，而后头还有十几秒的 CoreMark 要跑，早在程序结束前就发完了。 */
     {
-        unsigned rev;
+        volatile ee_u8 *uart = (volatile ee_u8 *)0xFFFC;   /* 兼容区 UART 发送口 */
+        static const char pre[] = "[build] FW=COREMARK RTL=0x";
+        static const char hx[]  = "0123456789abcdef";
+        const char *p;
+        unsigned    rev;
+        int         i;
+
         __asm__ volatile ("csrr %0, mimpid" : "=r"(rev));
-        ee_printf("[build] FW=COREMARK RTL=0x%x\r\n", rev);
+        for (p = pre; *p; p++) *uart = (ee_u8)*p;
+        for (i = 28; i >= 0; i -= 4) *uart = (ee_u8)hx[(rev >> i) & 0xF];
+        *uart = (ee_u8)'\r';
+        *uart = (ee_u8)'\n';
     }
 
     (void)argc;
