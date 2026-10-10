@@ -401,6 +401,18 @@ static void test_text(void)
     render_text_center(6, "LEVEL: EASY");
     CHECK(g_nt[6 * 256 + 13] == FONT_TILE_BASE, "居中变短后左端应被补成空格");
     CHECK(g_nt[6 * 256 + 25] == FONT_TILE_BASE, "居中变短后右端应被补成空格");
+
+    /* [!] 2026-10-10：**整行清空**的原语。main.c 的 draw_hud() 靠它清掉
+     * "标题屏专用的行"，否则进对局后屏幕上会同时出现两个 LEVEL
+     * （标题屏画在行 3、对局屏画在行 2）。这条锁住 render_text(row,0,"") 的行为。 */
+    render_text(7, 0, "LEVEL: NORMAL");
+    render_text(7, 0, "");                       /* 整行清空 */
+    {
+        int k, all_blank = 1;
+        for (k = 0; k < SCREEN_COLS; k++)
+            if (g_nt[7 * 256 + k] != FONT_TILE_BASE) all_blank = 0;
+        CHECK(all_blank, "render_text(row,0,\"\") 应把整行铺成空格字模");
+    }
 }
 
 /* ------------------------------------------------------------------------- */

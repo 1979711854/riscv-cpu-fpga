@@ -140,6 +140,14 @@ static void draw_hud(void)
         return;
     }
 
+    /* [!] 先清掉【标题屏专用的行】—— 否则进对局后屏幕上会有【两个 LEVEL】。
+     *     标题屏把 LEVEL 画在【行 3】、对局屏画在【行 2】，行 3 不清就一直留着。
+     *     （2026-10-10 板上实踩。这和"同一行内的残字"是同类问题的另一种形态。）
+     *     行 28 不用在这里清：它马上会被下面的 AI 统计整行覆写。
+     *     render_text(row, 0, "") 会整行铺空格字模（见 render.c 的实现）。 */
+    render_text(3,  0, "");
+    render_text(27, 0, "");
+
     /* 顶部：轮次 / 难度（演示模式显示 DEMO）*/
     if (g_game.demo)
         render_text(1, 1, "DEMO: AI VS AI");
@@ -188,6 +196,7 @@ int main(void)
     int prev_stones;
     int prev_cr, prev_cc;      /* 上次打印时的光标位置 —— 短按移动要有串口反馈 */
     int prev_level;            /* 上次打印时的难度 —— 标题屏切档同样要有反馈 */
+    int warned_no_video = 0;   /* vblank 超时只报一次，别把串口灌爆 */
 
     /* ---- 1) 显示初始化 ----------------------------------------------------
      * [!] 显存上电是**随机内容**（BRAM 未初始化），不填调色板和图块的话
@@ -227,7 +236,16 @@ int main(void)
         int      moves_before;
 
         /* 与帧同步。这一句同时也是主循环的节拍器。 */
-        video_wait_vblank();
+        /* [!] 非 0 = 视频没在跑（vblank 超时）。**注意区分"偶发超时"和"一直超时"**：
+         *     偶发一次可能是复位后视频刚起来，不必刷屏；一直超时才值得报。
+         *     这里只在【第一次】超时时打一行串口 —— 之后不再刷，免得把串口灌爆。
+         *     关键点：**超时也继续往下走**，所以按键、状态机、串口都还活着。 */
+        if (video_wait_vblank() != 0) {
+            if (!warned_no_video) {
+                warned_no_video = 1;
+                uart_puts("[!] vblank timeout -- video not running (check D18 video_locked)\r\n");
+            }
+        }
         now = hw_mtime();
 
         /* ---- 采样按键：4 个键逐个取事件 ---- */

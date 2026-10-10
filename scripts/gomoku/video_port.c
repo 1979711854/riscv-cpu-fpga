@@ -7,6 +7,7 @@
 #include "addr_map.h"
 #include "render.h"
 #include "video_port.h"
+#include "hw_port.h"   /* hw_mtime() / hw_ticks_per_ms() —— vblank 超时要用 */
 
 #define REG8(a)  (*(volatile unsigned char  *)(a))
 #define REG32(a) (*(volatile unsigned int   *)(a))
@@ -36,12 +37,27 @@ void video_set_scroll(int x, int y)
     REG32(VIDEO_SCROLL_Y) = (unsigned int)(y & 0xFFF);
 }
 
-void video_wait_vblank(void)
+/* vblank 等待的超时（毫秒）。一帧 16.7ms，取 50ms = 3 帧，足够宽又不会让人等太久。 */
+#define VIDEO_VBLANK_TIMEOUT_MS 50u
+
+int video_wait_vblank(void)
 {
     /* VIDEO_STATUS bit0 = vblank。
-     * [重点] 这里**忙等**，而且没有超时保护 —— 如果视频 PLL 没锁（pix_clk 不走），
-     *         这个位永远不变，程序会卡死在这里、串口也不打印，看起来像"死机"。
-     *         首次上板如果卡在这，先去查 led 上的 video_locked（丝印 D18）。 */
-    while ((REG32(VIDEO_STATUS) & 1u) == 0u)
-        ;
+     *
+     * [!] 这里**必须带超时**。原来的实现是无超时忙等，注释自己承认了隐患却没修：
+     *       "如果视频 PLL 没锁（pix_clk 不走），这个位永远不变，程序会卡死在这里、
+     *        串口也不打印，看起来像'死机'。"
+     *     2026-10-07 板上实踩过 —— 按复位后视频域没恢复（vid_resetn 跟着按钮复位），
+     *     vblank 永远不来，CPU 永久挂在主循环第一句：屏幕黑、串口静默、按键全死。
+     *
+     *     现在的行为：超时（50ms ≈ 3 帧）就返回，**宁可少等一拍也不能永久挂死**。
+     *     返回 0 表示等到了 vblank、非 0 表示超时 —— 调用方可据此提示或降级。 */
+    uint32_t t0    = hw_mtime();
+    uint32_t limit = VIDEO_VBLANK_TIMEOUT_MS * hw_ticks_per_ms();
+
+    while ((REG32(VIDEO_STATUS) & 1u) == 0u) {
+        if ((uint32_t)(hw_mtime() - t0) > limit)
+            return 1;                    /* 超时：视频没在跑 */
+    }
+    return 0;
 }
