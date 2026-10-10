@@ -458,6 +458,41 @@
     **"灯不亮"先问"是不是刚断电、还没重烧"**，别一上来怀疑设计。
     只要没断电、没重生成比特流，按一下复位键（丝印 **SW3** / 管脚 C22）就能让程序从头再跑一轮。
 
+40. [!] **iverilog 报的「端口宽度不一致」不是良性警告，是【静默截位】**（2026-10-10 实踩）。
+    它长这样：
+    ```
+    rtl/bus/mem_bus.v:182: warning: Port 5 (a2_addr) of module unified_mem expects 14 bit(s), given 13.
+    ```
+    **后果**：那一位被丢掉（或补 0），地址/数据在 32KB 边界处**回绕**，而且
+    **编译零报错、测试全过、板上也看不出** —— 除非程序正好走到被截掉的那半区。
+    * 实例：64KB 扩容时 `imem_addr` 改成 14 位、`imem_addr2` 漏改留在 13 位，
+      于是**取指地址 ≥ 0x8000 时双发射的 lane B 从低 32KB 取错指令**。
+      四条基线没有一条覆盖得到（当时所有程序代码都 < 32KB）。
+    * **判据**：`run_riscv_tests.ps1` / `run_coremark.ps1` / `run_own_tests.ps1` /
+      `rtthread\run_sim.ps1` 现在**把这个警告当硬错误抛异常**。
+      看到它报错，**别去改脚本，去把宽度对齐**。
+    * **凡是承载"word 索引"的线，宽度必须跟 `imem_addr` 一起走**（现在 14 位）。
+      `rtl/bus/addr_map.vh` 头部有一份"扩容要一起改哪几处"的清单，加线时补进去。
+    * **测试台也要跟着改** —— `tb_riscv / tb_coremark / tb_amo_int / tb_debug_trap /
+      tb_memdbg` 里的 `wire imem_addr` 自己也是 13 位，会把测试台内部的取指地址
+      再截一次。
+
+41. [!] **测试台例化 `cpu_top` 时，`vid_*` 口【必须接】**（2026-10-10 实踩）。
+    `cpu_top.v` 上那段注释写着"这些测试台不接 `vid_*`，而它们也从不访问
+    0x8001_0000 以上 ⇒ `vid_rdata` 的浮空值不会进 `mem_rdata`" ——
+    **只要被测程序碰一下显存/视频寄存器，这句前提就没了**。
+    * 实例：五子棋（`video_set_scroll` / `video_wait_vblank` / `draw_frame`）
+      跑在 `tb_rtthread` 里，第一次读 `0x8003_0408`（VIDEO_STATUS）就把悬空的
+      `vid_rdata`（**Z**，见约定 13）读进了寄存器堆 → 参与运算变 X →
+      **PC 变成 `0xxxxxxxxx`，整颗 CPU 在 ~16 ms 死掉**。
+    * **症状极具迷惑性**：串口把 banner 打完就静默、心跳永远不出现，
+      看着像"调度器没跑 / 延时没到"，其实是 CPU 已经没了。
+      **一次断言的引入方式**：读固件里的全局变量（如 `rt_tick`）——
+      它**还在涨**就说明定时器/中断/调度这一整类都没问题，别再往那儿怀疑。
+    * **接法**：照 `sim\tb_gomoku.v` 把 `vid_*` 接到 `video_core`
+      （**不要接 `video_top.v`** —— 它例化 PDS 专有原语 `pll_video` / OSERDES，
+      iverilog 里不存在），并在 `run_sim.ps1` 里补上 `rtl/video` 那六个文件。
+
 ## 待办
 -  **【当前主线】应用场景落地：RT-Thread + 掌上游戏机**
   —— **自包含任务书**，可直接交给前端队友：
