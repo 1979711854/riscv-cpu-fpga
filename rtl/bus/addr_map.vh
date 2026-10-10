@@ -17,6 +17,13 @@
 //     漏一处就是静默错位：rtl/mem/unified_mem.v 的 mem0/mem1、
 //     rtl/core/core.v 的 imem_addr 切片、rtl/bus/mem_bus.v 的 ram_word 切片与
 //     ram_hit 范围、sim/mem_model.vh、以及下面兼容区的地址。
+// [!] **这份清单当时就漏了一处，实查踩到：`imem_addr2`（双发射第二取指口的
+//     宽度）**。它留在 13 位，而 `imem_addr + 1` 在 14 位宽里算 → 赋给 13 位线
+//     时丢最高位 → 取指地址 ≥ 0x8000 时 lane B 从低 32KB 取错指令。
+//     **凡是承载"word 索引"的线，宽度都要跟 imem_addr 一起走** ——
+//     现在是 5 个文件：rtl/core/core.v（端口 + `14'd1`）、rtl/top/cpu_top.v、
+//     rtl/bus/mem_bus.v、sim/tb_riscv.v、sim/tb_coremark.v、sim/tb_amo_int.v、
+//     sim/tools/tb_debug_trap.v。再加一条就请补进这份清单。
 // ---------------------------------------------------------------------------
 `define RAM_BASE        32'h0000_0000
 `define RAM_LAST_BYTE   32'h0000_FFEF

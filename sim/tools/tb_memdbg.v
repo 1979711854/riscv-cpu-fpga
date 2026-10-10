@@ -27,7 +27,7 @@ module tb_memdbg;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re, mem_ready;
-    wire [12:0] imem_addr;
+    wire [13:0] imem_addr;     // 与 core / mem_bus 的端口同宽（64KB = 16384 word），别改窄
     wire [31:0] imem_rd;
 
     integer n_cycles = 120;

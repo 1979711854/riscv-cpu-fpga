@@ -36,7 +36,7 @@ module mem_bus (
     // 单发射（DUAL_ISSUE=0）时 core 仍驱动它、但结果被丢弃，行为逐位不变。
     input  wire [13:0] imem_addr,
     output wire [31:0] imem_rd,
-    input  wire [12:0] imem_addr2,
+    input  wire [13:0] imem_addr2,   // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
     output wire [31:0] imem_rd2,
 
     // ---- 访存口（来自 core 的 MEM 级）----

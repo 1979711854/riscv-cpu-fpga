@@ -54,7 +54,7 @@ module cpu_top (
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
-    wire [12:0] imem_addr2;
+    wire [13:0] imem_addr2;     // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
     wire [31:0] imem_rd2;
 
     // ---- core ↔ mem_bus：访存口 ----

@@ -86,9 +86,9 @@ module tb_video_core;
     mem_bus u_bus (
         .clk          (clk_sys),
         .resetn       (rstn_sys),
-        .imem_addr    (13'd0),
+        .imem_addr    (14'd0),   // 取指口宽度 = 64KB 的 word 索引；本测试台不用取指，只求不报宽度警告
         .imem_rd      (),
-        .imem_addr2   (13'd0),
+        .imem_addr2   (14'd0),
         .imem_rd2     (),
         .mem_addr     (d_addr),
         .mem_wdata    (d_wdata),

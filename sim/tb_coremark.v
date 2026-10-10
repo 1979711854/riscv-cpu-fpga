@@ -17,9 +17,9 @@ module coremark_tb;
     reg [63:0] cycle_count;
 
     // core ↔ mem_bus 的取指口与访存口
-    wire [12:0] imem_addr;
+    wire [13:0] imem_addr;     // 与 core / mem_bus 的端口同宽（64KB = 16384 word），别改窄
     wire [31:0] imem_rd;
-    wire [12:0] imem_addr2;
+    wire [13:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（64KB），别改窄
     wire [31:0] imem_rd2;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
