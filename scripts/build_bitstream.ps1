@@ -92,8 +92,18 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     差 1 个字是**除数常量变了**导致编译器把 `/ EE_TICKS_PER_SEC` 的常量除法
 #     优化成少一条指令 —— 与 ITER 无关（ITER=1500/1663/820/1 都一样是 4208）。
 #     所以 guard 一旦挡住你，**先确认是不是又改了编译期常量**，别急着放宽。
-$expectLines = @{ coremark = 8416; demo = 326; rtthread = 9498; video = 758; gomoku = 11208 }
-$expectDesc  = @{ coremark = "4208 字"; demo = "163 字"; rtthread = "4749 字"; video = "379 字"; gomoku = "5604 字" }
+#
+# [!] 2026-10-10 三份固件各涨了一截 —— 原因是加了**版本自证**那行：
+#     `[build] FW=... RTL=0x%x`（字符串 + ~20 字节代码），且 gomoku/coremark
+#     的 `-march` 补了 `_zicsr`（`COMPILER_FLAGS` 字符串也长了几字节）。
+#       coremark  4208 -> 4228 字
+#       rtthread  4749 -> 9562 字   （gdb 符号/长字符串一起进 .rodata，涨得多）
+#       gomoku    5604 -> 5634 字
+#     这三个数就是用 `scripts\rtthread\build.ps1 -Firmware` / `scripts\gomoku\build.ps1`
+#     各自的 elf2mem 输出**实测**出来的，不是估的。`demo` / `video` 没动过源码，
+#     保持原值。
+$expectLines = @{ coremark = 8456; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
+$expectDesc  = @{ coremark = "4228 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。

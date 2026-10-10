@@ -12,12 +12,25 @@
 | **`gomoku_dual_hud_60hz_50c4e364.sbit`** | 双发射 + HUD @ **标准 60Hz**（刷新率修正，屏幕正常）—— 有一处 HUD 残字 bug | `50c4e364` |
 | `gomoku_dual_hud_60hz_rv32a_8c229a21.sbit` | 双发射 + HUD + **A 扩展** @85MHz —— **时序 −0.096 ns，不可用**（留作"单 seed 不收敛"的证据）| `8c229a21` |
 | `gomoku_dual_aext_ms_85mhz_3418c5fc.sbit` | 双发射 + HUD + **A 扩展** + **多 seed 布局** —— slack +0.064 ns | `3418c5fc` |
-| **`gomoku_dual_aext_ms_85mhz_addrfix_f00c6659.sbit`** | **当前最新（2026-10-10）**：上面那版 + **`imem_addr2` 截位修复**（见 `CLAUDE.md` 约定 40）—— slack **+0.236 ns**。**尚未上板验证** | `f00c6659` |
+| `gomoku_dual_aext_ms_85mhz_addrfix_f00c6659.sbit` | 上面那版 + **`imem_addr2` 截位修复**（约定 40）—— slack +0.236 ns。**已上板**（2026-10-10，两局五子棋正常，屏幕正常）| `f00c6659` |
+| **`coremark_dual_aext_ms_85mhz_mimpid_492714a8.sbit`** | **当前最新（2026-10-10）**：`imem_addr2` 修复 + **版本自证**（`mimpid` 打出 `RTL=`，约定 42）—— CoreMark ITER=3170 @85MHz，slack **+0.525 ns**（Estimated 88.98 MHz），CPU 域失败端点 0。**尚未上板** | `492714a8` |
 | **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
 
 > [!] 旧的 `gomoku_dual_hud_85mhz_e5bc227a.sbit`（60.71Hz）保留作对照 ——
 > **它能复现"画面抖动/撕裂"那个症状**，是刷新率那条结论的证据。
+
+> [!] **`492714a8` 是"当前源码"对应的 CoreMark 位流**（2026-10-10）——
+> `imem_addr2` 宽度修复 **+** 版本自证（`mimpid`）。烧上去后串口第一行应该是：
+> ```
+> [build] FW=COREMARK RTL=0x20261010
+> ```
+> **看到 `RTL=` 就是新版网表**；旧位流没有这一行（那时 `mimpid` 恒 0，
+> 固件也还没读它）。判分仍看 `Total ticks`（ITER=3170 应约 994,9xx,xxx，
+> ÷85,005,100 ≈ 11.7 s）+ 四个 CRC。
+>
+> [!] 因为加了这一行，CoreMark 镜像从 4208 字涨到 **4228 字**
+> （`build_bitstream.ps1` 的 `expectLines` 表已实测更新）。
 
 > [!] **`f00c6659` 与 `3418c5fc` 的差别只在 RTL 的一个宽度**（2026-10-10）：
 > `imem_addr2` 从 13 位改回 14 位（64KB 扩容时漏改的那处）。
