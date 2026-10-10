@@ -10,6 +10,8 @@
 | `gomoku_dual_85mhz_3976aebd.sbit` | **双发射** 五子棋 @ 85 MHz（无 HUD 的上一版）—— 已板上跑通 | `3976aebd` |
 | `gomoku_dual_hud_85mhz_e5bc227a.sbit` | 双发射 + HUD @ 85 MHz（**60.71Hz 刷新**，画面会抖/撕裂）| `e5bc227a` |
 | **`gomoku_dual_hud_60hz_50c4e364.sbit`** | 双发射 + HUD @ **标准 60Hz**（刷新率修正，屏幕正常）—— 有一处 HUD 残字 bug | `50c4e364` |
+| `gomoku_dual_hud_60hz_rv32a_8c229a21.sbit` | 双发射 + HUD + **A 扩展** @85MHz —— **时序 −0.096 ns，不可用**（留作"单 seed 不收敛"的证据）| `8c229a21` |
+| **`gomoku_dual_aext_ms_85mhz_3418c5fc.sbit`** | **当前最新**：双发射 + HUD + **A 扩展** + **多 seed 布局** —— slack **+0.064 ns** | `3418c5fc` |
 | **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
 
