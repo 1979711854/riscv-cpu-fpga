@@ -50,7 +50,7 @@ module tb_memdbg;
 
     // 分支相关（用来判断"分支到底有没有在 EX 级解析"）
     wire        ex_flush    = u_soc.u_core.ex_flush;
-    wire        id_redirect = u_soc.u_core.id_redirect;
+    wire        p_redirect  = u_soc.u_core.p_redirect;
     wire        id_ex_br    = u_soc.u_core.id_ex_branch;
     wire        br_taken    = u_soc.u_core.branch_taken;
     wire        idex_pred   = u_soc.u_core.id_ex_pred_taken;
@@ -71,12 +71,12 @@ module tb_memdbg;
         resetn = 1'b0; key = 8'hFF; uart_rx = 1'b1;
         repeat (20) @(negedge clk);
         resetn = 1'b1;
-        $display("cyc  pc       we rdy | exfl idrd idexbr brtk pred f3 | rs1_val    rs2_val    | fAe fBe fAw fBw");
+        $display("cyc  pc       we rdy | exfl prdr idexbr brtk pred f3 | rs1_val    rs2_val    | fAe fBe fAw fBw");
         for (cyc = 0; cyc < n_cycles; cyc = cyc + 1) begin
             @(negedge clk);
             $display("%4d %08x  %b  %b  | %b    %b    %b      %b    %b    %b  | %08x   %08x   | %b   %b   %b   %b",
                      cyc, pc, mem_we, mem_ready,
-                     ex_flush, id_redirect, id_ex_br, br_taken, idex_pred, idex_f3,
+                     ex_flush, p_redirect, id_ex_br, br_taken, idex_pred, idex_f3,
                      rs1_val, rs2_val,
                      fwd_a_ex, fwd_b_ex, fwd_a_wb, fwd_b_wb);
         end

@@ -84,9 +84,11 @@ module core #(
     wire        mc_stall;
     wire        ex_flush;
     wire [31:0] ex_target;      // EX 级解析出的跳转目标（在 EX 段才被赋值）
-    // 分支预测：ID 级重定向 / EX 级误判恢复（三段都在后文才被赋值）
-    wire        id_redirect;    // ID 级已按预测重定向（三处都要引用它）
-    wire [31:0] id_target;      // ID 级算出的预测目标
+    // 分支预测：到达级预测重定向 / EX 级误判恢复（三段都在后文才被赋值）
+    // [阶段1] 重定向从 ID 级提前到【到达级】（if_addr_d + imem_rd 一出现就重定向），
+    //   被预测 taken 的分支省掉那 1 拍取指重定向气泡（v6 任务书阶段1）。
+    wire        p_redirect;     // 到达级预测重定向
+    wire [31:0] p_target;       // 到达级预测目标（= if_addr_d + imm）
     wire        ex_mispred;     // 预测 taken 但实际 not-taken
     wire [31:0] ex_mispred_target;
     // [双发射] 本拍 ID 是否把 lane A + lane B 两条一起放走。恒 0 即单发射。
@@ -245,7 +247,7 @@ module core #(
     //   1. ex_flush    —— EX 级是【更老】的指令，它要跳转时 ID 级指令本来就会被
     //                     杀掉，所以它永远优先
     //   2. ex_mispred  —— 次老，同理
-    //   3. id_redirect —— ID 级预测重定向（本身已用 !ex_flush 门控，这里再排一次
+    //   3. p_redirect  —— 到达级预测重定向（本身已用 !ex_flush 门控，这里再排一次
     //                     只为把优先级写成自明的）
     //   4. stall/div    —— 退格重读，不改变地址流
     //
@@ -279,10 +281,10 @@ module core #(
     wire [31:0] fetch_addr = trap                ? trap_target :
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
-                             id_redirect         ? id_target :
+                             p_redirect          ? p_target :
                              (stall_int || mc_stall || !mem_ready_int) ? if_addr_d :
                              if_addr_d + 32'd4 + (pair_now ? 32'd4 : 32'd0);
-    // （pair_now 的实际赋值在下面 ID 级预测/stall 之后 —— 它要引用 id_pred_taken。）
+    // （pair_now 的实际赋值在下面到达级预测/stall 之后 —— 它要引用 p_pred_taken。）
 
     // 更新【无门控】：fetch_addr 在 stall/mc_stall 时就等于 if_addr_d 自身，
     // 所以"照抄回去"是空操作，等价于原来的 `if (!stall && !mc_stall)` 门控。
@@ -312,6 +314,7 @@ module core #(
     //   之后 ID/EX 用这个寄存值收 lane B —— 不能用当拍的 pair_now：pair_now 描述的是
     //   【下一组取指】，比 IF/ID 里这两条指令年轻一拍，用它收 lane B 会错位。
     reg        if_id_pair;
+    reg        if_id_pred_taken;  // [阶段1] 到达级预测结果随指令进 IF/ID（EX 级判误用）
 
     // IF/ID 里是否是一条【真指令】（而不是冲刷或取指填充期留下的气泡）。
     // 判据 `|imem_rd` 与"全零字按气泡处理"的约定一致 —— 0x00000000 既不是
@@ -439,31 +442,26 @@ module core #(
     // jalr 的目标依赖 rs1，ID 级没有前递通路，因此【不预测】，仍走 EX 冲刷
     // （实测约占冲刷事件的 5%）。
     // ---- 动态预测（保守版）：带 tag 的 256 项 2 位饱和计数器 BHT，只预测条件分支方向 ----
-    // jal 无条件必跳、目标只依赖 if_id_pc+imm，仍走静态预测；jalr 目标依赖 rs1、ID 级无
+    // jal 无条件必跳、目标只依赖 PC+imm，仍走静态预测；jalr 目标依赖 rs1、到达级无
     // 前递通路，仍【不预测】走 EX 冲刷。保守版因此不需要 BTB 的 target 部分：branch/jal 的
     // 目标与 EX 级算出的必然相同，不存在"预测对方向但目标算错"（那只可能由 jalr 引起）。
     // 索引 idx=PC[9:2]、tag=PC[31:8]，直接映射 256 项。预测错不影响正确性：EX 级冲刷兜住。
+    // [阶段1] 查询点从 ID 级（if_id_pc）挪到【到达级】（if_addr_d，见下面的 bht_idx_p）：
+    //   到达级同一拍 imem_rd 已给出指令字，可当场算出目标 p_target 并立即重定向，
+    //   被预测 taken 的分支不再付那 1 拍取指重定向气泡。
     reg [23:0] bht_tag  [0:255];
     reg [1:0]  bht_ctr  [0:255];
     reg [255:0] bht_valid;
 
-    wire [7:0] bht_idx   = if_id_pc[9:2];
-    wire       bht_hit   = bht_valid[bht_idx] && (bht_tag[bht_idx] == if_id_pc[31:8]);
-    wire       bht_taken = bht_ctr[bht_idx][1];
-
-    wire        id_pred_taken = (branch && bht_hit) ? bht_taken
-                                                    : ((branch && imm[31]) || jump);
-    assign      id_target     = if_id_pc + imm;
-
-    // ex_flush 优先：EX 级是更老的指令，它重定向时 ID 级指令本来就会被杀掉。
+    // ex_flush 优先：EX 级是更老的指令，它重定向时到达级/ID 级指令本来就会被杀掉。
     // stall / mc_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
     // 流水线状态会脱节。
     // [!] `mem_ready` 必须或进来 —— 这一条不加会【静默破坏分支预测的一致性】：
     //
-    //   `id_ex_pred_taken <= id_redirect` 是在 ID/EX 里锁存的，而 id_redirect 的
-    //   另外三个因子（ex_flush/stall/mc_stall）来自【后级】、逐拍在变。
-    //   没有访存停顿时，分支在 ID 只停 1 拍，两边天然一致；
-    //   一旦访存停住多拍，分支会在 ID 滞留好几拍，于是可能出现
+    //   `id_ex_pred_taken <= if_id_pred_taken`（见 ID/EX 段）锁存的是"是否真的重定向过"
+    //   这一事实，而 p_redirect 的另外三个因子（ex_flush/stall/mc_stall）来自【后级】、
+    //   逐拍在变。没有访存停顿时，分支在到达级只停 1 拍，两边天然一致；
+    //   一旦访存停住多拍，分支会在到达级滞留好几拍，于是可能出现
     //   "某一拍真的重定向了、锁存那一拍却没置上 pred 标志" —— 状态不一致。
     //
     //   后果：那条分支进 EX 后 id_ex_pred_taken=0，于是
@@ -476,7 +474,7 @@ module core #(
     //
     //   抑制到 mem_ready 释放那拍再统一生效是安全的：停顿期间取指本来就冻着
     //   （fetch_addr 走 if_addr_d），重定向晚一拍执行正好跟着一起释放。
-    assign      id_redirect   = id_pred_taken && !ex_flush && !stall_int && !mc_stall && mem_ready_int;
+    //   （p_redirect 本体的赋值在下面【到达级预测】那一小段，和 p_target 一起。）
 
     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
     // [双发射] load 的 rd 要对 **4 个** ID 源比较：lane A 的 rs1/rs2 + lane B 的 rs1/rs2。
@@ -546,9 +544,16 @@ module core #(
     wire [7:0] bht_idx_p   = if_addr_d[9:2];
     wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[31:8]);
     wire       bht_taken_p = bht_ctr[bht_idx_p][1];
-    // 与 ID 级 id_pred_taken 同一套规则，只是 pc 用 if_addr_d（到达级）
+    // 静态规则兜底：BHT 未命中时后向条件分支 / jal 预测跳转（到达级 pc = if_addr_d）
     wire       p_pred_taken = (p_branch && bht_hit_p) ? bht_taken_p
                             : ((p_branch && imem_rd[31]) || p_jump);
+    // [阶段1] 到达级预测目标与重定向。目标 = if_addr_d + imm，imm 由 imem_rd 译出
+    //   （第三个 imm_gen 实例，专门给到达级用）。p_redirect 的门控注释见上面
+    //   "动态预测（保守版）"那一段（mem_ready 那条承重逻辑）。
+    wire [31:0] p_imm;
+    imm_gen u_imm_p (.instr(imem_rd), .imm(p_imm));
+    assign      p_target   = if_addr_d + p_imm;
+    assign      p_redirect = p_pred_taken && !ex_flush && !stall_int && !mc_stall && mem_ready_int;
     wire p_opcode_b_ok = (p_op_b == 7'b0110011) || (p_op_b == 7'b0010011) ||
                          (p_op_b == 7'b0110111) || (p_op_b == 7'b0010111);
 
@@ -1040,8 +1045,8 @@ module core #(
             pc_r <= ex_target + 32'd4;
         else if (ex_mispred)
             pc_r <= ex_mispred_target + 32'd4;
-        else if (id_redirect)
-            pc_r <= id_target + 32'd4;
+        else if (p_redirect)
+            pc_r <= p_target + 32'd4;
         // [!] mem_ready 也要或进来：访存没完成时 pc_r 必须停住，
         //     否则取指会跑到前面去、把停在 MEM 的那条指令的后续全冲掉。
         // [双发射] 配对时一步跨两条（+8）。pc_r 现在只作 pc 输出/调试用，
@@ -1059,23 +1064,25 @@ module core #(
             if_id_pc_b    <= 32'd0;
             if_id_instr_b <= 32'h00000013;
             if_id_pair    <= 1'b0;
-        end else if (ex_flush || ex_mispred || id_redirect || trap) begin
+            if_id_pred_taken <= 1'b0;
+        end else if (ex_flush || ex_mispred || trap) begin
             // 三条都只清【一拍】：重定向那一拍 fetch_addr 已经把新地址发出去了，
             // 目标指令的数据下一拍就回来，多清一拍反而会把它杀掉。
             // （原 ex_flush_d 的第二拍冲刷已随地址旁路一并移除。）
             //
             //   ex_flush   杀掉跳转前那次读（旧路）
             //   ex_mispred 杀掉预测路径上取回的错误指令
-            //   id_redirect 杀掉 fall-through 取指
             //
-            // id_redirect 这一拍【不会误清分支自己】：ID/EX 是在同一个时钟沿从
-            // IF/ID 的组合译码结果采样的，清 IF/ID 与分支进 ID/EX 互不影响。
+            // [阶段1] p_redirect（到达级预测重定向）【不】清 IF/ID —— 它重定向时
+            //   fall-through 那一次取指根本没发出去（fetch_addr 当拍就指向目标），
+            //   IF/ID 里躺着的是更早的正确指令，不能清。
             if_id_pc    <= 32'd0;
             if_id_instr <= 32'h00000013;
             if_id_valid <= 1'b0;          // 冲刷插入的是气泡，不是真指令
             if_id_pc_b    <= 32'd0;
             if_id_instr_b <= 32'h00000013;
             if_id_pair    <= 1'b0;
+            if_id_pred_taken <= 1'b0;
         end else if (!stall_int && !mc_stall && mem_ready_int) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
@@ -1083,6 +1090,7 @@ module core #(
             // lane B 与 lane A 同拍锁存，pc 恒为 lane A 的 +4（A2 口取的就是这个字）
             // pair_now 就是这一对 (imem_rd, imem_rd2) 的发射判定 —— 同拍寄存。
             if_id_pair    <= pair_now;
+            if_id_pred_taken <= p_redirect;
             if_id_pc_b    <= if_addr_d + 32'd4;
             if_id_instr_b <= imem_rd2;
         end
@@ -1150,12 +1158,12 @@ module core #(
             id_ex_branch    <= branch;
             id_ex_jump      <= jump;
             id_ex_jump_reg  <= jump_reg;
-            // 必须寄存【实际生效的重定向】id_redirect，而不是预测意图
-            // id_pred_taken —— 两者在有 stall / ex_flush / mc_stall 时会分叉
-            // （那三种情况 id_redirect 被抑制，但 id_pred_taken 仍为 1）。
+            // 必须寄存【实际生效的重定向】p_redirect（经 if_id_pred_taken 传下来），
+            // 而不是预测意图 p_pred_taken —— 两者在有 stall / ex_flush / mc_stall
+            // 时会分叉（那三种情况 p_redirect 被抑制，但 p_pred_taken 仍为 1）。
             // 若寄存错了，会出现"记着预测过、但 pc_r 根本没重定向"的状态，
             // EX 级据此判定预测正确而不冲刷，流水线就沿错误路径一路跑下去。
-            id_ex_pred_taken <= id_redirect;
+            id_ex_pred_taken <= if_id_pred_taken;
             id_ex_alu_op    <= alu_op;
             id_ex_wb_sel    <= wb_sel;
             id_ex_pc        <= if_id_pc;

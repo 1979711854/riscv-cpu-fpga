@@ -253,7 +253,7 @@ module coremark_tb;
                 $display("  cond branches  : %0d  (bwd %0d, bwd&taken %0d)",
                          c_br_tot, c_br_bwd, c_br_bwd_tk);
                 $display("  jal %0d  jalr %0d", c_jal, c_jalr);
-                $display("  ID redirect %0d  mispredict %0d", c_redir, c_mispred);
+                $display("  arrival redirect %0d  mispredict %0d", c_redir, c_mispred);
                 $display("fwd from ex/mem  : %0d", c_fwdex);
                 $display("fwd from mem/wb  : %0d", c_fwdwb);
                 $display("mem accesses     : %0d", c_mem);
@@ -288,7 +288,7 @@ module coremark_tb;
                     $display("--- jumps (region) ---");
                     $display("  jal            : %0d", tc_jal);
                     $display("  jalr           : %0d", tc_jalr);
-                    $display("  ID redirect    : %0d", tc_redir);
+                    $display("  arrival redirect : %0d", tc_redir);
                     $display("  mispredict     : %0d", tc_mispred);
                     if (tc_br_bwd > 0)
                         $display("  bwd taken rate : %f%%",
@@ -348,7 +348,7 @@ module coremark_tb;
             v_mem <= u_core.mc_stall ? 1'b0 : v_ex;
             v_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.stall) ? 1'b0 :
                      (u_core.mc_stall ? v_ex : v_id);
-            v_id  <= (u_core.ex_flush || u_core.ex_mispred || u_core.id_redirect) ? 1'b0 :
+            v_id  <= (u_core.ex_flush || u_core.ex_mispred) ? 1'b0 :
                      ((!u_core.stall && !u_core.mc_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
 
@@ -359,7 +359,7 @@ module coremark_tb;
                       (u_core.mc_stall ? pr_ex : {u_core.if_id_pc, u_core.if_id_instr});
             if (pairtr_on && in_timed && v_wb)
                 $fdisplay(pairtr_fd, "%08h %08h", pr_wb[63:32], pr_wb[31:0]);
-            if (!u_core.ex_flush && !u_core.ex_mispred && !u_core.id_redirect &&
+            if (!u_core.ex_flush && !u_core.ex_mispred &&
                 !u_core.stall && !u_core.mc_stall)
                 c_inst_in <= c_inst_in + 64'd1;
 
@@ -385,7 +385,7 @@ module coremark_tb;
                     if (u_core.id_ex_imm[31]) c_br_bwd_tk <= c_br_bwd_tk + 64'd1;
                 end
             end
-            if (u_core.id_redirect) c_redir   <= c_redir   + 64'd1;
+            if (u_core.p_redirect) c_redir   <= c_redir   + 64'd1;
             if (u_core.ex_mispred)  c_mispred <= c_mispred + 64'd1;
             if (u_core.id_ex_jump)     c_jal  <= c_jal  + 64'd1;
             if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
@@ -419,7 +419,7 @@ module coremark_tb;
                             tc_br_bwd_tk <= tc_br_bwd_tk + 64'd1;
                     end
                 end
-                if (u_core.id_redirect) tc_redir   <= tc_redir   + 64'd1;
+                if (u_core.p_redirect) tc_redir   <= tc_redir   + 64'd1;
                 if (u_core.ex_mispred)  tc_mispred <= tc_mispred + 64'd1;
                 if (u_core.id_ex_jump)     tc_jal  <= tc_jal  + 64'd1;
                 if (u_core.id_ex_jump_reg) tc_jalr <= tc_jalr + 64'd1;
@@ -462,7 +462,7 @@ module coremark_tb;
                     u_core.mem_we, u_core.mem_re,
                     u_core.mem_wb_rd, u_core.mem_wb_reg_write,
                     u_core.stall, u_core.mc_stall,
-                    u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
+                    u_core.ex_flush, u_core.ex_mispred, u_core.p_redirect,
                     u_core.fwd_a_ex, u_core.fwd_b_ex,
                     u_core.fwd_a_wb, u_core.fwd_b_wb,
                     v_id, v_ex, v_mem, v_wb,

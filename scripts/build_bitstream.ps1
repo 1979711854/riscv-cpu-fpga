@@ -30,17 +30,23 @@
          video    -> DEBUG_LED=1（led[1]=video_locked，HDMI 黑屏先看这一颗）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 3170。
-[!] **改了流水线/取指逻辑或主频必须重算**：
+    仅 coremark 用，默认 3796。
+[!] **改了流水线/取指逻辑、主频或编译选项必须重算**：
         ITER = 时钟频率 × 10s ÷ 每迭代周期数
-    当前（双发射，板上口径）：85,005,100 × 10 ÷ 313,886 = 2,708（恰好 10s），
-    默认取 3170 → **11.71s（余量 17%）**，与本项目一贯的余量政策一致。
-[!] **别再用 2740**：那是按单发射口径算的，在双发射下只有 10.12s ——
-    离赛题要求的 10s 只剩 **1.2% 余量**，任何抖动都会判 invalid。
-[!] 每迭代周期数**取决于配置**：双发射 **313,886** / 单发射 363,515（回退版口径）。
-    **板上跑的是双发射**，所以算 ITER 用 313,886 —— 用 363,515 会把秒数和得分算错。
-    改完 RTL 要量它，跑仿真加 `+PROF`（默认脚本不打印 region cycles 这一行），
+    当前（双发射 + 阶段0 的 -O3 + 阶段1 的到达级重定向，**本机实测**）：
+        85,005,100 × 10 ÷ 262,018 = 3,244（恰好 10s），
+    默认取 3796 → **11.70s（余量 17%）**，与本项目一贯的余量政策一致。
+[!] **别再用 3170 / 3518**：3170 是 -O2 口径（313,886）、3518 是**阶段0 的账**
+    （282,777，忘了算阶段1 的 −7.34%）。
+    用 3518：3518 × 262,018 ÷ 85,005,100 = **10.84s** —— 仍 >10s 有效，
+    但余量掉到 8.4%，低于本项目的 17% 政策。
+[!] 每迭代周期数**取决于配置与编译选项**（两个都是本机实测）：
+    双发射 **262,018** / 单发射 **312,428**_（-O2 时代分别是 313,886 / 363,515）。
+    **板上跑的是双发射**，所以算 ITER 用 262,018。
+    改完 RTL 或编译选项要量它，跑仿真加 `+PROF`（默认脚本不打印 region cycles 这一行），
     读 `region cycles`；板上的 `Total ticks` 要再 ÷ 当前时钟。别把两个口径混用。
+    > [!] 判据：`+PROF` 的 **`region cycles` 必须等于 `Total ticks`**。
+    > 看到 **1** 就是 `portable_init` 里的版本号打印踩了 `0xFFF4`（见约定 42）。
 [!] 主频 62.03 → 85.01 MHz（2026-10-04）是按"PDS 满足约束即收敛"实测定的：
     请求 85.01 → 达 91.87、slack +0.879；请求 99.79 → 失败。上限 ≈90，取 85 留 ~7% 余量。
 
@@ -50,7 +56,7 @@
 .PARAMETER Single
     综合【单发射】回退版（把 cpu_top.v 的 DUAL_ISSUE 临时改成 0，结束后自动还原）。
     默认是双发射(1)。
-[!] 回退版会**自动**把期望值换成单发射口径（每迭代 363,515 / 得分 233.85）——
+[!] 回退版会**自动**把期望值换成单发射口径（**312,428 / 272.1**，本机实测）——
     因为脚本按 DUAL_ISSUE 自动选，不会把双发射的秒数套到单发射上。
 [!] 位流归档名要带配置后缀（`..._dual_...` / `..._single_...`）——
     两种位流的文件名和字节数完全一样，分不出来（这个坑踩过好几次）。
@@ -66,7 +72,7 @@ param(
     [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku")]
     [string]$Variant,
 
-    [int]$Iter = 3170,
+    [int]$Iter = 3796,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
 
@@ -102,8 +108,8 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     这三个数就是用 `scripts\rtthread\build.ps1 -Firmware` / `scripts\gomoku\build.ps1`
 #     各自的 elf2mem 输出**实测**出来的，不是估的。`demo` / `video` 没动过源码，
 #     保持原值。
-$expectLines = @{ coremark = 8456; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
-$expectDesc  = @{ coremark = "4228 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
+$expectLines = @{ coremark = 16846; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
+$expectDesc  = @{ coremark = "8423 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -141,8 +147,10 @@ if ($Single -and $dualIssue -ne 0) {
     Write-Host "    -Single：cpu_top.v 的 DUAL_ISSUE 临时改为 0（结束时自动还原）" -ForegroundColor Green
 }
 
-# 每迭代周期数（取决于配置）—— 别再写死：算 ITER 和算得分都用它
-$cpiCycles = if ($dualIssue -eq 1) { 313886 } else { 363515 }
+# 每迭代周期数（取决于配置与编译选项）—— 别再写死：算 ITER 和算得分都用它
+# [阶段0+1 本机实测] 双发射 262,018（-O3 282,777 → 阶段1 再 −7.34%）；
+# 单发射 312,428（-O3 + 阶段1；-O2 时代是 363,515）。
+$cpiCycles = if ($dualIssue -eq 1) { 262018 } else { 312428 }
 $dualNote  = if ($dualIssue -eq 1) { "双发射（与仿真默认一致）" } else { "单发射（-Single 回退版）" }
 
 Write-Host ""
@@ -287,7 +295,7 @@ if ($Variant -eq "coremark") {
     $expTicks = $Iter * $cpiCycles
     Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射是 233.85，双发射约 270.8）"
+    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射 272.1，双发射 324.4）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"

@@ -1,5 +1,5 @@
 ﻿param(
-    [int]$Iter = 1,                                                        # CoreMark 迭代次数（板上跑 ≥10s 需 ≥650，用 700）
+    [int]$Iter = 1,                                                        # CoreMark 迭代次数（上板要 ≥10s，见 build_bitstream.ps1 的默认值/注释）
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin",
     [switch]$SkipBuild,                                                    # 跳过编译，复用已有 ELF
     [switch]$SkipSim,                                                      # 只生成固件、不跑仿真
@@ -13,7 +13,8 @@
 # CoreMark 一键：编译 ELF -> 拆 hex 到 sim/programs -> iverilog 编译 tb_coremark -> vvp 跑分
 #
 # [重点] 配置必须显式、且与板上比特流对齐：
-#   默认 = 双发射（传 -DDUAL，每迭代 313,886 拍）；-Single = 单发射（363,515 拍）。
+#   默认 = 双发射（传 -DDUAL，每迭代 **262,018** 拍）；-Single = 单发射 **312,428** 拍。
+#   两个都是本机实测（-O3 + 阶段1；-O2 时代分别是 313,886 / 363,515）。
 #   得分 = 时钟 ÷ 每迭代周期数 ⇒ 配置不同得分不同，混了会把分数算错。
 #   日志首行 "SIM CONFIG: DUAL_ISSUE=?" 会自证本次跑的是哪一种。
 $ErrorActionPreference = "Stop"
@@ -36,9 +37,12 @@ if (-not $SkipBuild) {
         # [!] 必须带 _zicsr：core_portme.c 的 portable_init() 用 `csrr mimpid`
         #     读设计版本号（打在 CoreMark 报告之前，用来区分装同一份固件的
         #     两版位流）。只写 rv32im 的话汇编器报 "extension 'zicsr' required"。
-        #     理论上不影响代码生成（纯 C 不会自己用 CSR），但**改完要复核
-        #     `Total ticks` 仍是 313,886 / 363,515**。
-        "-march=rv32im_zicsr", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
+        #     理论上不影响正确性（纯 C 不会自己用 CSR），但**改完要复核
+        #     `Total ticks` 双发射 = **262,018** 拍**（-O3 + 阶段1 的到达级重定向）。
+        "-march=rv32im_zicsr", "-mabi=ilp32", "-O3",
+        "-funroll-loops", "-funroll-all-loops", "-fpeel-loops",
+        "-falign-functions=4", "-falign-loops=4",
+        "-mcmodel=medany", "-msmall-data-limit=0",
         "-nostartfiles",
         "-I$src", "-I$port",
         "-DITERATIONS=$Iter",

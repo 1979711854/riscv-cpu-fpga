@@ -91,7 +91,7 @@ module tb_debug_trap;
                 cyc, pc,
                 u_core.if_id_pc, u_core.id_ex_pc, u_core.ex_mem_pc, u_core.mem_wb_pc,
                 u_core.stall, u_core.div_stall, u_core.mul_stall,
-                u_core.ex_flush, u_core.ex_mispred, u_core.id_redirect,
+                u_core.ex_flush, u_core.ex_mispred, u_core.p_redirect,
                 u_core.trap, u_core.id_ex_mret,
                 u_core.alu_result, u_core.ex_target, u_core.csr_rdata);
             $display("      exp=%b ill=%b ec=%b eb=%b misL=%b misS=%b | irq=%b mtip=%b mieMTIE=%b mstatusMIE=%b int=%b | mtimecmp=%h mtime=%h",

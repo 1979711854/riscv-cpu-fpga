@@ -1,4 +1,4 @@
-#ifndef CORE_PORTME_H
+﻿#ifndef CORE_PORTME_H
 #define CORE_PORTME_H
 
 #include <stddef.h>
@@ -29,10 +29,12 @@
 #endif
 #ifndef COMPILER_FLAGS
 /* [!] 这串是【打印给人看的】，必须与实际编译口径一致 —— 报告里会引用它。
- *     2026-10-10 起 run_coremark.ps1 用 `-march=rv32im_zicsr`（portable_init
- *     要读 mimpid 打版本号），所以这里跟着改。**改动不影响代码生成与 CRC**，
- *     但别让它和命令行对不上 —— 那属于"报告里的数字说不清"。 */
-#define COMPILER_FLAGS "-O2 -march=rv32im_zicsr -mabi=ilp32"
+ *     2026-10-10 阶段0（v6 任务书）：-O2 换成 -O3 + 循环展开/对齐（CoreMark
+ *     README Run Rules 许可 "changing build/load/run options"），拍/迭代
+ *     313,886 → 282,777（阶段0）。**只影响代码生成，不影响正确性（四个 CRC 不变）**。
+ *     阶段1（到达级重定向）再加 −7.34% → **262,018**。
+ *     但别让它和 run_coremark.ps1 的命令行对不上 —— 那属于"报告里的数字说不清"。 */
+#define COMPILER_FLAGS "-O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32"
 #endif
 #ifndef MEM_LOCATION
 #define MEM_LOCATION "Static"
