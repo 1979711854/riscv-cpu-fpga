@@ -1,11 +1,14 @@
-# One-shot packer: build the zip we hand to a teammate (includes .git so the
+﻿# One-shot packer: build the zip we hand to a teammate (includes .git so the
 # round-trip works without GitHub access).
 #
-# [!] This file is deliberately ASCII-only. Windows PowerShell 5.1 reads a .ps1
-#     WITHOUT a UTF-8 BOM as GBK; non-ASCII text then swallows quote pairing and
-#     the script dies with a bogus "missing )" parser error. That is the exact
-#     bug in run_own_tests.ps1 found on 2026-10-06 -- reproduced here by writing
-#     this very script. Keep it ASCII, or add a BOM.
+# [!] Windows PowerShell 5.1 reads a .ps1 WITHOUT a UTF-8 BOM as GBK; non-ASCII
+#     text then swallows quote pairing and the script dies with a bogus
+#     "missing )" parser error. That is the exact bug in run_own_tests.ps1 found
+#     on 2026-10-06 -- reproduced here by writing this very script.
+#     Rule: keep it ASCII, **or add a BOM**.
+#     2026-10-10: the output path gained a Chinese directory name, so this file
+#     now carries a UTF-8 BOM. **Don't strip it.**
+#     (The rest of the active code below is still ASCII-only.)
 #
 # Three traps handled below:
 #   1. `git ls-files` escapes non-ASCII paths by default ("doc/...\xxx" form);
@@ -15,9 +18,14 @@
 #      actually contains .git -- so we verify the resulting archive afterwards.
 $repo  = 'D:\riscv-cpu-fpga_merged'
 $stage = 'D:\_stage_dualissue'
-# Output goes to Desktop\RV32I (same folder as the packages teammates send us,
-# so hand-offs stay in one place) -- settled 2026-10-07.
-$out   = 'C:\Users\zjn\Desktop\RV32I\riscv-cpu-fpga_dualissue.zip'
+# Output goes to Desktop\RV32I\交接文件 -- the hand-off folder, i.e. where the
+# packages teammates send us already live. Moved there 2026-10-10 at the user's
+# request; before that it sat one level up in Desktop\RV32I. (That move is also
+# why this file gained a UTF-8 BOM -- the path is non-ASCII. See the note above.)
+# Dated name so successive hand-offs don't silently overwrite each other; that is
+# the folder's existing convention (riscv-cpu-fpga_dualissue_20261006.zip, ...).
+$out   = 'C:\Users\zjn\Desktop\RV32I\交接文件\riscv-cpu-fpga_dualissue_' +
+         (Get-Date -Format 'yyyyMMdd') + '.zip'
 
 # Trap 4: console/pipe encoding. PowerShell decodes native-command output as GBK
 # on a zh-CN box, so non-ASCII file names from `git ls-files` arrive mangled
