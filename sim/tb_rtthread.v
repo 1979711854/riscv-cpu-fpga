@@ -27,6 +27,18 @@
 //
 // [重点] 换行一律用 CRLF 常量拼，别在字符串里写 \r ——
 //   Verilog 转义只有 \n \t \\ \" 和 \ddd，没有 \r。这个坑本工程踩过。
+//
+// [!] **本测试台必须接【视频口】**（2026-10-10 实踩，CPU 被 X 污染的根因）。
+//     cpu_top 的 vid_* 是"显存/控制寄存器 → video_top"的透传口，注释里写着
+//     "仿真里这几个测试台不接，而它们也从不访问 0x8001_0000 以上 ⇒ vid_rdata
+//      的浮空值不会进 mem_rdata"。**任务 H 之后这句话的前提没了**：
+//     五子棋要 video_set_scroll / video_wait_vblank / draw_frame，
+//     第一次读 0x8003_0408（VIDEO_STATUS）就让 `mem_rdata = vid_rdata`（悬空 → Z）
+//     进了寄存器堆 → Z 参与运算变 X → **PC 变成 0xxxxxxxxx，整颗 CPU 在 ~16ms 死掉**。
+//     症状极具迷惑性：串口把 banner 打完就静默、心跳永远不出现，
+//     看着像"调度器没跑"或"延时没到"，其实是 CPU 已经没了。
+//     （这正是 CLAUDE.md 关键约定 4 / 13：外设任何时候都不该把 X 放上总线。）
+//     所以这里照 tb_gomoku.v 的接法接上真正的 video_core（不接的话见上）。
 // ============================================================================
 
 // 统一存储器行为模型（指令+数据共用一块）
@@ -42,17 +54,62 @@ module tb_rtthread;
     wire        done;
     wire [31:0] pc;
 
+    // 视频口（mem_bus 译码出来的显存/控制寄存器口）—— 必须接，见文件头 [!]
+    wire        vid_we;
+    wire [1:0]  vid_vsel;
+    wire [13:0] vid_waddr;
+    wire [3:0]  vid_be;
+    wire [31:0] vid_wdata;
+    wire [1:0]  vid_vsel_d;
+    wire [13:0] vid_waddr_d;
+    wire [31:0] vid_rdata;
+
+    wire [23:0] v_rgb;
+    wire        v_de, v_hs, v_vs;
+
     always #5 clk = ~clk;          // 100MHz 仿真时钟（与本目录其它测试台一致）
 
     cpu_top u_soc (
-        .clk     (clk),
-        .resetn  (resetn),
-        .pc      (pc),
-        .uart_tx (uart_tx),
-        .uart_rx (uart_rx),
-        .led     (led),
-        .key     (key),
-        .done    (done)
+        .clk        (clk),
+        .resetn     (resetn),
+        .pc         (pc),
+        .uart_tx    (uart_tx),
+        .uart_rx    (uart_rx),
+        .led        (led),
+        .key        (key),
+        .done       (done),
+        .vid_we     (vid_we),
+        .vid_vsel   (vid_vsel),
+        .vid_waddr  (vid_waddr),
+        .vid_be     (vid_be),
+        .vid_wdata  (vid_wdata),
+        .vid_vsel_d (vid_vsel_d),
+        .vid_waddr_d(vid_waddr_d),
+        .vid_rdata  (vid_rdata)
+    );
+
+    // video_top 那层壳（pll_video / rgb2tmds / OSERDES）是 PDS 专有原语，
+    // iverilog 里不存在，所以直接例化 video_core —— 与 tb_gomoku.v 同一套接法。
+    // [!] 时钟：clk 同时当 pix_clk 和 clk_sys（显存是真双口，仿真里同源无妨）。
+    //     本测试台不检查 rgb/de/hs/vs（那是 tb_gomoku / tb_video_bars 的事），
+    //     接上它只是为了让 vid_rdata 有确定的驱动源。
+    video_core u_vid (
+        .pix_clk    (clk),
+        .vid_resetn (resetn),
+        .clk_sys    (clk),
+        .sys_resetn (resetn),
+        .vid_we     (vid_we),
+        .vid_vsel   (vid_vsel),
+        .vid_waddr  (vid_waddr),
+        .vid_be     (vid_be),
+        .vid_wdata  (vid_wdata),
+        .vid_vsel_d (vid_vsel_d),
+        .vid_waddr_d(vid_waddr_d),
+        .vid_rdata  (vid_rdata),
+        .rgb        (v_rgb),
+        .de         (v_de),
+        .hs         (v_hs),
+        .vs         (v_vs)
     );
 
     // 115200 @ 100MHz —— 和 cpu_top 的 UART_DIV 默认值 234 配套

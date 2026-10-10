@@ -44,17 +44,25 @@ foreach ($f in @("imem.hex", "dmem.hex")) {
 # ---- 2) 编测试台 ----
 # [!] 不要编 rtl\mem\unified_mem.v —— 测试台用 sim\mem_model.vh 里的行为模型，
 #     重复定义会冲突（CLAUDE.md 关键约定 2）。
+# [!] **必须带 rtl\video 那六个文件** —— 五子棋会访问显存区，测试台把
+#     cpu_top 的 vid_* 口接到 video_core（见 tb_rtthread.v 文件头的 [!]）。
+#     少编它们会报 "Unknown module type: video_core"。
+#     清单与 scripts\gomoku\run_sim.ps1 一致：**不含 video_top.v**
+#     （它例化 PDS 专有原语 pll_video / OSERDES，iverilog 里不存在）。
 Write-Host "[1/2] 编译测试台 ..." -ForegroundColor Cyan
 $vvp = Join-Path $Bld "tb_rtthread.vvp"
+$vidSrcs = @("video_core.v", "ppu.v", "sync_vg.v", "vram_b32.v", "vram_dp.v", "vram_pal.v") |
+           ForEach-Object { Join-Path $Repo "rtl\video\$_" }
 $srcs = @(
     (Join-Path $Sim "tb_rtthread.v")
 ) + (Get-ChildItem (Join-Path $Repo "rtl\core") -Filter *.v -File | ForEach-Object { $_.FullName }) `
   + @((Join-Path $Repo "rtl\bus\mem_bus.v")) `
   + (Get-ChildItem (Join-Path $Repo "rtl\periph") -Filter *.v -File | ForEach-Object { $_.FullName }) `
-  + @((Join-Path $Repo "rtl\top\cpu_top.v"))
+  + @((Join-Path $Repo "rtl\top\cpu_top.v")) `
+  + $vidSrcs
 
 $inc = @("-I", (Join-Path $Repo "rtl\core"), "-I", (Join-Path $Repo "rtl\periph"),
-         "-I", (Join-Path $Repo "rtl\bus"),  "-I", $Sim)
+         "-I", (Join-Path $Repo "rtl\bus"),  "-I", (Join-Path $Repo "rtl\video"), "-I", $Sim)
 & iverilog -g2012 @inc -s tb_rtthread -o $vvp @srcs
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 
