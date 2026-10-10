@@ -52,7 +52,7 @@ module cpu_top (
     parameter DUAL_ISSUE = 1;
 
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
-    wire [12:0] imem_addr;
+    wire [13:0] imem_addr;
     wire [31:0] imem_rd;
     wire [12:0] imem_addr2;
     wire [31:0] imem_rd2;
@@ -72,7 +72,7 @@ module cpu_top (
     wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
 
     // ---- 程序结束标志 ----
-    // 两个来源：CoreMark 的 0x7FF8 协议（start.S 里 main 返回后写），
+    // 两个来源：CoreMark 的 0xFFF8 协议（start.S 里 main 返回后写），
     // 以及程序执行 EBREAK。
     // 注意 EBREAK 是【软停机】：只置标志、不停 PC —— 程序应在 EBREAK 后跟一个
     // 自旋循环（riscv-tests 的 pass/fail 例程、CoreMark 的 start.S 都是这么做的）。
@@ -147,7 +147,7 @@ module cpu_top (
     // ------------------------------------------------------------------
     // 外设
     // ------------------------------------------------------------------
-    // UART 发送：兼容区 0x7FFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
+    // UART 发送：兼容区 0xFFFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
     // uart_tx 内含 1024 深 FIFO，短时间连续写不会丢字符。
     uart_tx #(.DIV(UART_DIV)) u_uart_tx (
         .clk     (clk),

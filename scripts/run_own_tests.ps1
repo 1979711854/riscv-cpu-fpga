@@ -38,7 +38,7 @@ if (-not (Test-Path $testDir)) { throw "找不到测试目录：$testDir" }
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 New-Item -ItemType Directory -Force -Path $prog  | Out-Null
 
-# [!] 这几个用【旧 done/UART 协议】汇报（写 0x7FF8 + UART 0x7FFC），不吃本脚本的
+# [!] 这几个用【旧 done/UART 协议】汇报（写 0xFFF8 + UART 0xFFFC），不吃本脚本的
 #     tohost 判分，由各自的测试台驱动 —— 别放进回归 glob（否则会误报 OTHER/FAIL）：
 #       amo_int     T0 逐拍 trace 的输入程序（配 sim/tb_amo_int.v）
 #       dep_probe   双发射相邻依赖对的诊断探针（非回归）

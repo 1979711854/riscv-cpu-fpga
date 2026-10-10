@@ -161,7 +161,7 @@ int main(void)
     }
 
     /* 程序到此为止：画面已经填好，停下即可。
-     * 不写 0x7FF8 拉 done —— 那是 CoreMark 的结束标志语义。 */
+     * 不写 0xFFF8 拉 done —— 那是 CoreMark 的结束标志语义。 */
     for (;;)
         ;
 }

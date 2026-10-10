@@ -125,7 +125,7 @@ module tb_amo_int;
     integer   k;
 
     always @(posedge clk) begin
-        if (resetn && u_core.mem_we && (mem_addr == 32'h0000_7FFC) && mem_byte_en[0]) begin
+        if (resetn && u_core.mem_we && (mem_addr == 32'h0000_FFFC) && mem_byte_en[0]) begin
             uart[uart_n[3:0]] <= mem_wdata[7:0];
             uart_n <= uart_n + 1;
         end

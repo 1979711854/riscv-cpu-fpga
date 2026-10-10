@@ -15,6 +15,6 @@ SECTIONS
   _end = .;
   _bss_start = ADDR(.bss);
 
-  _stack_top = 0x7000;
-  _tohost    = 0x7FF8;
+  _stack_top = 0xF000;
+  _tohost    = 0xFFF8;
 }

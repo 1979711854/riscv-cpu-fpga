@@ -10,24 +10,31 @@
 `define ADDR_MAP_VH
 
 // ---------------------------------------------------------------------------
-// RAM：32 位字，8192 word = 32KB，字索引用 addr[14:2]
-//   注意 0x7FF0~0x7FFF 被下面的兼容区挖走，RAM 实际可用到 0x7FEF。
-//   栈顶必须 <= 0x7FF0（CoreMark 用 0x7000，安全）。
+// RAM：32 位字，16384 word = 64KB，字索引用 addr[15:2]
+//   注意 0xFFF0~0xFFFF 被下面的兼容区挖走，RAM 实际可用到 0xFFEF。
+//   栈顶必须 <= 0xFFF0（CoreMark 用 0xF000，安全）。
+// [!] 2026-10-10 由 32KB(addr[14:2]) 扩到 64KB。扩容必须【一起】改这几处，
+//     漏一处就是静默错位：rtl/mem/unified_mem.v 的 mem0/mem1、
+//     rtl/core/core.v 的 imem_addr 切片、rtl/bus/mem_bus.v 的 ram_word 切片与
+//     ram_hit 范围、sim/mem_model.vh、以及下面兼容区的地址。
 // ---------------------------------------------------------------------------
 `define RAM_BASE        32'h0000_0000
-`define RAM_LAST_BYTE   32'h0000_7FEF
+`define RAM_LAST_BYTE   32'h0000_FFEF
 
 // ---------------------------------------------------------------------------
-// 兼容区 0x7FF0~0x7FFF —— CoreMark 的链接脚本/移植层硬编码，【不可移动】
-//   core_portme.c: 读写 0x7FF4 当 get_time()
-//   ee_printf.c  : 写 0x7FFC 输出字符、读 0x7FF4 等 UART 发完
-//   start.S      : 写 0x7FF8 = 1 通知结束
+// 兼容区 0xFFF0~0xFFFF —— CoreMark 的链接脚本/移植层硬编码
+//   core_portme.c: 读写 0xFFF4 当 get_time()
+//   ee_printf.c  : 写 0xFFFC 输出字符、读 0xFFF4 等 UART 发完
+//   start.S      : 写 0xFFF8 = 1 通知结束
+// [!] 2026-10-10 随 RAM 扩容一起从 0x7FF0 搬到 0xFFF0。
+//     **它必须和 CoreMark 移植层里的字面量一起搬** —— 否则 CoreMark 会
+//     读不到计时器、串口不出字，而【编译零报错】。
 // ---------------------------------------------------------------------------
-`define LEGACY_HI_BYTE  8'h7F              // addr[15:8] == 0x7F 且 addr[7:4] == 0xF
+`define LEGACY_HI_BYTE  8'hFF              // addr[15:8] == 0xFF 且 addr[7:4] == 0xF
 `define LEGACY_LO_NIB   4'hF
-`define LEGACY_CYCLE    32'h0000_7FF4      // R  周期计数器 [31:0]
-`define LEGACY_DONE     32'h0000_7FF8      // W  写低字节 1 → done 拉高
-`define LEGACY_UART_TX  32'h0000_7FFC      // W  UART 发一个字符
+`define LEGACY_CYCLE    32'h0000_FFF4      // R  周期计数器 [31:0]
+`define LEGACY_DONE     32'h0000_FFF8      // W  写低字节 1 → done 拉高
+`define LEGACY_UART_TX  32'h0000_FFFC      // W  UART 发一个字符
 
 // ---------------------------------------------------------------------------
 // 外设区 0x8000_0000 起，字内偏移 = addr[5:2]
@@ -42,7 +49,7 @@
 `define PERIPH_TIMER    4'h4               // 0x10  R 周期计数器 [31:0] = mtime
 // ---------------------------------------------------------------------------
 // CLINT（机器模式定时器）—— 最小集，只有 mtime 比较
-//   mtime     = 0x8000_0010（与上面的 TIMER、以及兼容区 0x7FF4 是同一个计数器）
+//   mtime     = 0x8000_0010（与上面的 TIMER、以及兼容区 0xFFF4 是同一个计数器）
 //   mtimecmp  = 0x8000_0014，可写；复位值全 1
 //   mtime >= mtimecmp  →  MTIP 拉高（mip bit7），软件写新的 mtimecmp 后自动落下
 //

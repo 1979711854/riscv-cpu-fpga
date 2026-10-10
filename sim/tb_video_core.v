@@ -484,8 +484,8 @@ module tb_video_core;
 
         // ---- (12) 兼容区 / RAM 译码没被改坏 ----
         utx_before = utx_pulses;
-        st(32'h0000_7FFC, 32'h0000_0041, 2'd2);
-        chk("A27 兼容区 0x7FFC 触发 uart_tx_we", utx_pulses - utx_before, 32'd1);
+        st(32'h0000_FFFC, 32'h0000_0041, 2'd2);
+        chk("A27 兼容区 0xFFFC 触发 uart_tx_we", utx_pulses - utx_before, 32'd1);
 
         st(32'h0000_1000, 32'h1234_ABCD, 2'd2);
         ld(32'h0000_1000, 2'd2, r0);

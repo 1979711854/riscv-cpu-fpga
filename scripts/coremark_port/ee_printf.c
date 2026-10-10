@@ -659,16 +659,16 @@ ee_vsprintf(char *buf, const char *fmt, va_list args)
     return str - buf;
 }
 
-/* 串口：写一个字符到固定地址 0x7FFC（cpu_top 里接到 UART） */
-#define UART_DATA_ADDR  ((volatile ee_u8 *)0x7FFC)
-#define UART_CYCLE_CNT  ((volatile ee_u32 *)0x7FF4)
+/* 串口：写一个字符到固定地址 0xFFFC（cpu_top 里接到 UART） */
+#define UART_DATA_ADDR  ((volatile ee_u8 *)0xFFFC)
+#define UART_CYCLE_CNT  ((volatile ee_u32 *)0xFFF4)
 
 void
 uart_send_char(char c)
 {
     *UART_DATA_ADDR = (ee_u8)c;
     /* 忙等 2400 周期（≈1 字符发送时间，匀速 115200），保证 CPU 在所有字符
-     * 真正发完前不写 done(0x7FF8)，否则远程平台可能提前停止捕获丢尾部。 */
+     * 真正发完前不写 done(0xFFF8)，否则远程平台可能提前停止捕获丢尾部。 */
     ee_u32 start = *UART_CYCLE_CNT;
     ee_u32 wait = 2400;
     while ((ee_u32)(*UART_CYCLE_CNT - start) < wait)

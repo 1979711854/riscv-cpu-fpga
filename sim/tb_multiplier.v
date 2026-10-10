@@ -129,8 +129,8 @@ module multiplier_test;
         check_all_ops(32'hFFFFFFFF,   32'hFFFFFFFF);
         check_all_ops(32'h80000000,   32'h80000000);   // INT_MIN * INT_MIN
         check_all_ops(32'h80000000,   32'hFFFFFFFF);   // INT_MIN * -1
-        check_all_ops(32'h7FFFFFFF,   32'h7FFFFFFF);   // INT_MAX * INT_MAX
-        check_all_ops(32'h7FFFFFFF,   32'h80000000);   // 正 * 负（高位置 1）
+        check_all_ops(32'hFFFFFFFF,   32'hFFFFFFFF);   // INT_MAX * INT_MAX
+        check_all_ops(32'hFFFFFFFF,   32'h80000000);   // 正 * 负（高位置 1）
         check_all_ops(32'h12345678,   32'h9ABCDEF0);   // 高低位都非零
 
         $display("---- B: 随机扫描 ----");

@@ -32,10 +32,10 @@
 #define MMIO_MTIME                  0x80000010u  /* R 周期计数器 [31:0] */
 #define MMIO_MTIMECMP               0x80000014u  /* W/R 定时器比较值 */
 
-/* ---- 兼容区（CoreMark 硬编码，不可移动；栈顶必须避开 0x7FF0 以上）---- */
-#define MMIO_LEGACY_CYCLE           0x00007FF4u
-#define MMIO_LEGACY_DONE            0x00007FF8u
-#define MMIO_LEGACY_UART_TX         0x00007FFCu
+/* ---- 兼容区（CoreMark 硬编码，不可移动；栈顶必须避开 0xFFF0 以上）---- */
+#define MMIO_LEGACY_CYCLE           0x0000FFF4u
+#define MMIO_LEGACY_DONE            0x0000FFF8u
+#define MMIO_LEGACY_UART_TX         0x0000FFFCu
 
 /* ---- 中断号：RT-Thread 的 irq_id = mcause & 0x1F ----
  * 本 CPU 只产生两种中断：

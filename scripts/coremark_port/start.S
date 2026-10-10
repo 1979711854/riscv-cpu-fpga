@@ -2,7 +2,7 @@
     .globl _start
     .type _start, @function
 _start:
-    li   sp, 0x7000        # 栈顶（dmem 高端，向下生长）
+    li   sp, 0xF000        # 栈顶（dmem 高端，向下生长）
 
     # 清 .bss
     la   t0, _bss_start
@@ -16,7 +16,7 @@ _start:
     call main
 
     # main 返回后写 tohost=1 通知 testbench 结束
-    li   t0, 0x7FF8
+    li   t0, 0xFFF8
     li   a0, 1
     sw   a0, 0(t0)
 3:

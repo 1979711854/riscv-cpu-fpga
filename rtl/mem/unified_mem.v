@@ -34,17 +34,17 @@
 // ============================================================================
 module unified_mem (
     // ---- A1 口：取指 1（只读）----
-    input  wire [12:0] a_addr,
+    input  wire [13:0] a_addr,
     output reg  [31:0] a_rd_data,
     input  wire        a_clk,
     input  wire        a_rst,
 
     // ---- A2 口：取指 2（只读，双发射第二读口；与 A1 同域，共用 a_clk/a_rst）----
-    input  wire [12:0] a2_addr,
+    input  wire [13:0] a2_addr,
     output reg  [31:0] a2_rd_data,
 
     // ---- B 口：访存（读写）----
-    input  wire [12:0] b_addr,
+    input  wire [13:0] b_addr,
     input  wire [31:0] b_wr_data,
     input  wire        b_wr_en,
     input  wire [3:0]  b_byte_en,
@@ -60,10 +60,10 @@ module unified_mem (
 );
 
     assign b_ready = 1'b1;
-    // 8192 word = 32KB（每份）。若要扩容，必须同步改 mem_bus 与 core 里的 [14:2]
+    // 16384 word = 64KB（每份）。若要扩容，必须同步改 mem_bus 与 core 里的 [15:2]
     // 切片，否则高位被静默截断。
-    (* syn_ramstyle = "block_ram" *) reg [31:0] mem0 [0:8191];   // A1 取指 + B 访存
-    (* syn_ramstyle = "block_ram" *) reg [31:0] mem1 [0:8191];   // A2 取指
+    (* syn_ramstyle = "block_ram" *) reg [31:0] mem0 [0:16383];  // A1 取指 + B 访存
+    (* syn_ramstyle = "block_ram" *) reg [31:0] mem1 [0:16383];  // A2 取指
 
     // [重点] 这里【不要】加整数组清零的 for 循环。
     //   PDS 的循环展开上限是 2000 次（Verilog-4092: Loop limit 2000 exceeded），

@@ -34,7 +34,7 @@ module mem_bus (
     // ---- 取指口（直通统一存储器的 A1/A2 口，不做任何仲裁/缓冲）----
     // A2 是双发射的第二取指读口：与 A1 同拍、同延迟，读 unified_mem 的复制阵列。
     // 单发射（DUAL_ISSUE=0）时 core 仍驱动它、但结果被丢弃，行为逐位不变。
-    input  wire [12:0] imem_addr,
+    input  wire [13:0] imem_addr,
     output wire [31:0] imem_rd,
     input  wire [12:0] imem_addr2,
     output wire [31:0] imem_rd2,
@@ -55,7 +55,7 @@ module mem_bus (
 
     // ---- 外设：写选通 / 读回（外设寄存器本体在 rtl/periph/ 里）----
     output wire        gpio_we,       // 0x8000_0000 写 LED
-    output wire        uart_tx_we,    // 0x8000_0008 或 0x7FFC 写一个字符
+    output wire        uart_tx_we,    // 0x8000_0008 或 0xFFFC 写一个字符
     output wire        uart_rx_ack,   // 0x8000_000C 读，清 rx valid
     output wire [31:0] periph_wdata,  // 送外设的写数据（字节复制后）
     input  wire [31:0] gpio_rdata,
@@ -75,7 +75,7 @@ module mem_bus (
     input  wire [31:0] vid_rdata,
 
     // ---- 兼容区状态 ----
-    output reg         done,          // 0x7FF8 写 1 → 拉高（板级 LED / 结束标志）
+    output reg         done,          // 0xFFF8 写 1 → 拉高（板级 LED / 结束标志）
 
     // ---- 中断 ----
     // 定时器中断（mip.MTIP，bit7）。电平信号，直连 core.irq_timer。
@@ -83,7 +83,7 @@ module mem_bus (
 );
 
     // ------------------------------------------------------------------
-    // 32 位自由跑周期计数器（27MHz），兼容区 0x7FF4 与外设区 TIMER 共用同一个。
+    // 32 位自由跑周期计数器（27MHz），兼容区 0xFFF4 与外设区 TIMER 共用同一个。
     // CoreMark 的 get_time() 与 ee_printf 的忙等都靠它，必须保持 1 拍可读。
     // ------------------------------------------------------------------
     reg [31:0] cyc;
@@ -128,8 +128,8 @@ module mem_bus (
     // ------------------------------------------------------------------
     // 地址译码（只在这里做一次）
     // ------------------------------------------------------------------
-    wire legacy_hit = (mem_addr[31:16] == 16'd0) && (mem_addr[15:4] == 12'h7FF);
-    wire ram_hit    = (mem_addr[31:15] == 17'd0) && !legacy_hit;  // 0x0~0x7FFF 挖掉兼容区
+    wire legacy_hit = (mem_addr[31:16] == 16'd0) && (mem_addr[15:4] == 12'hFFF);
+    wire ram_hit    = (mem_addr[31:16] == 16'd0) && !legacy_hit;  // 0x0~0xFFFF 挖掉兼容区
 
     // 高半区（addr[31]=1）一分为二，分界线在 addr[16]：
     //   addr[17:16] == 2'b00 → 外设区 0x8000_0000~0x8000_FFFF
@@ -142,9 +142,9 @@ module mem_bus (
     wire [1:0] legacy_off = mem_addr[3:2];
     wire [3:0] periph_off = mem_addr[5:2];                        // 字内偏移
 
-    wire legacy_cycle = legacy_hit && (legacy_off == 2'b01);      // 0x7FF4
-    wire legacy_done  = legacy_hit && (legacy_off == 2'b10);      // 0x7FF8
-    wire legacy_utx   = legacy_hit && (legacy_off == 2'b11);      // 0x7FFC
+    wire legacy_cycle = legacy_hit && (legacy_off == 2'b01);      // 0xFFF4
+    wire legacy_done  = legacy_hit && (legacy_off == 2'b10);      // 0xFFF8
+    wire legacy_utx   = legacy_hit && (legacy_off == 2'b11);      // 0xFFFC
 
     // ------------------------------------------------------------------
     // 视频区子窗口（地址含基址 0x8001_0000，即下面都是 mem_addr 的绝对值）
@@ -175,7 +175,7 @@ module mem_bus (
     //   指令与数据共用一块，所以 store 写进去的东西，后续取指能读到 ——
     //   这正是 fence_i（自修改代码）能通过的原因。
     // ------------------------------------------------------------------
-    wire [12:0] ram_word = mem_addr[14:2];
+    wire [13:0] ram_word = mem_addr[15:2];
     wire [31:0] ram_rdata;
     wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 
@@ -265,9 +265,9 @@ module mem_bus (
     assign periph_wdata = mem_wdata;
 
     // ------------------------------------------------------------------
-    // 结束标志：写 0x7FF8 低字节 = 1。
+    // 结束标志：写 0xFFF8 低字节 = 1。
     // 用 byte_en[0] + 低字节比较（而不是整字 ==1），这样 sb/sh/sw 都能触发；
-    // 对 CoreMark start.S 的 `sw a0=1, 0(0x7FF8)` 行为与旧版完全一致。
+    // 对 CoreMark start.S 的 `sw a0=1, 0(0xFFF8)` 行为与旧版完全一致。
     // ------------------------------------------------------------------
     always @(posedge clk or negedge resetn) begin
         if (!resetn) done <= 1'b0;

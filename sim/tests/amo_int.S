@@ -18,7 +18,7 @@
 _start:
     li      sp, 0x7F00
 
-    li      t0, 0x2000            # 计数器地址（RAM 内，避开兼容区 0x7FF0+）
+    li      t0, 0x2000            # 计数器地址（RAM 内，避开兼容区 0xFFF0+）
     li      t1, 0x0000000F
     sw      t1, 0(t0)             # [0x2000] = 0x0F
 
@@ -36,12 +36,12 @@ _start:
     lw      t4, 0(t5)             # t4 = 哨兵 0xAA
     lw      a5, 0(t0)             # a5 = 读回计数器，应为 0x12
 
-    # UART(0x7FFC) 逐字节汇报：t3 低字节（期望 0f），再 a5 低字节（期望 12）。
-    li      t0, 0x7FFC
+    # UART(0xFFFC) 逐字节汇报：t3 低字节（期望 0f），再 a5 低字节（期望 12）。
+    li      t0, 0xFFFC
     sb      t3, 0(t0)
     sb      a5, 0(t0)
 
-    li      t0, 0x7FF8            # done
+    li      t0, 0xFFF8            # done
     li      t1, 1
     sw      t1, 0(t0)
 1:  j       1b

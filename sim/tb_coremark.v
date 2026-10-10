@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // CoreMark 运行测试台：周期计数 + UART 字符拦截 + tohost 结束判分
-//   - core 对 0x7FFC 的 store 视为输出一个字符（uart_send_char）
-//   - core 对 0x7FF8 的 store 1 视为结束（start.S 里 main 返回后写）
+//   - core 对 0xFFFC 的 store 视为输出一个字符（uart_send_char）
+//   - core 对 0xFFF8 的 store 1 视为结束（start.S 里 main 返回后写）
 //   - CoreMark/MHz = ITERATIONS * 1e6 / 总周期数
 
 // 统一存储器行为模型（指令/数据共用一块，A 口取指、B 口访存）
@@ -54,7 +54,7 @@ module coremark_tb;
         .irq_ext  (1'b0)
     );
 
-    // mem_bus 自带周期计数器（0x7FF4 的读回源），与 tb 的 cycle_count 同时复位、
+    // mem_bus 自带周期计数器（0xFFF4 的读回源），与 tb 的 cycle_count 同时复位、
     // 同步递增，故 get_time() 读数与改造前一致。
     mem_bus u_bus (
         .clk(clk), .resetn(resetn),
@@ -124,8 +124,8 @@ module coremark_tb;
     reg [63:0] c_redir, c_mispred;
 
     // CoreMark 计时区间内的同类统计。
-    // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0x7FF4
-    // （barebones_clock），在访存口上是 mem_re && mem_addr==0x7FF4，可精确观测。
+    // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0xFFF4
+    // （barebones_clock），在访存口上是 mem_re && mem_addr==0xFFF4，可精确观测。
     // 有了区间边界才能把"纯 CoreMark 算法"的 CPI 从"含串口打印"的总 CPI 里剥出来
     // —— 打印区间是纯轮询，会把 CPI 严重拉高，两者混算没有意义。
     reg [63:0] t_timer_cyc [0:7];
@@ -196,19 +196,19 @@ module coremark_tb;
         end
     end
 
-    // UART：core 对 0x7FFC 的 store 视为输出一个字符
+    // UART：core 对 0xFFFC 的 store 视为输出一个字符
     // （用真访存端口；mem_wdata 已按 sb 字节复制，[7:0] 与原始 store 数据一致）
     always @(posedge clk) begin
-        if (resetn && u_core.mem_we && u_core.mem_addr == 32'h7FFC)
+        if (resetn && u_core.mem_we && u_core.mem_addr == 32'hFFFC)
             $write("%c", u_core.mem_wdata[7:0]);
     end
 
-    // tohost：core 对 0x7FF8 store 1 视为结束
+    // tohost：core 对 0xFFF8 store 1 视为结束
     reg done;
     initial done = 0;
     always @(posedge clk) begin
         if (resetn && !done && u_core.mem_we
-            && u_core.mem_addr == 32'h7FF8
+            && u_core.mem_addr == 32'hFFF8
             && u_core.mem_byte_en[0] && u_core.mem_wdata[7:0] == 8'd1) begin
             done <= 1;
             $display("\n=== CoreMark finished ===");
@@ -392,8 +392,8 @@ module coremark_tb;
             if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
                 c_jump <= c_jump + 64'd1;
 
-            // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0x7FF4）----
-            if (u_core.mem_re && u_core.mem_addr == 32'h7FF4) begin
+            // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0xFFF4）----
+            if (u_core.mem_re && u_core.mem_addr == 32'hFFF4) begin
                 if (t_timer_n < 8) begin
                     t_timer_cyc[t_timer_n] <= cycle_count;
                     t_timer_n <= t_timer_n + 1;

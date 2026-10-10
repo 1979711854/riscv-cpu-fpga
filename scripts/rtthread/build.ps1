@@ -182,8 +182,8 @@ $text = [int]$sizeLine[0]; $data = [int]$sizeLine[1]; $bss = [int]$sizeLine[2]
 # RAM 占用 = .text + .data + .bss（统一存储器，代码和数据抢同一块 32KB）
 $ramUsed = $text + $data + $bss
 $ramTotal = 0x8000          # 32KB
-$stackTop = 0x7FF0
-$heapEnd  = 0x7000
+$stackTop = 0xFFF0
+$heapEnd  = 0xF000
 Write-Host ("      代码 .text = {0,6} 字节" -f $text)
 Write-Host ("      数据 .data = {0,6} 字节   .bss = {1,6} 字节" -f $data, $bss)
 Write-Host ("      静态占用   = {0,6} 字节 / {1} 字节 ({2:p1})" -f $ramUsed, $ramTotal, ($ramUsed / $ramTotal))

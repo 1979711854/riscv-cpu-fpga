@@ -49,10 +49,10 @@
  *   *((volatile unsigned int *)VIDEO_SCROLL_X) = new_scroll & 0xFFFu; */
 
 /* 兼容区（CoreMark 移植层硬编码，本程序不用，列出仅供对照）
- *   0x7FF4 R 周期计数   0x7FF8 W done   0x7FFC W UART 发送 */
-#define LEGACY_TIMER   0x00007FF4u
-#define LEGACY_DONE    0x00007FF8u
-#define LEGACY_UART_TX 0x00007FFCu
+ *   0xFFF4 R 周期计数   0xFFF8 W done   0xFFFC W UART 发送 */
+#define LEGACY_TIMER   0x0000FFF4u
+#define LEGACY_DONE    0x0000FFF8u
+#define LEGACY_UART_TX 0x0000FFFCu
 
 /* 板上时钟：本地盘古板经 PLL 27MHz→85.0051MHz（见 rtl/top/cpu_top_board.v）。
  * [重点] 仿真与远程 FPGA 平台固定 27MHz —— 回远程平台要把这里改回 27000000u，

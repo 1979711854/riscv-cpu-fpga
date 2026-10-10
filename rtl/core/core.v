@@ -12,7 +12,7 @@ module core #(
     // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
     // 且【不做任何仲裁/冲突检测】。本模块的 stall/flush 补偿逻辑依赖 A 口
     // 每拍都能独立工作，加仲裁会直接破坏取指时序。
-    output wire [12:0] imem_addr,     // word 索引；注意是 stall mux 之后的值
+    output wire [13:0] imem_addr,     // word 索引；注意是 stall mux 之后的值
     input  wire [31:0] imem_rd,       // 同步读 1 拍延迟
     // ---- 取指口（A2 口，双发射第二读口）----
     // 与 A1 同拍、同延迟，读 unified_mem 的复制阵列。DUAL_ISSUE=0 时被丢弃。
@@ -552,7 +552,7 @@ module core #(
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
     // 跳转时当拍旁路到目标（见上面 fetch_addr 的说明）。
-    assign imem_addr = fetch_addr[14:2];
+    assign imem_addr = fetch_addr[15:2];   // 64KB = 16384 word
 
     // [暂定] 第二取指地址：双发射前端（取指 FIFO + 成对取指）落地前先固定指向下一个
     //   word。DUAL_ISSUE=0 时它在核内没有任何消费者，综合会连同 A2 口的读结果一起裁掉。

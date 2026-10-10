@@ -94,7 +94,7 @@ module cpu_top_board #(
     wire sys_resetn = resetn & pll_locked;
 
     wire [7:0] led_gpio;    // CPU 的 GPIO LED 输出
-    wire       done;        // CoreMark 完成标志（写 0x7FF8）
+    wire       done;        // CoreMark 完成标志（写 0xFFF8）
 
     // ---- 视频口：cpu_top 只做译码，显存本体在 video_top ----
     wire        vid_we;
@@ -169,7 +169,7 @@ module cpu_top_board #(
     // DEBUG_LED=1（默认）：
     //   led[0] = pll_locked   ：亮 = CPU PLL 已锁定；不亮 = CPU 被一直复位
     //   led[1] = video_locked ：亮 = 视频 PLL 已锁定；**HDMI 黑屏先看这一颗**
-    //   led[2] = done         ：亮 = CoreMark 已跑完（写 0x7FF8）
+    //   led[2] = done         ：亮 = CoreMark 已跑完（写 0xFFF8）
     //   led[7:3] = GPIO 原样
     // DEBUG_LED=0：
     //   led[7:0] = GPIO 原样 —— 演示程序 LED=KEY 的按键↔灯对应关系恢复，

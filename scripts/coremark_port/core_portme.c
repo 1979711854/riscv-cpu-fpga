@@ -19,11 +19,11 @@ volatile ee_s32 seed3_volatile = 0x8;
 volatile ee_s32 seed4_volatile = ITERATIONS;
 volatile ee_s32 seed5_volatile = 0;
 
-/* 读 MMIO 周期计数器（0x7FF4，跟上系统时钟自由跑） */
+/* 读 MMIO 周期计数器（0xFFF4，跟上系统时钟自由跑） */
 CORETIMETYPE
 barebones_clock(void)
 {
-    return (CORETIMETYPE)(*(volatile ee_u32 *)0x7FF4);
+    return (CORETIMETYPE)(*(volatile ee_u32 *)0xFFF4);
 }
 
 #define GETMYTIME(_t)              (*_t = barebones_clock())

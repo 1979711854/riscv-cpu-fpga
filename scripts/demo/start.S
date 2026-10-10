@@ -5,7 +5,7 @@
     .globl _start
     .type _start, @function
 _start:
-    li   sp, 0x7000          /* 栈顶（RAM 高端，向下生长） */
+    li   sp, 0xF000          /* 栈顶（RAM 高端，向下生长） */
 
     /* 清 .bss */
     la   t0, _bss_start

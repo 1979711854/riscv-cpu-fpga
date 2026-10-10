@@ -10,7 +10,7 @@
  *   2) 流水线冻结 —— amo_stall 期间前端的取指/重定向必须被正确抑制，
  *      否则会重复取指或漏写。
  *
- * 判据：把结果写进 UART(0x7FFC)，测试台逐字节比对。
+ * 判据：把结果写进 UART(0xFFFC)，测试台逐字节比对。
  * ==========================================================================*/
     .section .text.init
     .globl _start
@@ -159,8 +159,8 @@ fail_mix2:
     j       report
 
 report:
-    li      t0, 0x7FFC            # UART
+    li      t0, 0xFFFC            # UART
     sb      a0, 0(t0)
-    li      t0, 0x7FF8            # done
+    li      t0, 0xFFF8            # done
     sw      x0, 0(t0)
 1:  j       1b

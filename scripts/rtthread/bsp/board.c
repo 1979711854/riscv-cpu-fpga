@@ -137,7 +137,7 @@ void rt_hw_board_init(void)
     /* 2. 中断分发表初始化（trap_common.c 提供） */
     rt_hw_interrupt_init();
 
-    /* 3. 堆：link.ld 里 __heap_start = _end（代码+数据之后）、__heap_end = 0x7000
+    /* 3. 堆：link.ld 里 __heap_start = _end（代码+数据之后）、__heap_end = 0xF000
      *    （栈底之前）。32KB 里代码一大，堆就小 —— 不够时先裁 rtconfig.h。 */
     rt_system_heap_init(&__heap_start, &__heap_end);
 

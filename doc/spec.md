@@ -146,16 +146,16 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 ### 4.2 地址映射
 
 ```
-0x0000_0000 - 0x0000_7FEF   RAM（统一存储器 32KB 内可用部分）
-0x0000_7FF0 - 0x0000_7FFF   兼容区（CoreMark 移植层硬编码，不可移动）
-    0x7FF4 R  cycle_cnt[31:0]   core_portme.c 的 get_time()
-    0x7FF8 W  done              start.S 里 main 返回后写 1
-    0x7FFC W  UART TX           ee_printf 输出字符
+0x0000_0000 - 0x0000_FFEF   RAM（统一存储器 64KB 内可用部分）
+0x0000_FFF0 - 0x0000_FFFF   兼容区（CoreMark 移植层硬编码）
+    0xFFF4 R  cycle_cnt[31:0]   core_portme.c 的 get_time()
+    0xFFF8 W  done              start.S 里 main 返回后写 1
+    0xFFFC W  UART TX           ee_printf 输出字符
 0x8000_0000 起  外设区（字内偏移 = addr[5:2]）
     0x00 W LED[7:0]     R {16'b0, key[7:0], led[7:0]}   GPIO
     0x08 W UART TX      R 0
     0x0C R UART RX      {valid[31], 23'b0, data[7:0]} [重点] 读操作会弹出 FIFO 头
-    0x10 R TIMER[31:0]  （与 0x7FF4 同一个计数器，即 CLINT 的 mtime）
+    0x10 R TIMER[31:0]  （与 0xFFF4 同一个计数器，即 CLINT 的 mtime）
     0x14 W/R MTIMECMP[31:0]  定时器比较值：mtime >= mtimecmp → MTIP 拉高
 [重点] 只接受整字写（sw）；复位值全 1，上电不会误触发
 [重点] 软件写新值后 MTIP 自动落下（纯电平比较，不锁存）
@@ -172,8 +172,8 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 > 要产生中断还需 `mie.MTIE`(bit7) 与 `mstatus.MIE`(bit3)。完整用法见
 > `sim/tests/timer_irq.S`。
 
-- RAM 译码**显式排除 0x7FF0~0x7FFF**（否则 CoreMark 写 0x7FF8 会落进 RAM，`done` 永不拉高）
-- 栈顶必须 ≤ 0x7FF0（CoreMark 用 0x7000）
+- RAM 译码**显式排除 0xFFF0~0xFFFF**（否则 CoreMark 写 0xFFF8 会落进 RAM，`done` 永不拉高）
+- 栈顶必须 ≤ 0xFFF0（CoreMark 用 0xF000，五子棋同样）
 - 单点定义：`rtl/bus/addr_map.vh`；软件侧镜像：`scripts/demo/addr_map.h`
 
 ### 4.3 外设设计要点

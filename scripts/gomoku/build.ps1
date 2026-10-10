@@ -80,9 +80,10 @@ $line = ($sizeOut | Select-Object -Last 1)
 $parts = $line -split '\s+' | Where-Object { $_ -ne '' }
 $text = [int]$parts[0]; $data = [int]$parts[1]; $bss = [int]$parts[2]
 
-# 栈顶 0x7000（见 demo/link.ld），所以可用 RAM 是 0x0000~0x6FFF = 28KB。
-# 兼容区 0x7FF0~0x7FFF 被 MMIO 挖掉，不能放东西。
-$RAM_TOP = 0x7000
+# 栈顶 0xF000（见 demo/link.ld），所以可用 RAM 是 0x0000~0xEFFF = 60KB。
+# 兼容区 0xFFF0~0xFFFF 被 MMIO 挖掉，不能放东西。
+# [!] 2026-10-10 统一存储器由 32KB 扩到 64KB，栈顶跟着从 0x7000 抬到 0xF000。
+$RAM_TOP = 0xF000
 $used = $text + $data + $bss
 Write-Host ("      静态占用 {0} 字节（text {1} + data {2} + bss {3}），栈顶 0x{4:X}" -f $used, $text, $data, $bss, $RAM_TOP)
 if ($used -gt $RAM_TOP) {
