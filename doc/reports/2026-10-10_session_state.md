@@ -142,18 +142,74 @@ scripts\serial_monitor.ps1 -Port COM4 -Seconds 60      # 先起监控，再按 S
 
 ---
 
-## 7. 中断点（2026-10-10 13:17，会话因上下文溢出中断）
+## 7. 任务 H 的卡点：**已解决（2026-10-10，commit `925070d`）**
 
-任务 H（把五子棋跑在 RT-Thread 上）第一次仿真的结果：
+上个会话卡在"主线程心跳没出现"，定位成 `HB_DELAY_MS` 没传下去。**那个定位是错的。**
 
-- [OK] RT-Thread 起来了、gomoku 线程跑起来了、游戏 banner 打出来了
-- [X] **主线程心跳没出现**
+**复验**：`-Sim` 里确实已经传了 `-DHB_DELAY_MS=20`（build.ps1 第 163 行，
+banner 里 `tick period = 1000 Hz` 也印证时钟口径对），但心跳**依然**不出现。
+于是加逐拍诊断（直接读固件里的 `rt_tick` / `rt_interrupt_nest`）：
 
-**定位结论（不是调度问题）**：主线程心跳周期默认 `HB_DELAY_MS = 5000`
-（5 s @100 MHz ≈ 5 亿拍），而那次仿真只跑到约 **34 ms** 就结束 —— 心跳根本没到时间。
+```
+t≈2ms   tick=2    pc=0x000050b8
+t≈15ms  tick=14   pc=0x000050ac
+t≈17ms  tick=16   pc=0xxxxxxxxx   <- PC 变 X，CPU 已经没了
+t≈25ms  tick=16   （再也不动）
+```
 
-**断在这里的最后一步**：确认 `build.ps1 -Sim` / `run_sim.ps1` 有没有真的把
-`HB_DELAY_MS` 传下去（正要 grep 就断了）。**先验这一条，别去怀疑调度器。**
+**真因**：`cpu_top.v` 里那段注释的前提失效了 ——
 
-崩溃时工作区有三个未提交文件，已随本备忘一起提交：
-`scripts/rtthread/app/main.c`、`scripts/rtthread/build.ps1`、`sim/tb_rtthread.v`。
+> 仿真里这几个测试台不接 `vid_*`，**而它们也从不访问 0x8001_0000 以上**
+> ⇒ `rsel_d` 永远不为 3 ⇒ `vid_rdata` 的浮空值不会进 `mem_rdata`
+
+任务 H 之后五子棋要 `video_set_scroll` / `video_wait_vblank` / `draw_frame`，
+第一次读 `0x8003_0408`（VIDEO_STATUS）就让 `mem_rdata = vid_rdata`（悬空 → Z）
+进了寄存器堆 → Z 参与运算变 X → **整颗 CPU 在 ~16 ms 死掉**。
+（正是 CLAUDE.md 关键约定 4 / 13。）
+
+**症状极具迷惑性**：串口把 banner 打完就静默、心跳永远不出现，看着像
+"调度器没跑"或"延时没到"，其实是 CPU 已经没了。**tick 一直在走**这一点
+可以把"中断/调度"整类怀疑一次排除。
+
+**修法**：照 `sim\tb_gomoku.v` 的接法，把 `cpu_top` 的 `vid_*` 接到真正的
+`video_core`；`scripts\rtthread\run_sim.ps1` 补上 `rtl/video` 那六个文件
+（**不含 `video_top.v`** —— 它例化 PDS 专有原语 `pll_video` / OSERDES）。
+
+**结果**：`scripts\rtthread\run_sim.ps1` → `=== PASS ===`，三条自检全 `[OK]`，
+串口里游戏也真的往前走了（`level=0 EASY (greedy)`、`[hb] alive, uptime 20 ticks`）。
+G3（AI 拆线程）**还没做**，那是下一帧。
+
+---
+
+## 8. 顺手发现的一个**潜伏 bug**（未修，等决策）
+
+`imem_addr2`（双发射的第二取指口）**还是 32KB 时代的 13 位**，而存储器在
+2026-10-10 已经扩到 64KB（`imem_addr` 是 14 位）：
+
+```
+core.v:19      output wire [12:0] imem_addr2,     <- 应为 [13:0]
+core.v:559     assign imem_addr2 = imem_addr + 13'd1;   <- 14 位结果被截成 13 位
+cpu_top.v:57   wire [12:0] imem_addr2;
+mem_bus.v:39   input  wire [12:0] imem_addr2,
+```
+
+`imem_addr + 1` 在 14 位宽里算出、赋给 13 位线 → **丢掉最高位**，于是
+`imem_addr2` 在 8192 word（字节 `0x8000`）处**回绕**。
+
+**后果**：取指地址 ≥ 0x8000 时，lane B 从低 32KB 里取错地方
+（`pair_now` 判据用的就是 `imem_rd2`）。
+
+**现在没炸是因为没有任何程序碰得到**（都已核对，全部 < 32KB）：
+
+| 程序 | 代码末地址 |
+|---|---|
+| `coremark.elf` | 0x380C = 14,348 B |
+| `gomoku.elf`（裸机）| 0x2D08 = 11,528 B |
+| RT-Thread 版五子棋 | 0x638C = 25,484 B |
+
+**但 64KB 扩容的全部意义就是让程序能大过 32KB** —— 一旦 `.text` 越过 32,768 字节，
+这个 bug 立刻变成"执行错指令"。**这正是"四条基线里没有一条覆盖得到"的典型**。
+
+修法是三处宽度 + 那个 `13'd1` 一起改成 14 位；但**这动的是 RTL 网表**，
+而当前双发射 + A 扩展的 slack 只有 **+0.064 ns（0.5% 余量）**，
+改完要重跑回归**并重新综合确认时序**。所以先记下来，别顺手改。
