@@ -5,6 +5,7 @@
  用法：
    scripts\rtthread\run_sim.ps1            编 RT-Thread -> 编测试台 -> 跑仿真
    scripts\rtthread\run_sim.ps1 -NoBuild   跳过 RT-Thread 重编（只重跑仿真）
+   scripts\rtthread\run_sim.ps1 -Atomic    用【硬件原子】编（rv32ima + lr/sc/AMO）
 
  测试台 sim\tb_rtthread.v 会检查三个自检（对应 app\main.c 的设计）：
    [1] 控制台通了        —— 出现 RT-Thread banner
@@ -16,7 +17,8 @@
 ============================================================================
 #>
 param(
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$Atomic      # 透传给 build.ps1：rv32ima + atomic_riscv.c + RT_USING_STDC_ATOMIC
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +29,11 @@ $Bld  = Join-Path $Here "build"
 
 # ---- 1) 按仿真口径编 RT-Thread（27/49MHz 那套口径跑仿真会算错 tick）----
 if (-not $NoBuild) {
-    & (Join-Path $Here "build.ps1") -Sim
+    # [!] 必须用哈希表 splat：数组 splat @("-Sim","-Atomic") 传的是位置字符串，
+    #     PowerShell 不会把它当开关名解析，实测两个开关全被丢掉（静默按默认口径编）。
+    $bargs = @{ Sim = $true }
+    if ($Atomic) { $bargs.Atomic = $true }
+    & (Join-Path $Here "build.ps1") @bargs
     if ($LASTEXITCODE -ne 0) { throw "RT-Thread 编译失败" }
 }
 

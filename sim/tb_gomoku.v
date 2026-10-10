@@ -154,7 +154,7 @@ module tb_gomoku;
         reg found;
         begin
             found = 0;
-            for (i = 0; i <= 200; i = i + 1)
+            for (i = 0; i <= 760; i = i + 1)
                 if (!found && rxtext[i*8 +: 48] == needle) found = 1;
             has_text = found;
         end
@@ -253,7 +253,7 @@ module tb_gomoku;
         end
 
         // ---- [3] 长按开局 ----
-        press_long(2);                         // SW6 = 上；标题屏长按任意键开始
+        press_long(3);                         // KEY_DOWN；标题屏长按非↑键=正常开局（长按↑=demo，见 game.c:102）
         checks = checks + 1;
         if (!has_text("start,")) begin
             errors = errors + 1;

@@ -38,7 +38,15 @@ if (-not (Test-Path $testDir)) { throw "找不到测试目录：$testDir" }
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 New-Item -ItemType Directory -Force -Path $prog  | Out-Null
 
-$srcs = @(Get-ChildItem $testDir -Filter "*.S" | Sort-Object Name)
+# [!] 这几个用【旧 done/UART 协议】汇报（写 0x7FF8 + UART 0x7FFC），不吃本脚本的
+#     tohost 判分，由各自的测试台驱动 —— 别放进回归 glob（否则会误报 OTHER/FAIL）：
+#       amo_int     T0 逐拍 trace 的输入程序（配 sim/tb_amo_int.v）
+#       dep_probe   双发射相邻依赖对的诊断探针（非回归）
+#       tb_amo_cpu  整颗 CPU 的 AMO 端到端测试（旧 UART 判定，暂未转 tohost）
+$skipThese = @('amo_int', 'dep_probe', 'tb_amo_cpu')
+$srcs = @(Get-ChildItem $testDir -Filter "*.S" |
+          Where-Object { $skipThese -notcontains $_.BaseName } |
+          Sort-Object Name)
 if ($Name -ne "") { $srcs = @($srcs | Where-Object { $_.BaseName -eq $Name }) }
 if ($srcs.Count -eq 0) { throw "没有找到匹配的 .S 测试" }
 
@@ -48,7 +56,7 @@ if ($srcs.Count -eq 0) { throw "没有找到匹配的 .S 测试" }
 Write-Host "[1/3] 编译并链接 $($srcs.Count) 个测试 ..."
 foreach ($s in $srcs) {
     $elf = Join-Path $build "$($s.BaseName).elf"
-    & $gcc -march=rv32i_zicsr_zifencei -mabi=ilp32 `
+    & $gcc -march=rv32ima_zicsr_zifencei -mabi=ilp32 `
         -nostdlib -nostartfiles -static -mcmodel=medany `
         -I $envDir -I (Join-Path $envDir "p") -I $testDir `
         -T $ld -o $elf $s.FullName

@@ -16,7 +16,8 @@
 param(
     [switch]$Firmware,           # 出 mem.hex（送 PDS 用）
     [switch]$Clean,              # 先清干净再编
-    [switch]$Sim                 # 按【仿真口径】编：27MHz + 短延时 + 出 hex
+    [switch]$Sim,                # 按【仿真口径】编：27MHz + 短延时 + 出 hex
+    [switch]$Atomic              # 硬件原子：rv32ima + atomic_riscv.c + RT_USING_STDC_ATOMIC
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,17 +66,25 @@ foreach ($d in $srcDirs) {
 #   没开 RT_USING_SIGNALS   -> signal.c
 #   没开 RT_USING_DEVICE    -> device.c
 #   没开 RT_USING_SMP       -> cpu_mp.c / scheduler_mp.c（单核走 *_up.c）
-# [!] 我们的 CPU 是 RV32IM，**没有 A 扩展**（没有 lr/sc 和 AMO 指令），
-#     所以 libcpu/risc-v/common/atomic_riscv.c 编不过 —— 它无条件用
-#     amoswap.w / lr.w / sc.w，实测报 "unrecognized opcode ... extension 'zaamo' required"。
-#     rtatomic.h 里本来就有软实现分支：没定义 RT_USING_STDC_ATOMIC 时走
-#     rt_soft_atomic_*（rt_inline 写在头文件里，用关中断临界区做读改写）。
-#     所以正确做法是【不编 atomic_riscv.c】，而不是去凑 A 扩展。
-#     > 单核下这样是正确的。若日后 CPU 加了 A 扩展，删掉这行即可用硬件原子（更快）。
+# [!] 原子默认走【软实现】：不编 atomic_riscv.c，rtatomic.h 的软分支
+#     （rt_soft_atomic_*，关中断临界区）在单核下完全正确，不需要 A 扩展。
+#   --Atomic 才切到硬件原子：-march=rv32ima + 编 atomic_riscv.c + 定义
+#     RT_USING_STDC_ATOMIC（rttypes.h 会转成 _Atomic/stdatomic.h，gcc 用
+#     amoadd.w / amoswap.w / lr.w+sc.w 生成）。这是【验证 A 扩展真的在固件里
+#     跑起来】的那条口径：objdump 里必须能看到那些指令，否则就是没开对。
 #   klibc 两份 vsnprintf 二选一：官方 SConscript 的规则是"没定义
 #   RT_KLIBC_USING_VSNPRINTF_STANDARD 就用 tiny 版" —— 我们选 tiny，
 #   32KB 下这是唯一合理的选择（std 版大一截，功能我们用不到）。
-$excludeC = @('slab.c','mempool.c','memheap.c','signal.c','device.c','cpu_mp.c','scheduler_mp.c','atomic_riscv.c','rt_vsnprintf_std.c')
+$excludeC = @('slab.c','mempool.c','memheap.c','signal.c','device.c','cpu_mp.c','scheduler_mp.c','rt_vsnprintf_std.c')
+$atomicDefs = @()
+if ($Atomic) {
+    $march      = "rv32ima_zicsr_zifencei"
+    $atomicDefs = @("-DRT_USING_STDC_ATOMIC")
+    Write-Host "      [硬件原子] rv32ima + atomic_riscv.c + RT_USING_STDC_ATOMIC" -ForegroundColor Yellow
+} else {
+    $march      = "rv32im_zicsr_zifencei"
+    $excludeC  += 'atomic_riscv.c'
+}
 $before = $cSrcs.Count
 $cSrcs = $cSrcs | Where-Object { $excludeC -notcontains [IO.Path]::GetFileName($_) }
 Write-Host ("      按 rtconfig.h 排除 $($before - $cSrcs.Count) 个源文件（未开启的组件）") -ForegroundColor DarkGray
@@ -99,7 +108,7 @@ $cflags = @(
     #     RT-Thread 从上下文切换到 trap 分发到处要读写 CSR，所以这条不能省。
     #     _zifencei 同理（我们的 CPU 实现了 FENCE.I）。
     #     > 注意 CoreMark 那边用纯 "-march=rv32im" 也能过，因为它不碰 CSR —— 别照抄那边。
-    "-march=rv32im_zicsr_zifencei", "-mabi=ilp32",
+    "-march=$march", "-mabi=ilp32",
     "-Os", "-g",
     "-ffunction-sections", "-fdata-sections",
     "-fno-builtin", "-fno-common",
@@ -115,7 +124,7 @@ $cflags = @(
     #     "fatal error: stdint.h: No such file or directory"）。
     #     不用 libc 的代码靠链接期的 -nostdlib 保证，头在不在不影响。
     "-D__RTTHREAD__", "-D__RT_KERNEL_SOURCE__"
-) + $incs
+) + $atomicDefs + $incs
 
 # ---- 仿真口径：-Sim 时覆盖时钟与延时 ----
 # [!] 仿真时钟是 **100MHz**，不是 27MHz —— sim/ 下所有测试台都写 `always #5 clk = ~clk`。
@@ -135,7 +144,7 @@ $ldflags = @(
     #     RT-Thread 从上下文切换到 trap 分发到处要读写 CSR，所以这条不能省。
     #     _zifencei 同理（我们的 CPU 实现了 FENCE.I）。
     #     > 注意 CoreMark 那边用纯 "-march=rv32im" 也能过，因为它不碰 CSR —— 别照抄那边。
-    "-march=rv32im_zicsr_zifencei", "-mabi=ilp32",
+    "-march=$march", "-mabi=ilp32",
     "-nostartfiles", "-nostdlib", "-static",
     "-Wl,--gc-sections",
     "-Wl,--no-relax",              # 我们的 CPU 没实现 RVC/压缩指令，别让链接器塞压缩跳转

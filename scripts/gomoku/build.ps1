@@ -48,10 +48,14 @@ $srcs = @("board.c", "ai.c", "render.c", "video_port.c",
 $srcs += Join-Path $demo "start.S"
 
 Write-Host ("[1/2] 编译五子棋固件{0} ..." -f $(if ($Sim) { "（仿真口径：短按键阈值）" } else { "" })) -ForegroundColor Yellow
-# -march=rv32im：M 扩展本来用得上（编译器会把小常数乘法/除法折成 mul/div），
-#   而且板的 CPU 实现了它。别用 rv32i —— 那会让常量除法走软件例程，白白变慢。
+# -march=rv32ima：A 扩展（amoswap/lr/sc）已接入 CPU 且流水线跑通。
+#   但五子棋是【纯单线程】应用，源码里没有 amoswap/amoadd/__sync_*，
+#   编译器也不会凭空生成 —— 所以 A 扩展在这份固件里【跑但不用】。
+#   这正是本任务的意义：证明 A 扩展【没有破坏既有应用】。
+#   （CoreMark 同样不含 AMO 指令，应用层与 benchmark 层互为佐证。）
+#   另：别退回 rv32i —— 那会让常量除法走软件例程，白白变慢（M 扩展用得上）。
 $gccArgs = @(
-    "-march=rv32im", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
+    "-march=rv32ima", "-mabi=ilp32", "-O2", "-mcmodel=medany", "-msmall-data-limit=0",
     "-ffreestanding", "-nostartfiles",
     "-Wall", "-Wextra",
     "-I$PSScriptRoot", "-I$demo",

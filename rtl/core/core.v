@@ -99,6 +99,9 @@ module core #(
     wire [31:0] csr_rdata;
     wire [31:0] csr_mtvec_base, csr_mepc;
     wire        csr_mstatus_mie, csr_mie_mtie, csr_mie_meie;
+    // A 扩展：ID 级译码出来的 AMO 控制
+    wire        id_is_amo;
+    wire [4:0]  id_amo_funct5;
     wire        csr_wr_illegal;
     wire [31:0] csr_wdata;
     wire        csr_wr_en;
@@ -123,6 +126,12 @@ module core #(
     reg [11:0] id_ex_csr_addr;
     reg [1:0]  id_ex_csr_cmd;
     reg        id_ex_csr_imm;
+    // ---- A 扩展（AMO/LR/SC）----
+    // [!] AMO 的地址来自 rs1（不是 rs1+imm），第二个操作数是 rs2。
+    //   两者都必须带进 MEM，且 rs2 要走前递 —— 否则 "amoadd a0,a1,a2"
+    //   在 a2 刚被前一条指令写过时会读到陈旧值。
+    reg        id_ex_is_amo;
+    reg  [4:0] id_ex_amo_funct5;
     // EX/MEM
     reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
     reg [1:0]  ex_mem_wb_sel;
@@ -130,6 +139,10 @@ module core #(
     reg [4:0]  ex_mem_rd;
     reg [2:0]  ex_mem_funct3;
     reg        ex_mem_sys_ebreak;
+    // AMO 专用（把 id_ex 的操作数与操作码带进 MEM）
+    reg        ex_mem_is_amo;
+    reg  [4:0] ex_mem_amo_funct5;
+    reg  [31:0] ex_mem_amo_addr;
     // MEM/WB
     reg        mem_wb_reg_write;
     reg [1:0]  mem_wb_wb_sel;
@@ -137,6 +150,26 @@ module core #(
     reg [4:0]  mem_wb_rd;
     reg [2:0]  mem_wb_funct3;
     reg [1:0]  mem_wb_addr_low;
+    // [A 扩展] 本条是 AMO —— WB 级据此选 amo_wb_data 作为写回值
+    reg        mem_wb_is_amo;
+
+    // ---- [A 扩展] AMO 单元输出（提前声明：访存口的 assign 在下面要用到它们）----
+    wire        amo_stall;
+    wire        amo_mem_re, amo_mem_we;
+    wire [3:0]  amo_byte_en;
+    wire [31:0] amo_wdata, amo_wb_data;
+    wire        amo_illegal;
+    wire        amo_mem_release;     // amo_unit：本拍 = ST_WRITE（写回拍）
+    // ---- [A 扩展] "AMO 占住 MEM 级" 的冻结网 ----
+    // AMO 是【MEM 级】多拍单元（读-改-写），必须把 EX/MEM 连同整个前端一起
+    // 【保持】到写回拍 —— 不能走 mc_stall：那条路把 EX/MEM 清成气泡，清掉的正是
+    // 在跑状态机的那条 AMO。改用既有的 mem_ready 冻结机制（同为"保持"语义）：
+    //   amo_hold      : AMO 已在 EX/MEM 且尚未到 ST_WRITE
+    //   mem_ready_int : 把 amo_hold 并进访存就绪
+    //   stall_int     : 停顿的"效果"只在流水线真的前进那拍才允许发生
+    wire        amo_hold;
+    wire        mem_ready_int;
+    wire        stall_int;
     // 写回数据
     wire [31:0] wb_data;
 
@@ -164,9 +197,18 @@ module core #(
     // ------------------------------------------------------------------
 
     // 访存口：MEM 级组合输出，一拍的稳定窗口，直接进总线（写通路零寄存器）
-    assign mem_we   = ex_mem_mem_write;
-    assign mem_re   = ex_mem_mem_read;
-    assign mem_addr = ex_mem_alu_result;
+    // [A 扩展] AMO 自己驱动访存端口（它要读-改-写，占两拍）。
+    // control.v 的 AMO 分支【没有】置 mem_read/mem_write，所以两者互斥，
+    // 这里做 or 而不是 mux。
+    assign mem_we   = ex_mem_mem_write | amo_mem_we;
+    assign mem_re   = ex_mem_mem_read  | amo_mem_re;
+    // [A 扩展] AMO 占 MEM 期间 mem_addr 切到它自己的地址：
+    //   ex_mem_amo_addr 就是【前递后的 rs1】（AMO 的地址语义是 rs1，不是 rs1+imm，
+    //   所以绝不能用 ex_mem_alu_result）。它在整个占用期间稳定不变（EX/MEM 被
+    //   amo_hold 冻住）—— 这一点【承重】：B 口的读地址必须一直保持，amo_unit 才
+    //   能在 ST_LATCH 拍到正确的旧值。（历史 bug：地址中途掉成 0，锁回的是地址 0
+    //   的指令字，写也写到了 0。写数据/字节使能的 mux 在下面的 always 块里。）
+    assign mem_addr = ex_mem_is_amo ? ex_mem_amo_addr : ex_mem_alu_result;
     // EBREAK 现在走异常路径（mcause=3），指令在 EX 就被杀掉、永远到不了 EX/MEM，
     // 所以顶层停机钩子改从 trap 事件上取。板级 done LED 的语义因此从
     // "EBREAK 提交了"变成"发生了 EBREAK 断点"，更贴切。
@@ -230,7 +272,7 @@ module core #(
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              id_redirect         ? id_target :
-                             (stall || mc_stall || !mem_ready) ? if_addr_d :
+                             (stall_int || mc_stall || !mem_ready_int) ? if_addr_d :
                              if_addr_d + 32'd4 + (pair_now ? 32'd4 : 32'd0);
     // （pair_now 的实际赋值在下面 ID 级预测/stall 之后 —— 它要引用 id_pred_taken。）
 
@@ -309,7 +351,10 @@ module core #(
         .csr_imm    (csr_imm),
         .sys_ecall  (sys_ecall),
         .sys_mret   (sys_mret),
-        .illegal    (id_illegal)
+        .illegal    (id_illegal),
+        // ---- A 扩展 ----
+        .is_amo     (id_is_amo),
+        .amo_funct5 (id_amo_funct5)
     );
 
     wire [31:0] rdata1, rdata2;
@@ -423,7 +468,7 @@ module core #(
     //
     //   抑制到 mem_ready 释放那拍再统一生效是安全的：停顿期间取指本来就冻着
     //   （fetch_addr 走 if_addr_d），重定向晚一拍执行正好跟着一起释放。
-    assign      id_redirect   = id_pred_taken && !ex_flush && !stall && !mc_stall && mem_ready;
+    assign      id_redirect   = id_pred_taken && !ex_flush && !stall_int && !mc_stall && mem_ready_int;
 
     // ================= hazard (load-use stall only；其余 RAW 由 forwarding 解决) =================
     // [双发射] load 的 rd 要对 **4 个** ID 源比较：lane A 的 rs1/rs2 + lane B 的 rs1/rs2。
@@ -438,6 +483,13 @@ module core #(
     assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
                     ((id_ex_rd == rs1) || (id_ex_rd == rs2) ||
                      (if_id_pair && ((id_ex_rd == rs1_b) || (id_ex_rd == rs2_b)))));
+
+    // [A 扩展] stall 的【效果】（清 ID/EX、插气泡）只允许在流水线真的前进那一拍发生。
+    //   AMO 占 MEM 期间 mem_ready_int=0：此刻必须"保持"——清了就把冻在 ID/EX 的那条
+    //   load 丢了（它还没来得及进 EX/MEM）。到 AMO 放开那拍 mem_ready_int 恢复 1，
+    //   stall_int 正好重新等于 stall：load 进 EX/MEM、ID/EX 插气泡，标准 load-use
+    //   时序一步不少。mem_ready=1 的常态下 stall_int 与 stall 逐位相同。
+    assign stall_int = stall && mem_ready_int;
 
     // ================= 保守配对规则（lane B 是否随 lane A 同拍发射）=================
     // [!] 判据必须建立在【BRAM 数据到达级】的原始信号上（imem_rd / imem_rd2 /
@@ -474,6 +526,12 @@ module core #(
     //   单发射永远不会有这个"两条同处 ID/EX 又同时被冻"的局面，所以只在此排除即可；
     //   其余停顿源（stall 清 ID/EX、mem_ready=0 冻结整个前递窗口）都不受影响。
     wire p_muldiv_a = (p_op_a == 7'b0110011) && (p_f7_a == 7'b0000001);
+    // [A 扩展] AMO 也不做 lane A 配对。理由与 mul/div 同源（多拍单元 + lane B
+    //   一起冻在 ID/EX，前递窗口在下游排空）。AMO 的冻结机制后来已改成
+    //   amo_hold/mem_ready_int（EX/MEM 是【保持】而不是被清），所以这一条已不是
+    //   "必须"；保守保留：AMO 占比极小、配对收益可忽略，而"lane B 跨 4 拍 AMO
+    //   冻结后的前递"还没有逐拍验证过。
+    wire p_amo_a = (p_op_a == 7'b0101111);
 
     wire p_branch = (p_op_a == 7'b1100011);
     wire p_jump   = (p_op_a == 7'b1101111);
@@ -488,7 +546,7 @@ module core #(
 
     assign pair_now = (DUAL_ISSUE != 0) &&
                       (imem_rd != 32'd0) && (imem_rd2 != 32'd0) && !p_pred_taken &&
-                      !p_muldiv_a &&
+                      !p_muldiv_a && !p_amo_a &&
                       p_opcode_b_ok && (p_f7_b != 7'b0000001) && (p_rd_b != 5'd0) &&
                       (p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b) && (p_rd_a != p_rd_b);
 
@@ -513,6 +571,11 @@ module core #(
     // EX/MEM 写回候选值；lane A 的 load(wb_sel=01) 数据要 WB 才有效，不从此处前递。
     // lane B 结构上不会是 load，故无需排除。
     wire [31:0] ex_mem_forward_val =
+        // [A 扩展] AMO 的结果不在 ex_mem_alu_result 里（wb_sel 保持 00），而在
+        //   amo_unit 的 wb_data。它在 ST_WRITE（= mem_release）那拍有效，正好是
+        //   后一条指令从 ID/EX 进 EX/MEM 的那拍 —— 这一路必须补上，否则
+        //   "amoadd 之后紧跟一条读 rd 的指令"会前递到 ALU 的垃圾值。
+        ex_mem_is_amo ? amo_wb_data :
         (ex_mem_wb_sel == 2'b10) ? (ex_mem_pc + 32'd4) :
         (ex_mem_wb_sel == 2'b11) ? ex_mem_imm :
         ex_mem_alu_result;
@@ -542,6 +605,59 @@ module core #(
                           fwd_b_ex  ? ex_mem_forward_val :
                           fwd_b_wbb ? wb_data_b :
                           fwd_b_wb  ? wb_data : id_ex_rdata2;
+
+    // ================= [A 扩展] AMO 单元 =================
+    // 地址来自【前递后的 rs1】（AMO/LR/SC 都是rs1，不是 rs1+imm）。
+    // rs2 同样取前递值 —— 见下面 rs2_val_amo 的说明。
+    wire [31:0] rs1_val_amo = fwd_a_exb ? ex_mem_forward_val_b :
+                              fwd_a_ex  ? ex_mem_forward_val :
+                              fwd_a_wbb ? wb_data_b :
+                              fwd_a_wb  ? wb_data : id_ex_rdata1;
+
+    // [!] rs2 必须走与 rs1 同一套前递网。本文件已有两套前递：
+    //   `rs1_val/rs2_val` 给 lane A，`rs1_val_b/rs2_val_b` 给 lane B。
+    //   AMO 只会出现在 lane A（pair_now 排除了它），所以这里复用 lane A 那套 ——
+    //   但不能直接用 id_ex_rdata2，必须是【前递后】的值。
+    wire [31:0] rs2_val_amo = fwd_b_exb ? ex_mem_forward_val_b :
+                              fwd_b_ex  ? ex_mem_forward_val :
+                              fwd_b_wbb ? wb_data_b :
+                              fwd_b_wb  ? wb_data : id_ex_rdata2;
+
+
+    // [重点] store_commit 的含义：任何【会改内存】的指令落到 MEM 时拉高，
+    //   用来让 LR 的预约失效（规格要求）。AMO 自己的写在 amo_unit 内部处理，
+    //   所以这里只送普通 store —— 也就是 ex_mem_mem_write。
+    amo_unit u_amo (
+        .clk(clk), .resetn(resetn),
+        .start(ex_mem_is_amo),
+        .addr(ex_mem_amo_addr),
+        // [A 扩展] rs2 复用 ex_mem_wdata —— EX/MEM 那条 `ex_mem_wdata <= rs2_val`
+        //   存的本来就是【前递后】的 rs2。原来接在一个从未被赋值的
+        //   ex_mem_amo_rs2 上 ⇒ amo_wdata 恒 xxxxxxxx（写进内存的是垃圾）。
+        .rs2_val(ex_mem_wdata),
+        .funct5(ex_mem_amo_funct5),
+        .funct3(ex_mem_funct3[1:0]),
+        .mem_rdata(mem_rdata),
+        .amo_mem_re(amo_mem_re),
+        .amo_mem_we(amo_mem_we),
+        .amo_byte_en(amo_byte_en),
+        .amo_wdata(amo_wdata),
+        .amo_stall(amo_stall),
+        .mem_release(amo_mem_release),
+        .wb_data(amo_wb_data),
+        .illegal(amo_illegal),
+        // [A 扩展] AMO 的写也要让 LR 预约失效（规格要求"任何写别的地址"）。
+        //   amo_mem_we 只在 ST_WRITE 高 1 拍，且 amo_unit 内部已对"写自己的预约
+        //   地址"那一拍做了排除，所以并进来是安全的。
+        .store_commit(ex_mem_mem_write | amo_mem_we)
+    );
+
+    // [A 扩展] "AMO 占住 MEM 级"：从进 EX/MEM 起，直到状态机走到写回拍
+    //   （mem_release）为止，把 mem_ready 压成 0 ⇒ EX/MEM / MEM/WB / IF/ID / ID/EX
+    //   全部【保持】不动，AMO 独占访存口 4 拍。放开那拍 EX/MEM 恰好推进到 MEM/WB，
+    //   不早不晚。
+    assign amo_hold      = ex_mem_is_amo && !amo_mem_release;
+    assign mem_ready_int = mem_ready && !amo_hold;
 
     wire [31:0] alu_a = id_ex_alu_a_sel ? id_ex_pc  : rs1_val;
     wire [31:0] alu_b = id_ex_alu_b_sel ? id_ex_imm : rs2_val;
@@ -638,6 +754,9 @@ module core #(
     assign      div_stall  = id_ex_is_div && !div_done;
     assign      mul_stall  = id_ex_is_mul && !mul_done;
     // 前端冻结判据只有这一根 —— 理由见文件顶部声明处的 [!]。
+    // [A 扩展] AMO 是唯一的例外：它是【MEM 级】多拍单元，不能并进 mc_stall ——
+    //   mc_stall 把 EX/MEM 清成气泡，而跑状态机的正是 EX/MEM 里那条 AMO。
+    //   它改走 amo_hold / mem_ready_int（保持语义），见 amo_unit 例化处。
     assign      mc_stall   = div_stall || mul_stall;
 
     wire equal         = (rs1_val == rs2_val);
@@ -763,11 +882,14 @@ module core #(
     //                  ID/EX 已清空"的那一拍误受理中断，而 mepc 取的是气泡的
     //                  id_ex_pc(=0) → mret 跳到地址 0。2026-09-23 实测踩到。
     //   !mc_stall   —— 护住多拍除法器/乘法器，避免残留状态/陈旧结果
+    //   !amo_hold   —— 同理护住 AMO：中断若在其读-改-写中途受理，EX/MEM 会被
+    //                  清 ⇒ AMO 的 rd 写回丢失（内存写仍会落下，但寄存器错）。
+    //                  中断是电平信号，AMO 放开后自然重来，不会丢事件。
     //   !id_ex_mret —— 抑制"打断 mret"的嵌套角落
     // 同步异常无需门控：肇事指令下一拍已被清成气泡，ex_exception 自然为 0；
     // 而气泡的 id_ex_illegal/ecall/ebreak/mem_read 全为 0，也判不出异常。
     assign int_take = csr_mstatus_mie && int_pending && id_ex_valid &&
-                      !mc_stall && !id_ex_mret;
+                      !mc_stall && !amo_hold && !id_ex_mret;
 
     assign trap_cause  = ex_exception ? exc_cause :
                          int_timer    ? 32'h8000_0007 :   // Machine timer
@@ -811,20 +933,31 @@ module core #(
     // 属于指令语义，总线不该懂 SB/SH/SW，所以留在核内。
     // 副作用：外设可直接取 mem_wdata[7:0]，sb/sh/sw 三种宽度都能用。
     always @(*) begin
-        case (ex_mem_funct3)
-            3'b000: mem_wdata = {4{ex_mem_wdata[7:0]}};    // SB
-            3'b001: mem_wdata = {2{ex_mem_wdata[15:0]}};   // SH
-            default: mem_wdata = ex_mem_wdata;             // SW
-        endcase
+        if (ex_mem_is_amo) begin
+            // [A 扩展] AMO 占 MEM：写数据来自 amo_unit 的"旧值 ⊕ rs2"结果
+            //   （SC 则是要存的 rs2）。不 mux 的话总线上永远只有 ex_mem_wdata。
+            mem_wdata = amo_wdata;
+        end else begin
+            case (ex_mem_funct3)
+                3'b000: mem_wdata = {4{ex_mem_wdata[7:0]}};    // SB
+                3'b001: mem_wdata = {2{ex_mem_wdata[15:0]}};   // SH
+                default: mem_wdata = ex_mem_wdata;             // SW
+            endcase
+        end
     end
 
     always @(*) begin
-        case (ex_mem_funct3)
-            3'b000: mem_byte_en = 4'b0001 << ex_mem_alu_result[1:0]; // SB
-            3'b001: mem_byte_en = 4'b0011 << ex_mem_alu_result[1:0]; // SH
-            3'b010: mem_byte_en = 4'b1111;                           // SW
-            default: mem_byte_en = 4'b0000;
-        endcase
+        if (ex_mem_is_amo) begin
+            // [A 扩展] AMO 恒整字访问：使能由 amo_unit 给（只有写回拍是 1111）
+            mem_byte_en = amo_byte_en;
+        end else begin
+            case (ex_mem_funct3)
+                3'b000: mem_byte_en = 4'b0001 << ex_mem_alu_result[1:0]; // SB
+                3'b001: mem_byte_en = 4'b0011 << ex_mem_alu_result[1:0]; // SH
+                3'b010: mem_byte_en = 4'b1111;                           // SW
+                default: mem_byte_en = 4'b0000;
+            endcase
+        end
     end
 
     // ================= MEM/WB =================
@@ -847,7 +980,10 @@ module core #(
         (mem_wb_funct3 == 3'b101) ? {16'd0, load_half} :              // LHU
         load_src;                                                     // LW
 
-    assign wb_data = (mem_wb_wb_sel == 2'b01) ? load_data :
+    // [A 扩展] AMO 的写回值来自 amo_unit（AMO/LR = 读回旧值，SC = 成功标志）。
+    //   它在 MEM 级多拍才产生，所以不进 MEM/WB 寄存器，直接在 WB 级取。
+    assign wb_data = mem_wb_is_amo      ? amo_wb_data :
+                     (mem_wb_wb_sel == 2'b01) ? load_data :
                      (mem_wb_wb_sel == 2'b10) ? (mem_wb_pc + 32'd4) :
                      (mem_wb_wb_sel == 2'b11) ? mem_wb_imm :
                      mem_wb_alu_result;
@@ -899,7 +1035,7 @@ module core #(
         //     否则取指会跑到前面去、把停在 MEM 的那条指令的后续全冲掉。
         // [双发射] 配对时一步跨两条（+8）。pc_r 现在只作 pc 输出/调试用，
         //   取指实际源头是 if_addr_d（见 fetch_addr）。
-        else if (!stall && !mc_stall && mem_ready)
+        else if (!stall_int && !mc_stall && mem_ready_int)
             pc_r <= pc_r + (pair_now ? 32'd8 : 32'd4);
     end
 
@@ -929,7 +1065,7 @@ module core #(
             if_id_pc_b    <= 32'd0;
             if_id_instr_b <= 32'h00000013;
             if_id_pair    <= 1'b0;
-        end else if (!stall && !mc_stall && mem_ready) begin
+        end else if (!stall_int && !mc_stall && mem_ready_int) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
             if_id_instr <= imem_rd;
@@ -945,7 +1081,7 @@ module core #(
 
     // ================= ID/EX 寄存器 =================
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || ex_flush || ex_mispred || stall || trap) begin
+        if (!resetn || ex_flush || ex_mispred || stall_int || trap) begin
             id_ex_reg_write <= 1'b0;
             id_ex_alu_a_sel <= 1'b0;
             id_ex_alu_b_sel <= 1'b0;
@@ -972,6 +1108,8 @@ module core #(
             id_ex_csr_addr  <= 12'd0;
             id_ex_csr_cmd   <= 2'b00;
             id_ex_csr_imm   <= 1'b0;
+            id_ex_is_amo     <= 1'b0;
+            id_ex_amo_funct5 <= 5'd0;
             id_ex_illegal   <= 1'b0;
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
@@ -992,7 +1130,7 @@ module core #(
             id_ex_b_valid     <= 1'b0;
         // [!] mem_ready=0 时和 mc_stall 一样【保持】：停在 MEM 的那条指令
         //     还在 ID/EX 的下游，这里必须冻住，不能推进也不能清。
-        end else if (!mc_stall && mem_ready) begin
+        end else if (!mc_stall && mem_ready_int) begin
             id_ex_reg_write <= reg_write;
             id_ex_alu_a_sel <= alu_a_sel;
             id_ex_alu_b_sel <= alu_b_sel;
@@ -1022,6 +1160,8 @@ module core #(
             id_ex_csr_addr  <= csr_addr;
             id_ex_csr_cmd   <= csr_cmd;
             id_ex_csr_imm   <= csr_imm;
+            id_ex_is_amo     <= id_is_amo;
+            id_ex_amo_funct5 <= id_amo_funct5;
             id_ex_illegal   <= id_illegal;
             id_ex_sys_ecall <= sys_ecall;
             id_ex_mret      <= sys_mret;
@@ -1057,7 +1197,9 @@ module core #(
     //   清它不会丢数据：此时 EX/MEM 里那条【更老】的指令已经在这个沿推进到
     //   MEM/WB 了（MEM/WB 与 EX/MEM 是同一个沿更新的），写回不受影响。
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || mc_stall || trap) begin
+        // [!] AMO 占 MEM 期间必须【保持】EX/MEM —— 跑状态机的就是它，
+        //     清掉它 = 读-改-写被拦腰截断（trap/mc_stall 同理一律压住）。
+        if (!resetn || ((mc_stall || trap) && !amo_hold)) begin
             ex_mem_reg_write  <= 1'b0;
             ex_mem_mem_read   <= 1'b0;
             ex_mem_mem_write  <= 1'b0;
@@ -1069,6 +1211,10 @@ module core #(
             ex_mem_rd         <= 5'd0;
             ex_mem_funct3     <= 3'd0;
             ex_mem_sys_ebreak <= 1'b0;
+            // [A 扩展] 清 AMO 标志
+            ex_mem_is_amo     <= 1'b0;
+            ex_mem_amo_funct5 <= 5'd0;
+            ex_mem_amo_addr   <= 32'd0;
             // lane B（trap/mc_stall 一并清）
             ex_mem_b_reg_write  <= 1'b0;
             ex_mem_b_valid      <= 1'b0;
@@ -1086,7 +1232,7 @@ module core #(
         //     2026-09-27 实测：漏了这里时 +MEMWAIT=2 下 RT-Thread 卡在启动，
         //     pc 停在 0x2c 的 jalr；逐拍 trace 显示 store 的 mem_we 只高 1 拍就
         //     被换掉、地址从 0x5748 跳到 0x574c。
-        end else if (mem_ready) begin
+        end else if (mem_ready_int) begin
             ex_mem_reg_write  <= id_ex_reg_write;
             ex_mem_mem_read   <= id_ex_mem_read;
             ex_mem_mem_write  <= id_ex_mem_write;
@@ -1098,6 +1244,13 @@ module core #(
             ex_mem_rd         <= id_ex_rd;
             ex_mem_funct3     <= id_ex_funct3;
             ex_mem_sys_ebreak <= id_ex_sys_ebreak;
+            // ---- [A 扩展] ----
+            // [!] 地址用【前递后的 rs1】。AMO 的地址语义就是 rs1（不是 rs1+imm），
+            //   所以不能用 ex_mem_alu_result（那是 rs1+imm 的和）。
+            ex_mem_is_amo     <= id_ex_is_amo;
+            ex_mem_amo_funct5 <= id_ex_amo_funct5;
+            ex_mem_amo_addr   <= rs1_val_amo;
+            // rs2 不单独存 —— ex_mem_wdata<= rs2_val 已经是前递后的值，AMO 直接复用。
             // ---- lane B ----
             // [!] `&& !ex_flush` 是承重的：ex_flush 那拍 lane A（跳转）与其同拍
             //     lane B 一起躺在 ID/EX 里，而 EX/MEM <= ID/EX 是同一个沿发生的。
@@ -1125,6 +1278,7 @@ module core #(
             mem_wb_imm        <= 32'd0;
             mem_wb_rd         <= 5'd0;
             mem_wb_funct3     <= 3'd0;
+            mem_wb_is_amo     <= 1'b0;
             mem_wb_addr_low   <= 2'd0;
             mem_wb_b_reg_write  <= 1'b0;
             mem_wb_b_wb_sel     <= 2'b00;
@@ -1132,7 +1286,7 @@ module core #(
             mem_wb_b_pc         <= 32'd0;
             mem_wb_b_imm        <= 32'd0;
             mem_wb_b_rd         <= 5'd0;
-        end else if (mem_ready) begin
+        end else if (mem_ready_int) begin
             mem_wb_reg_write  <= ex_mem_reg_write;
             mem_wb_wb_sel     <= ex_mem_wb_sel;
             mem_wb_alu_result <= ex_mem_alu_result;
@@ -1140,6 +1294,7 @@ module core #(
             mem_wb_imm        <= ex_mem_imm;
             mem_wb_rd         <= ex_mem_rd;
             mem_wb_funct3     <= ex_mem_funct3;
+            mem_wb_is_amo     <= ex_mem_is_amo;
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
             mem_wb_b_reg_write  <= ex_mem_b_reg_write;
             mem_wb_b_wb_sel     <= ex_mem_b_wb_sel;
@@ -1152,6 +1307,7 @@ module core #(
 
     // [!] 上面 MEM/WB 那处是 mem_ready=0 时唯一【必须】门控的地方：
     //     不门控的话，被停住的那条 load 会带着还没回来的 mem_rdata 提前写回。
-    //     EX/MEM 不用门控 —— 前端冻住后 id_ex_* 不变，重复写入同值无害。
+    //     EX/MEM 走的是 mem_ready_int：常态下与 mem_ready 逐位相同，只在 AMO
+    //     占 MEM 期间多出一个 0 —— 那时它必须【保持】AMO，绝不能推进成气泡。
 
 endmodule

@@ -17,6 +17,9 @@ module control (
     output reg  [11:0] csr_addr,    // CSR 编号
     output reg  [1:0]  csr_cmd,     // 01=读写(RW) 10=置位(RS) 11=清位(RC)
     output reg         csr_imm,     // 1 = 立即数形式（源在 instr[19:15]，零扩展）
+    // ---- A 扩展原子指令----
+    output reg         is_amo,      // 本拍是 AMO / LR / SC
+    output reg  [4:0]  amo_funct5,  // AMO 操作码 / LR=00010 / SC=00011
     // ---- 系统指令 ----
     output reg         sys_ecall,   // ECALL  → mcause=11
     output reg         sys_mret,    // MRET   → 跳 mepc，恢复 mstatus.MIE
@@ -43,6 +46,8 @@ module control (
         csr_addr   = 12'd0;
         csr_cmd    = 2'b00;
         csr_imm    = 1'b0;
+        is_amo     = 1'b0;
+        amo_funct5 = 5'd0;
         sys_ecall  = 1'b0;
         sys_mret   = 1'b0;
         illegal    = 1'b0;
@@ -103,6 +108,21 @@ module control (
             7'b0100011: begin  // OP_STORE
                 alu_b_sel = 1'b1;
                 mem_write = 1'b1;
+            end
+
+            // ------------------------------------------------------------------
+            //7'b0101111: AMO —— A 扩展原子内存操作（RV32A）
+            //   funct3 必为010（32位）；011（64位）本设计判非法（RV32 无双字）。
+            //   地址来自 rs1（不是 rs1+imm），操作数 2 是 rs2 —— 与 load/store 不同，
+            //   所以 alu_b_sel 不置位（addr 直接在 core.v 里取 rs1）。
+            //   wb_sel 留 alu(00)：真正的写回值由 amo_unit 的 wb_data 提供，
+            //   core.v 里有独立的 mux 选择它。
+            // ------------------------------------------------------------------
+            7'b0101111: begin  // AMO
+                is_amo     = 1'b1;
+                amo_funct5 = instr[31:27];
+                reg_write  = 1'b1;   // AMO/LR/SC 都写 rd
+                if (funct3 == 2'b11) illegal = 1'b1;   // 不支持 64 位
             end
 
             7'b1100011: begin  // OP_BRANCH
