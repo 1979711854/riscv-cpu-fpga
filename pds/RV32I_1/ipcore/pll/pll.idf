@@ -1413,6 +1413,7 @@
             <file pathname="pll_tb.v" format="verilog" description="Compiled File"/>
             <file pathname="pll_tmpl.v" format="verilog" description="Instantiation Template"/>
             <file pathname="pll_tmpl.vhdl" format="vhdl" description="Instantiation Template"/>
+            <file pathname="rev_1/synthesize/pll_syn.vm" format="vm" description="Synthesis Result"/>
             <file pathname="rev_1/run.log" format="log" description="Synthesis Log"/>
         </output>
         <source>
