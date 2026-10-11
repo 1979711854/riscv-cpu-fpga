@@ -34,7 +34,7 @@ module pll (
     
     localparam integer STATIC_RATIOM    = 2; //@IPC int 1,128 
     
-    localparam real    STATIC_RATIO0    = 13.25; //@IPC int 1.0000,128.0000 
+    localparam real    STATIC_RATIO0    = 13.5; //@IPC int 1.0000,128.0000 
         
     localparam integer STATIC_RATIO1    = 23; //@IPC int 1,128 
     

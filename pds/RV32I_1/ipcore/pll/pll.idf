@@ -1175,7 +1175,7 @@
         </param>
         <param>
             <name>STATIC_RATIO0</name>
-            <value>13.250000</value>
+            <value>13.500000</value>
             <decimal>-1</decimal>
         </param>
         <param>
@@ -1413,6 +1413,7 @@
             <file pathname="pll_tb.v" format="verilog" description="Compiled File"/>
             <file pathname="pll_tmpl.v" format="verilog" description="Instantiation Template"/>
             <file pathname="pll_tmpl.vhdl" format="vhdl" description="Instantiation Template"/>
+            <file pathname="rev_1/synthesize/pll_syn.vm" format="vm" description="Synthesis Result"/>
             <file pathname="rev_1/run.log" format="log" description="Synthesis Log"/>
         </output>
         <source>
