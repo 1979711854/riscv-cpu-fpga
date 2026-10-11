@@ -170,7 +170,7 @@ if ($Single -and $dualIssue -ne 0) {
 # [!] 同 DUAL_ISSUE/DEBUG_LED：PDS 命令行传不了 -D 宏，只能"改 parameter 默认值 →
 #     综合 → 还原"。还原在下面的 finally 里。
 $cacheOrigTxt = [System.IO.File]::ReadAllText($cpuTopFile, $utf8NoBomCpuTop)
-if ($Cache) {
+if ($Cache -or $DCacheOnly) {   # [!] -DCacheOnly 必须【单独可用】：只传它、不传 -Cache 时也要进这里
     if ($cacheOrigTxt -notmatch 'parameter\s+DCACHE_EN\s*=\s*\d+' -or
         $cacheOrigTxt -notmatch 'parameter\s+ICACHE_EN\s*=\s*\d+') {
         Write-Host "!! 在 cpu_top.v 里找不到 parameter DCACHE_EN / ICACHE_EN —— 版本不匹配，停下。" -ForegroundColor Red
