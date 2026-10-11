@@ -113,9 +113,9 @@ module cpu_tb_riscv;
     initial if ($test$plusargs("LDBUG")) ldbug_on = 1; else ldbug_on = 0;
     always @(posedge clk) begin
         if (ldbug_on && resetn && u_core.mem_wb_reg_write && (u_core.mem_wb_wb_sel == 2'b01))
-            $display("LD pc=%h rd=%0d fast=%b raw=%h out=%h",
+            $display("LD pc=%h rd=%0d snap_en=%b raw=%h out=%h",
                      u_core.mem_wb_pc, u_core.mem_wb_rd,
-                     u_core.mem_wb_ld_fast, u_core.mem_wb_ld_raw, u_core.load_data);
+                     u_core.wb_rdata_snap_en, u_core.wb_rdata_snap, u_core.load_data);
     end
 
     initial clk = 1'b0;

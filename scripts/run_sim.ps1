@@ -19,7 +19,7 @@ $simRoot = Join-Path $repoRoot "sim"
 #     "跑全部"这条入口在它那里抛异常中断，排在它【后面】的测试台全部不跑，
 #     看起来却像"只坏了一个"。tb_rtthread.v 就漏过一次（2026-09-28 发现）。
 $externalProgramTbs = @("tb_riscv.v", "tb_coremark.v", "tb_demo.v", "tb_template.v",
-                        "tb_rtthread.v")
+                        "tb_rtthread.v", "tb_amo_int.v")
 
 # 编译哪些 RTL：core + periph。
 # 注意 1：存储器模型 imem/bram 在 testbench 里自带（行为级），所以【不要】编译 rtl/mem，
