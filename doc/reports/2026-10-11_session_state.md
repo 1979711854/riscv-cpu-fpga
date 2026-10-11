@@ -16,6 +16,8 @@
    CoreMark 四个 CRC 逐位一致）。**预期板上 ≈ 352 分**（324.5 → +8.4%）。**未上板。**
    **位流已出并归档**：`bitstreams/coremark_dual_aext_ms_stage01_earlyld_2ddaf32f.sbit`
    （md5 `2ddaf32f`，ITER=4116，CPU 域 slack **+0.045 ns / 失败端点 0**）。
+   **[OK] 2026-10-11 22:57 板上实测通过：351.8 分**（`Total ticks 994,362,145` → 11.6976 s，
+   四个 CRC 与仿真逐位相同，241,584 拍/迭代）。日志 `doc/board/uart_20261011_225624.txt`。
    **时序余量只有 0.4%**（详见下一节 + 约定 45）。
 
 ---
