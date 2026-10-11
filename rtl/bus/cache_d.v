@@ -48,8 +48,8 @@
 //   上电不定值。这比指望 LUTRAM 上电为 0 可靠。
 // ============================================================================
 module cache_d #(
-    parameter IDX_BITS = 11,        // set 索引位宽 → 2048 组
-    parameter TAG_BITS = 3          // tag 位宽 → 14-11 = 3
+    parameter IDX_BITS = 9,         // set 索引位宽 → 512 组（4KB/侧；16KB 用 11）
+    parameter TAG_BITS = 5          // tag 位宽 = 14 − IDX_BITS（IDX=9 → 5）
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -98,16 +98,16 @@ module cache_d #(
     // ------------------------------------------------------------------
     // tag 阵列（组合读 → LUTRAM；每项 5 位 = {valid, recent, tag[2:0]}）
     // ------------------------------------------------------------------
-    reg [4:0] tag0 [0:NSET-1];
-    reg [4:0] tag1 [0:NSET-1];
+    reg [TAG_BITS+1:0] tag0 [0:NSET-1];
+    reg [TAG_BITS+1:0] tag1 [0:NSET-1];
 
-    wire [4:0] t0 = tag0[idx];
-    wire [4:0] t1 = tag1[idx];
+    wire [TAG_BITS+1:0] t0 = tag0[idx];
+    wire [TAG_BITS+1:0] t1 = tag1[idx];
 
-    wire v0 = t0[4];
-    wire r0 = t0[3];
-    wire v1 = t1[4];
-    wire r1 = t1[3];
+    wire v0 = t0[TAG_BITS+1];
+    wire r0 = t0[TAG_BITS];
+    wire v1 = t1[TAG_BITS+1];
+    wire r1 = t1[TAG_BITS];
     // [重点] 清扫期间强制不命中（理由见文件头）
     wire hit0 = !rst_busy && v0 && (t0[TAG_BITS-1:0] == addr_tag);
     wire hit1 = !rst_busy && v1 && (t1[TAG_BITS-1:0] == addr_tag);
@@ -158,14 +158,14 @@ module cache_d #(
     // tag 写入：清扫 > 回填 > 命中更新（三级优先）
     // ------------------------------------------------------------------
     // 命中更新：命中路 recent=1，另一路 recent=0（tag/valid 原样写回）
-    wire [4:0] upd0 = hit0 ? {1'b1, 1'b1, t0[TAG_BITS-1:0]} :
+    wire [TAG_BITS+1:0] upd0 = hit0 ? {1'b1, 1'b1, t0[TAG_BITS-1:0]} :
                              {v0,   1'b0, t0[TAG_BITS-1:0]};
-    wire [4:0] upd1 = hit1 ? {1'b1, 1'b1, t1[TAG_BITS-1:0]} :
+    wire [TAG_BITS+1:0] upd1 = hit1 ? {1'b1, 1'b1, t1[TAG_BITS-1:0]} :
                              {v1,   1'b0, t1[TAG_BITS-1:0]};
     // 回填：选中路装新 tag 且 recent=1，另一路 recent=0
-    wire [4:0] fil_hit  = {1'b1, 1'b1, addr_tag};
-    wire [4:0] fil_oth0 = {v0, 1'b0, t0[TAG_BITS-1:0]};
-    wire [4:0] fil_oth1 = {v1, 1'b0, t1[TAG_BITS-1:0]};
+    wire [TAG_BITS+1:0] fil_hit  = {1'b1, 1'b1, addr_tag};
+    wire [TAG_BITS+1:0] fil_oth0 = {v0, 1'b0, t0[TAG_BITS-1:0]};
+    wire [TAG_BITS+1:0] fil_oth1 = {v1, 1'b0, t1[TAG_BITS-1:0]};
 
     wire tag_req = req && hit_any;              // T 拍命中：更新 recent
     wire tag_fil = miss_r && !rst_busy;         // T+1 拍：回填
@@ -173,11 +173,11 @@ module cache_d #(
     wire       tag_we  = rst_busy | tag_fil | tag_req;
     wire [IDX_BITS-1:0] tag_widx = rst_busy ? rst_cnt[IDX_BITS-1:0] : idx;
 
-    reg [4:0] tag0_nxt, tag1_nxt;
+    reg [TAG_BITS+1:0] tag0_nxt, tag1_nxt;
     always @(*) begin
         if (rst_busy) begin
-            tag0_nxt = 5'd0;                            // {valid=0, ...}
-            tag1_nxt = 5'd0;
+            tag0_nxt = {TAG_BITS+2{1'b0}};                            // {valid=0, ...}
+            tag1_nxt = {TAG_BITS+2{1'b0}};
         end else if (tag_fil) begin
             tag0_nxt = way_fill ? fil_oth0 : fil_hit;
             tag1_nxt = way_fill ? fil_hit  : fil_oth1;
@@ -197,25 +197,36 @@ module cache_d #(
     // ------------------------------------------------------------------
     // 数据写入：回填（T+1 拍，整字）> store 命中（T 拍，带字节使能）
     // ------------------------------------------------------------------
+    // [!] **必须写成"每路一个单写口"**，不能写成两个来源的 if/else if ——
+    //   2026-10-11 实踩：原来那样写 PDS 的 DFF-inference 推不出 BRAM，
+    //   于是把 2048x32 的阵列当 FF 展开，综合在 DFF-inference 卡了 20+ 分钟
+    //   还不出来（峰值内存 1.5 GB）。改成"先把 来源/地址/数据/字节使能 mux 好，
+    //   再喂给一个唯一的 always 写口"之后，综合恢复正常（I-Cache 隔离实测 1m47s）。
+    //   **规则：一个存储阵列只能有一个写口。**
     wire data_fil = tag_fil;                        // 与回填同拍
     wire data_st  = req && we && hit_any;           // store 命中
 
+    wire [31:0] dw_data = data_fil ? bram_rdata : wdata;
+    wire [3:0]  dw_be   = data_fil ? 4'b1111    : be;
+
+    wire dw0 = data_fil ? (way_fill == 1'b0) : (data_st && (way_hit == 1'b0));
+    wire dw1 = data_fil ? (way_fill == 1'b1) : (data_st && (way_hit == 1'b1));
+
     always @(posedge clk) begin
-        if (data_fil) begin
-            if (way_fill == 1'b0) d0[idx] <= bram_rdata;
-            else                  d1[idx] <= bram_rdata;
-        end else if (data_st) begin
-            if (way_hit == 1'b0) begin
-                if (be[0]) d0[idx][ 7: 0] <= wdata[ 7: 0];
-                if (be[1]) d0[idx][15: 8] <= wdata[15: 8];
-                if (be[2]) d0[idx][23:16] <= wdata[23:16];
-                if (be[3]) d0[idx][31:24] <= wdata[31:24];
-            end else begin
-                if (be[0]) d1[idx][ 7: 0] <= wdata[ 7: 0];
-                if (be[1]) d1[idx][15: 8] <= wdata[15: 8];
-                if (be[2]) d1[idx][23:16] <= wdata[23:16];
-                if (be[3]) d1[idx][31:24] <= wdata[31:24];
-            end
+        if (dw0) begin
+            if (dw_be[0]) d0[idx][ 7: 0] <= dw_data[ 7: 0];
+            if (dw_be[1]) d0[idx][15: 8] <= dw_data[15: 8];
+            if (dw_be[2]) d0[idx][23:16] <= dw_data[23:16];
+            if (dw_be[3]) d0[idx][31:24] <= dw_data[31:24];
+        end
+    end
+
+    always @(posedge clk) begin
+        if (dw1) begin
+            if (dw_be[0]) d1[idx][ 7: 0] <= dw_data[ 7: 0];
+            if (dw_be[1]) d1[idx][15: 8] <= dw_data[15: 8];
+            if (dw_be[2]) d1[idx][23:16] <= dw_data[23:16];
+            if (dw_be[3]) d1[idx][31:24] <= dw_data[31:24];
         end
     end
 

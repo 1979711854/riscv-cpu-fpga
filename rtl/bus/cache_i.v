@@ -51,8 +51,8 @@
 // 组织结构、替换策略、复位清扫同 cache_d.v（指令不被写，所以这里没有 store 通路）。
 // ============================================================================
 module cache_i #(
-    parameter IDX_BITS = 11,        // set 索引位宽 → 2048 组
-    parameter TAG_BITS = 3          // tag 位宽 → 14-11 = 3
+    parameter IDX_BITS = 9,         // set 索引位宽 → 512 组（4KB/侧；16KB 用 11）
+    parameter TAG_BITS = 5          // tag 位宽 = 14 − IDX_BITS（IDX=9 → 5）
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -95,16 +95,16 @@ module cache_i #(
     // ------------------------------------------------------------------
     // tag 阵列（组合读 → LUTRAM；每项 5 位 = {valid, recent, tag[2:0]}）
     // ------------------------------------------------------------------
-    reg [4:0] tag0 [0:NSET-1];
-    reg [4:0] tag1 [0:NSET-1];
+    reg [TAG_BITS+1:0] tag0 [0:NSET-1];
+    reg [TAG_BITS+1:0] tag1 [0:NSET-1];
 
-    wire [4:0] t0 = tag0[idx];
-    wire [4:0] t1 = tag1[idx];
+    wire [TAG_BITS+1:0] t0 = tag0[idx];
+    wire [TAG_BITS+1:0] t1 = tag1[idx];
 
-    wire v0 = t0[4];
-    wire r0 = t0[3];
-    wire v1 = t1[4];
-    wire r1 = t1[3];
+    wire v0 = t0[TAG_BITS+1];
+    wire r0 = t0[TAG_BITS];
+    wire v1 = t1[TAG_BITS+1];
+    wire r1 = t1[TAG_BITS];
     wire hit0 = !rst_busy && v0 && (t0[TAG_BITS-1:0] == addr_tag);
     wire hit1 = !rst_busy && v1 && (t1[TAG_BITS-1:0] == addr_tag);
     wire hit_any = hit0 | hit1;
@@ -143,7 +143,7 @@ module cache_i #(
     //   而小测试因为边角场景少，49/1/0 全过，看不出来）。
     reg [IDX_BITS-1:0] idx_r;
     reg [TAG_BITS-1:0] tag_r;
-    reg [4:0]          t0_r, t1_r;
+    reg [TAG_BITS+1:0] t0_r, t1_r;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) stall_r <= 1'b0;
@@ -154,8 +154,8 @@ module cache_i #(
         if (!resetn) begin
             idx_r <= {IDX_BITS{1'b0}};
             tag_r <= {TAG_BITS{1'b0}};
-            t0_r  <= 5'd0;
-            t1_r  <= 5'd0;
+            t0_r  <= {TAG_BITS+2{1'b0}};
+            t1_r  <= {TAG_BITS+2{1'b0}};
         end else if (stall_c) begin
             idx_r <= idx;
             tag_r <= addr_tag;
@@ -168,10 +168,10 @@ module cache_i #(
 
     // 回填的 way：优先无效路，其次 recent=0 的那路（NRU）
     // [!] 用的是【缺失那一下的快照】t0_r/t1_r，理由见上面 idx_r 的注释。
-    wire fv0 = t0_r[4];
-    wire fv1 = t1_r[4];
-    wire fr0 = t0_r[3];
-    wire fr1 = t1_r[3];
+    wire fv0 = t0_r[TAG_BITS+1];
+    wire fv1 = t1_r[TAG_BITS+1];
+    wire fr0 = t0_r[TAG_BITS];
+    wire fr1 = t1_r[TAG_BITS];
     wire way_fill = !fv0       ? 1'b0 :
                     !fv1       ? 1'b1 :
                     (fr0 & ~fr1) ? 1'b1 : 1'b0;
@@ -179,13 +179,13 @@ module cache_i #(
     // ------------------------------------------------------------------
     // tag 写入：清扫 > 回填 > 命中更新（三级优先）
     // ------------------------------------------------------------------
-    wire [4:0] upd0 = hit0 ? {1'b1, 1'b1, t0[TAG_BITS-1:0]} :
+    wire [TAG_BITS+1:0] upd0 = hit0 ? {1'b1, 1'b1, t0[TAG_BITS-1:0]} :
                              {v0,   1'b0, t0[TAG_BITS-1:0]};
-    wire [4:0] upd1 = hit1 ? {1'b1, 1'b1, t1[TAG_BITS-1:0]} :
+    wire [TAG_BITS+1:0] upd1 = hit1 ? {1'b1, 1'b1, t1[TAG_BITS-1:0]} :
                              {v1,   1'b0, t1[TAG_BITS-1:0]};
-    wire [4:0] fil_hit  = {1'b1, 1'b1, tag_r};
-    wire [4:0] fil_oth0 = {fv0, 1'b0, t0_r[TAG_BITS-1:0]};
-    wire [4:0] fil_oth1 = {fv1, 1'b0, t1_r[TAG_BITS-1:0]};
+    wire [TAG_BITS+1:0] fil_hit  = {1'b1, 1'b1, tag_r};
+    wire [TAG_BITS+1:0] fil_oth0 = {fv0, 1'b0, t0_r[TAG_BITS-1:0]};
+    wire [TAG_BITS+1:0] fil_oth1 = {fv1, 1'b0, t1_r[TAG_BITS-1:0]};
 
     wire tag_req = hit_any && !stall_r;         // 命中：更新 recent
     wire tag_fil = stall_r && !rst_busy;        // 停顿那一拍：回填
@@ -194,11 +194,11 @@ module cache_i #(
     wire [IDX_BITS-1:0] tag_widx = rst_busy ? rst_cnt[IDX_BITS-1:0] :
                                    tag_fil ? idx_r : idx;
 
-    reg [4:0] tag0_nxt, tag1_nxt;
+    reg [TAG_BITS+1:0] tag0_nxt, tag1_nxt;
     always @(*) begin
         if (rst_busy) begin
-            tag0_nxt = 5'd0;
-            tag1_nxt = 5'd0;
+            tag0_nxt = {TAG_BITS+2{1'b0}};
+            tag1_nxt = {TAG_BITS+2{1'b0}};
         end else if (tag_fil) begin
             tag0_nxt = way_fill ? fil_oth0 : fil_hit;
             tag1_nxt = way_fill ? fil_hit  : fil_oth1;

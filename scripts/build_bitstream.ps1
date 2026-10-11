@@ -53,6 +53,13 @@
 .PARAMETER NoBuild
     只生成并同步固件，不跑 PDS 综合（想自己在 GUI 里点时用）。
 
+.PARAMETER Cache
+    综合【带 I/D Cache】版（高阶任务①）：把 cpu_top.v 的 DCACHE_EN / ICACHE_EN 临时改成 1，
+    结束后自动还原（同 DEBUG_LED / DUAL_ISSUE 的做法 —— PDS 命令行传不了 -D 宏）。
+    [!] Cache 会吃时序余量（A.1 假路径实测约 0.45 ns / 余量只有 0.525 ns），
+        85 MHz 下大概率不收敛，通常要配合降频（改 ipcore/pll/pll.idf 的 STATIC_RATIO0）
+        一起用 —— 降频记得同步 CLAUDE.md 约定 27 的 4 处常量 + ITER + expectLines。
+
 .PARAMETER Single
     综合【单发射】回退版（把 cpu_top.v 的 DUAL_ISSUE 临时改成 0，结束后自动还原）。
     默认是双发射(1)。
@@ -75,9 +82,7 @@ param(
     [int]$Iter = 3796,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
-    [switch]$Cache        # 综合【带 I/D Cache】版（高阶任务①）：DCACHE_EN=ICACHE_EN=1；结束后自动还原。
-                          # [!] 会吃时序余量（A.1 实测约 0.45 ns），85 MHz 下大概率不收敛，
-                          #     通常要配合降频（改 pll.idf 的 STATIC_RATIO0）一起用。
+    [switch]$Cache,       # 综合【带 I/D Cache】版（高阶任务①）：DCACHE_EN=ICACHE_EN 临时改 1，结束还原
 
     [switch]$NoBuild
 )
@@ -111,8 +116,10 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     这三个数就是用 `scripts\rtthread\build.ps1 -Firmware` / `scripts\gomoku\build.ps1`
 #     各自的 elf2mem 输出**实测**出来的，不是估的。`demo` / `video` 没动过源码，
 #     保持原值。
-$expectLines = @{ coremark = 16846; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
-$expectDesc  = @{ coremark = "8423 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
+# [!] coremark 2026-10-11 由 16846 改成 17104：portable_fini 里加了 Cache 命中/缺失
+#     计数器（0x8000_0018~0x24）的串口上报，+129 字。
+$expectLines = @{ coremark = 17104; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
+$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
