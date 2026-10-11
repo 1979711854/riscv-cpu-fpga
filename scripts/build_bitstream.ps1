@@ -185,6 +185,10 @@ if ($Cache -or $DCacheOnly) {   # [!] -DCacheOnly 必须【单独可用】：只
         $cacheNewTxt = $cacheNewTxt -replace 'parameter\s+ICACHE_EN\s*=\s*\d+', 'parameter ICACHE_EN = 1'
         Write-Host "    -Cache：cpu_top.v 的 DCACHE_EN / ICACHE_EN 临时改为 1（结束时自动还原）" -ForegroundColor Green
     }
+    # [!] 2026-10-12 实踩：这一行曾经被误删 ⇒ 脚本只【打印】"DCACHE_EN=1"、**根本没改文件**，
+    #     于是"带 Cache 的位流"其实是 Cache 全关版（网表里 dcache 0 处、时序数也是关着的那组），
+    #     而**日志、文件名、md5 全都看不出来**。归档前必须验网表（见 CLAUDE.md 约定 46）。
+    [System.IO.File]::WriteAllText($cpuTopFile, $cacheNewTxt, $utf8NoBomCpuTop)
     Write-Host "    [!] 固件侧要把 0x8000_0018~0x24 的命中/缺失计数打出来看效果" -ForegroundColor DarkGray
 }
 

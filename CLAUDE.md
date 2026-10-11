@@ -622,6 +622,22 @@
       （两级加法器串成一条链，**应当先插假路径量时序**）；紧前是 store 1,869 拍（0.71%）
       要 store→load 字节合并旁路。
 
+46. [!] **"带开关的位流"必须验【网表】，不能只看脚本打印**（2026-10-12 实踩，比约定 23/42 更阴）。
+    `build_bitstream.ps1` 的 `-Cache` / `-DCacheOnly` 是"改 `cpu_top.v` 的 parameter → 综合 → 还原"。
+    **我改这个开关时误删了那一行 `[System.IO.File]::WriteAllText($cpuTopFile, $cacheNewTxt, ...)`**，
+    于是脚本**照常打印**"`-DCacheOnly：cpu_top.v 的 DCACHE_EN=1`"，**却根本没改文件** ——
+    两次"带 D-Cache 的位流"其实**Cache 全关**，而且：
+      * 日志正常、文件名正常、`md5` 也变（每次都不同）✗ **一个都看不出来**
+      * 唯一露馅的是**时序数**：Cache 关 = `+0.045`，只开 D = `+0.151`（同一 RTL 可复现）
+    **判据（归档任何"带开关"的位流前都跑一次）**：
+    ```bash
+    grep -aE "parameter DCACHE_EN\|parameter ICACHE_EN\|parameter EARLY_LD" rtl/top/cpu_top.v   # 运行时看一眼
+    grep -aic dcache pds/RV32I_1/place_route/seed_*/cpu_top_board_pnr.netlist                     # 网表里必须有
+    grep -aE "^Total DRM" pds/RV32I_1/flow.log                                                    # 只开 D 应比关时多 ~4 个 DRM
+    ```
+    **推论（更一般）**：`parameter` 开关的位流，"配置自证"只能靠**网表/资源/时序数**，
+    与约定 42 的 `DESIGN_REV`（那证明的是 **RTL 版本**，**证明不了开关**）分工不同，两个都要看。
+
 ## 待办
 -  **[!] 交接给队友看这两份（2026-10-11 晚）**：
   * **`doc/reports/2026-10-11_taskbook_v7.md` 的 §8** —— 现状 + Cache 阶段性总结 +
