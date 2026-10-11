@@ -21,6 +21,10 @@ module coremark_tb;
     wire [31:0] imem_rd;
     wire [13:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（64KB），别改窄
     wire [31:0] imem_rd2;
+    // [任务 C] 提前 load 读口（C 口）：core 出地址、mem_bus 回数据。
+    // [!] 必须接上 —— 悬空的 core 输入会变 Z（约定 13），会直接污染 load 数据。
+    wire [13:0] ld_addr;
+    wire [31:0] ld_rdata;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
@@ -52,13 +56,23 @@ module coremark_tb;
     localparam ICACHE_OUT = 0;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d", DUAL_OUT, DCACHE_OUT, ICACHE_OUT);
+    // [任务 C] load 地址提前：编译时加 -DEARLYLD 即用 EARLY_LD=1。默认关。
+    // [!] core 与 mem_bus 必须收同一个值（一个算地址、一个例化那份阵列）。
+`ifdef EARLYLD
+    localparam EARLYLD_OUT = 1;
+`else
+    localparam EARLYLD_OUT = 0;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -71,10 +85,12 @@ module coremark_tb;
 
     // mem_bus 自带周期计数器（0xFFF4 的读回源），与 tb 的 cycle_count 同时复位、
     // 同步递增，故 get_time() 读数与改造前一致。
-    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT)) u_bus (
+    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT),
+              .EARLY_LD(EARLYLD_OUT)) u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -153,6 +169,22 @@ module coremark_tb;
     reg [63:0] tc_jal, tc_jalr;
     reg [63:0] tc_redir, tc_mispred;
 
+    // ---- [TASK-C 分析] 消除 load-use 停顿的可达收益分类（+LDANAL，默认关）----
+    // 纯被动观测：只读 core 的内部信号（层次引用），不驱动任何输入，不影响周期数。
+    // 判据：任务 C 只能让【部分】load 走"地址提前到 ID"的快通路（见下方 a_bad_* 四类
+    // 成因），这里把停顿按成因分类，量出真正能兑现的比例 —— 免得改完才发现收益被吃掉。
+    integer    ldan_on;
+    reg [63:0] a_st_tot, a_st_fast;                    // 停顿总数 / 其中可消掉
+    reg [63:0] a_s_ex, a_s_memld, a_s_ram, a_s_store, a_s_amo;   // 不可消的四类成因
+    reg [63:0] a_ld_tot, a_ld_fast;                    // load 总数 / 可走快通路
+    reg        f_ex, f_mem;                            // 影子：该 load 可走快通路吗
+    reg  [2:0] cl_ex;                                  // 影子：不可走的原因码
+    // [诊断] RTL 实际用量：真正写回的 load 条数 / 真正走了快通路的条数
+    reg [63:0] a_rtl_ld, a_rtl_fast;
+    // [诊断] 同一拍、同一条 ID 指令：模型 a_ok 与 RTL ld_fast 不一致的条数，
+    //        并按 RTL 自己那四个 bad_* 线归类（哪一条把它们挡了）
+    reg [63:0] a_mm, a_mm_base, a_mm_ram, a_mm_st, a_mm_amo;
+
     // 影子流水线 valid：逐级镜像 core 的清零/暂停条件，用来数"真正提交的指令数"。
     // 不能直接用 mem_wb_reg_write 计数 —— store/branch/jump 不回写寄存器，会被漏掉。
     reg v_id, v_ex, v_mem, v_wb;
@@ -189,6 +221,7 @@ module coremark_tb;
     // 剖析开关与 trace 参数
     initial begin
         prof_on         = 0;
+        ldan_on         = 0;
         pairtr_on       = 0;
         pairtr_fd       = 0;
         trace_start_cyc = -1;
@@ -197,6 +230,7 @@ module coremark_tb;
         trace_fd        = 0;
         trace_fname     = "programs/trace.txt";
         if ($test$plusargs("PROF")) prof_on = 1;
+        if ($test$plusargs("LDANAL")) ldan_on = 1;
         if ($test$plusargs("PAIRTRACE")) begin
             pairtr_on = 1;
             pairtr_fd = $fopen("programs/pairtrace.txt", "w");
@@ -298,6 +332,24 @@ module coremark_tb;
                 $display("fwd from ex/mem  : %0d", c_fwdex);
                 $display("fwd from mem/wb  : %0d", c_fwdwb);
                 $display("mem accesses     : %0d", c_mem);
+                // ---- [TASK-C 分析] 消除 load-use 停顿的可达收益（+LDANAL）----
+                if (ldan_on) begin
+                    $display("--- task C: load-use stall classification (timed region) ---");
+                    $display("loads (rtl wb)   : %0d   fast-path used: %0d", a_rtl_ld, a_rtl_fast);
+                    $display("model/RTL mismatch: %0d  (base %0d ram %0d st %0d amo %0d)",
+                             a_mm, a_mm_base, a_mm_ram, a_mm_st, a_mm_amo);
+                    $display("loads total      : %0d", a_ld_tot);
+                    $display("  fast-capable   : %0d  %f%%", a_ld_fast,
+                             (a_ld_tot > 0) ? (a_ld_fast * 100.0) / a_ld_tot : 0.0);
+                    $display("stalls total     : %0d", a_st_tot);
+                    $display("  eliminable     : %0d  %f%%", a_st_fast,
+                             (a_st_tot > 0) ? (a_st_fast * 100.0) / a_st_tot : 0.0);
+                    $display("  blocked: base in EX        : %0d", a_s_ex);
+                    $display("  blocked: base from ld/amo  : %0d", a_s_memld);
+                    $display("  blocked: addr not in RAM   : %0d", a_s_ram);
+                    $display("  blocked: prev is store     : %0d", a_s_store);
+                    $display("  blocked: prev/curr is amo  : %0d", a_s_amo);
+                end
                 $display("--- coremark timed region (start_time -> stop_time) ---");
                 $display("timer reads seen : %0d", t_timer_n);
                 if (t_timer_n >= 1) $display("start_time cycle : %0d", t_timer_cyc[0]);
@@ -479,6 +531,111 @@ module coremark_tb;
                 if (h_idx < NH - 1) h_idx <= h_idx + 1;
             end else begin
                 h_cnt <= h_cnt + 1;
+            end
+        end
+    end
+
+    // ========================================================================
+    // [TASK-C 分析] 消除 load-use 停顿的可达收益（+LDANAL）
+    // ------------------------------------------------------------------------
+    // 任务 C 的做法：把 load 的地址算到 ID 级、用【专用提前读口】早一拍取回数据，
+    // 于是紧跟其后的 load-use 停顿不再需要。但只有一部分 load 能走这条快通路：
+    //   ① 基址寄存器正被【EX 级那条指令】写       → ID 级拿不到（结果还在 ALU 里）
+    //   ② 基址寄存器正被 EX/MEM 里的 load/AMO 写  → 数据还没回来
+    //   ③ 地址不在 RAM 段                        → 专用读口只镜像 RAM
+    //   ④ 紧前一条（任一 lane）是 store/AMO       → 与提前读口同址读写会读到旧值
+    // ①③④ 在 ID 级就看得出（地址/寄存器号都是 ID 级的信号），② 要靠影子标志。
+    // 本段把停顿按上面五类（含"可消"）计数，给出**上界**。
+    // ========================================================================
+    // ID 级基址估算：镜像将要实现的 ID 前递网（不含 EX 级本身 —— 那正是 ①）
+    wire        a_f_exb = u_core.ex_mem_b_reg_write && (u_core.ex_mem_b_rd != 5'd0) &&
+                          (u_core.ex_mem_b_rd == u_core.rs1);
+    wire        a_f_ex  = u_core.ex_mem_reg_write && (u_core.ex_mem_rd != 5'd0) &&
+                          (u_core.ex_mem_rd == u_core.rs1) &&
+                          (u_core.ex_mem_wb_sel != 2'b01) && !u_core.ex_mem_is_amo;
+    wire        a_f_wbb = u_core.mem_wb_b_reg_write && (u_core.mem_wb_b_rd != 5'd0) &&
+                          (u_core.mem_wb_b_rd == u_core.rs1);
+    wire        a_f_wb  = u_core.mem_wb_reg_write && (u_core.mem_wb_rd != 5'd0) &&
+                          (u_core.mem_wb_rd == u_core.rs1);
+    wire [31:0] a_base  = a_f_exb ? u_core.ex_mem_forward_val_b :
+                          a_f_ex  ? u_core.ex_mem_forward_val :
+                          a_f_wbb ? u_core.wb_data_b :
+                          a_f_wb  ? u_core.wb_data : u_core.rdata1;
+    wire [31:0] a_addr  = a_base + u_core.imm;
+    wire        a_in_ram = (a_addr[31:16] == 16'd0) && (a_addr[15:4] != 12'hFFF);
+    wire        a_bad_ex = (u_core.id_ex_reg_write   && (u_core.id_ex_rd   != 5'd0) &&
+                            (u_core.id_ex_rd   == u_core.rs1)) ||
+                           (u_core.id_ex_b_reg_write && (u_core.id_ex_b_rd != 5'd0) &&
+                            (u_core.id_ex_b_rd == u_core.rs1));
+    // ②：EX/MEM 里那条是 load/AMO 且【不是】快通路 load（快通路 load 的数据已经在
+    //    提前读口上，可以先借 f_mem 免掉）—— f_mem 是它自己在 ID 级算出来的标志。
+    wire        a_bad_memld = (u_core.ex_mem_rd != 5'd0) && (u_core.ex_mem_rd == u_core.rs1) &&
+                              (u_core.ex_mem_mem_read || u_core.ex_mem_is_amo) && !f_mem;
+    wire        a_bad_store = u_core.id_ex_mem_write;
+    wire        a_bad_amo   = u_core.id_ex_is_amo || u_core.ex_mem_is_amo;
+    wire [2:0]  a_code = a_bad_ex    ? 3'd1 :
+                         a_bad_memld ? 3'd2 :
+                         (!a_in_ram) ? 3'd3 :
+                         a_bad_store ? 3'd4 :
+                         a_bad_amo   ? 3'd5 : 3'd0;
+    wire        a_is_ld = u_core.mem_read;
+    wire        a_ok    = a_is_ld && (a_code == 3'd0);
+    // ID→EX 真的推进了吗（与 ID/EX 寄存器的清零条件一致）
+    wire        a_adv   = !u_core.ex_flush && !u_core.ex_mispred && !u_core.trap &&
+                          !u_core.mc_stall && u_core.mem_ready_int;
+
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            a_st_tot <= 64'd0; a_st_fast <= 64'd0;
+            a_s_ex <= 64'd0; a_s_memld <= 64'd0; a_s_ram <= 64'd0;
+            a_s_store <= 64'd0; a_s_amo <= 64'd0;
+            a_ld_tot <= 64'd0; a_ld_fast <= 64'd0;
+            a_rtl_ld <= 64'd0; a_rtl_fast <= 64'd0;
+            a_mm <= 64'd0; a_mm_base <= 64'd0; a_mm_ram <= 64'd0;
+            a_mm_st <= 64'd0; a_mm_amo <= 64'd0;
+            f_ex <= 1'b0; f_mem <= 1'b0; cl_ex <= 3'd0;
+        end else if (ldan_on) begin
+            // 影子推进（与 +PROF 的 v_* 链同构，另加访存冻结时【保持】）
+            f_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.trap) ? 1'b0 :
+                     (u_core.mc_stall || !u_core.mem_ready_int) ? f_ex :
+                     (u_core.stall ? 1'b0 : a_ok);
+            f_mem <= (u_core.mc_stall || u_core.trap) ? 1'b0 :
+                     (!u_core.mem_ready_int ? f_mem : f_ex);
+            cl_ex <= (u_core.ex_flush || u_core.ex_mispred || u_core.trap) ? 3'd0 :
+                     (u_core.mc_stall || !u_core.mem_ready_int) ? cl_ex :
+                     (u_core.stall ? 3'd0 : a_code);
+            // [!] a_adv 必须含 !stall：停顿那拍 IF/ID 是【保持】的，
+            //     不排除就会把同一条 load 重复计几次（实测基线里多算 2,499 条）。
+            if (a_is_ld && a_adv && !u_core.stall && in_timed) begin
+                a_ld_tot  <= a_ld_tot  + 64'd1;
+                if (a_ok) a_ld_fast <= a_ld_fast + 64'd1;
+            end
+            if (in_timed && a_is_ld && (a_ok !== u_core.ld_fast)) begin
+                a_mm <= a_mm + 64'd1;
+                if (u_core.ld_bad_base) a_mm_base <= a_mm_base + 64'd1;
+                if (u_core.ld_bad_ram)  a_mm_ram  <= a_mm_ram  + 64'd1;
+                if (u_core.ld_bad_st)   a_mm_st   <= a_mm_st   + 64'd1;
+                if (u_core.ld_bad_amo)  a_mm_amo  <= a_mm_amo  + 64'd1;
+            end
+            // RTL 实际口径（不依赖影子模型）：load 写回拍 / 快通路 load 的 MEM 级
+            if (in_timed && u_core.mem_wb_reg_write && (u_core.mem_wb_wb_sel == 2'b01))
+                a_rtl_ld   <= a_rtl_ld   + 64'd1;
+            if (in_timed && u_core.ex_mem_ld_fast)
+                a_rtl_fast <= a_rtl_fast + 64'd1;
+            // [!] 分类计数【只统计 CoreMark 计时区间】（in_timed）—— 全局窗口被
+            //     UART 忙等打印段（读 0xFFF4/0xFFF8，属于兼容区、且紧跟依赖）淹没，
+            //     那些停顿占全局 92%，与跑分无关。与 +PROF 的 tc_* 口径一致。
+            if (u_core.stall && in_timed) begin
+                a_st_tot <= a_st_tot + 64'd1;
+                if (f_ex) a_st_fast <= a_st_fast + 64'd1;
+                else case (cl_ex)
+                    3'd1: a_s_ex    <= a_s_ex    + 64'd1;
+                    3'd2: a_s_memld <= a_s_memld + 64'd1;
+                    3'd3: a_s_ram   <= a_s_ram   + 64'd1;
+                    3'd4: a_s_store <= a_s_store + 64'd1;
+                    3'd5: a_s_amo   <= a_s_amo   + 64'd1;
+                    default: ;
+                endcase
             end
         end
     end

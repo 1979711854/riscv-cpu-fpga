@@ -90,6 +90,8 @@ module tb_video_core;
         .imem_rd      (),
         .imem_addr2   (14'd0),
         .imem_rd2     (),
+        .ld_addr      (14'd0),   // [任务 C] 提前 load 读口：本测试台不用，只求不悬空
+        .ld_rdata     (),
         .mem_addr     (d_addr),
         .mem_wdata    (d_wdata),
         .mem_byte_en  (d_be),

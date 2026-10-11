@@ -69,11 +69,22 @@ module cpu_top (
     // ---- [TASK-C 探针] 假 AGU 开关（透传给 core + mem_bus）。默认 0 ----
     parameter AGU_PROBE  = 0;
 
+    // ---- [任务 C] load 地址提前（EARLY_LD，透传给 core + mem_bus）。默认 0 ----
+    // 0 = 逐位回退旧行为（load 数据 WB 才到、紧跟其后停一拍）。
+    // 1 = load 地址算在 ID 级、专用提前读口早一拍取回 ⇒ 消掉 90% 的 load-use 停顿。
+    // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。
+    // [!] 仿真侧由 tb_* 的 -DEARLYLD 决定，两边要一致，否则跑分数与板上对不上。
+    parameter EARLY_LD   = 1;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
     wire [13:0] imem_addr2;     // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
     wire [31:0] imem_rd2;
+
+    // ---- core ↔ mem_bus：[任务 C] 提前 load 读口（C 口）----
+    wire [13:0] ld_addr;
+    wire [31:0] ld_rdata;
 
     // ---- core ↔ mem_bus：访存口 ----
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
@@ -107,13 +118,16 @@ module cpu_top (
     mem_bus #(.CACHE_TAG_PROBE(CACHE_TAG_PROBE),
               .DCACHE_EN      (DCACHE_EN),
               .ICACHE_EN      (ICACHE_EN),
-              .AGU_PROBE      (AGU_PROBE)) u_bus (
+              .AGU_PROBE      (AGU_PROBE),
+              .EARLY_LD       (EARLY_LD)) u_bus (
         .clk          (clk),
         .resetn       (resetn),
         .imem_addr    (imem_addr),
         .imem_rd      (imem_rd),
         .imem_addr2   (imem_addr2),
         .imem_rd2     (imem_rd2),
+        .ld_addr      (ld_addr),
+        .ld_rdata     (ld_rdata),
         .mem_addr     (mem_addr),
         .mem_wdata    (mem_wdata),
         .mem_byte_en  (mem_byte_en),
@@ -141,7 +155,8 @@ module cpu_top (
         .vid_rdata    (vid_rdata)
     );
 
-    core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE)) u_core (
+    core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE),
+           .EARLY_LD(EARLY_LD)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),
@@ -150,6 +165,8 @@ module cpu_top (
         .imem_rd     (imem_rd),
         .imem_addr2  (imem_addr2),
         .imem_rd2    (imem_rd2),
+        .ld_addr     (ld_addr),
+        .ld_rdata    (ld_rdata),
         .mem_addr    (mem_addr),
         .mem_wdata   (mem_wdata),
         .mem_byte_en (mem_byte_en),

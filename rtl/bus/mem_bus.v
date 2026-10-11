@@ -39,6 +39,15 @@ module mem_bus (
     input  wire [13:0] imem_addr2,   // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
     output wire [31:0] imem_rd2,
 
+    // ---- [任务 C] 提前 load 读口（C 口，只读、同步读 1 拍）----
+    // 由 core 的 ID/EX 寄存器驱动（= load 的 EX 级），数据下一拍回来。**不做任何
+    // 译码/仲裁**：它只镜像 RAM 段，core 侧的 ld_fast 判据已保证只对 RAM 地址启用
+    // （外设/视频/兼容区一律走旧通路）。所以这里直连 unified_mem 的第三份阵列即可。
+    // [!] 它【绕过 D-Cache】—— 快通路 load 直接读真存储器，因此永远比 Cache 更新，
+    //     功能上安全（写通路本来就是写通到 BRAM）。
+    input  wire [13:0] ld_addr,
+    output wire [31:0] ld_rdata,
+
     // ---- 访存口（来自 core 的 MEM 级）----
     input  wire [31:0] mem_addr,
     input  wire [31:0] mem_wdata,     // 已按 sb/sh/sw 做过字节复制
@@ -106,6 +115,10 @@ module mem_bus (
 
     // ---- [TASK-C 探针] 假 AGU 观测口（默认关；见 core.v 的 AGU_PROBE）----
     parameter AGU_PROBE = 0;
+
+    // ---- [任务 C] load 地址提前（透传给 unified_mem：决定是否例化第三份阵列）----
+    // [!] 必须与 core.v / cpu_top.v 的 EARLY_LD 取值一致，否则读口读的是空阵列。
+    parameter EARLY_LD = 0;
 
     // ------------------------------------------------------------------
     // 32 位自由跑周期计数器（27MHz），兼容区 0xFFF4 与外设区 TIMER 共用同一个。
@@ -208,12 +221,15 @@ module mem_bus (
     //     imem_rd。A2 口【不经过 I-Cache】，直连 imem_rd2（理由见 cache_i.v 文件头）。
     wire [31:0] a1_bram;
 
-    unified_mem u_mem (
+    unified_mem #(.EARLY_LD(EARLY_LD)) u_mem (
         // A1 口：取指 1（只读）
         .a_addr   (imem_addr),
         .a_rd_data(a1_bram),
         .a_clk    (clk),
         .a_rst    (~resetn),
+        // C 口：任务 C 的提前 load 读（只读，EARLY_LD=0 时阵列不例化、恒 0）
+        .ld_addr  (ld_addr),
+        .ld_rd_data(ld_rdata),
         // A2 口：取指 2（只读，双发射第二读口；与 A1 同域）
         .a2_addr  (imem_addr2),
         .a2_rd_data(imem_rd2),

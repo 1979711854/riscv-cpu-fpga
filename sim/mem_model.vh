@@ -17,7 +17,10 @@
 // 双阵列 mem0/mem1 与 rtl 侧同构：mem0 服务 A1 取指 + B 访存，mem1 服务 A2
 // 取指；两份内容永远相同（写口广播）。仿真里直接把 mem0 拷进 mem1 即可。
 // ============================================================================
-module unified_mem (
+module unified_mem #(
+    // [任务 C] 与 rtl/mem/unified_mem.v 的 EARLY_LD 一致（0 = 不例化第三份阵列）
+    parameter EARLY_LD = 0
+) (
     // ---- A1 口：取指 1（只读，同步读 1 拍）----
     input  wire [13:0] a_addr,
     output reg  [31:0] a_rd_data,
@@ -27,6 +30,10 @@ module unified_mem (
     // ---- A2 口：取指 2（只读，同步读 1 拍）----
     input  wire [13:0] a2_addr,
     output reg  [31:0] a2_rd_data,
+
+    // ---- C 口：任务 C 的提前 load 读口（只读，同步读 1 拍；EARLY_LD=1 时有意义）----
+    input  wire [13:0] ld_addr,
+    output reg  [31:0] ld_rd_data,
 
     // ---- B 口：访存（读写，按字节写，同步读 1 拍）----
     input  wire [13:0] b_addr,
@@ -44,6 +51,7 @@ module unified_mem (
 );
     reg [31:0] mem0 [0:16383];
     reg [31:0] mem1 [0:16383];
+    reg [31:0] mem2 [0:16383];   // [任务 C] C 口阵列（提前 load 读；EARLY_LD=0 时不用）
     reg [1023:0] hexpath;
     integer i;
 
@@ -66,8 +74,11 @@ module unified_mem (
             $readmemh("programs/imem.hex", mem0);
             $readmemh("programs/dmem.hex", mem0);
         end
-        // mem1 是 mem0 的镜像（rtl 侧写口广播，两份永远相同）
-        for (i = 0; i < 16384; i = i + 1) mem1[i] = mem0[i];
+        // mem1/mem2 是 mem0 的镜像（rtl 侧写口广播，几份永远相同）
+        for (i = 0; i < 16384; i = i + 1) begin
+            mem1[i] = mem0[i];
+            mem2[i] = mem0[i];
+        end
         // [!] 不要写 void'(...)：iverilog 12.0（2021）不支持 void' 强转，会直接
         //     报 syntax error，且【所有 include 本文件的测试台】一起编不过。
         //     返回值本来就只用来丢弃，赋给 i 完全等价（i 的循环已用完）。
@@ -86,19 +97,26 @@ module unified_mem (
         else       a2_rd_data <= mem1[a2_addr];
     end
 
-    // B 口：按字节写 + 同步读（写口广播到 mem0/mem1 两份）
+    // B 口：按字节写 + 同步读（写口广播到 mem0/mem1/mem2 三份）
     always @(posedge b_clk) begin
         if (b_wr_en) begin
-            if (b_byte_en[0]) begin mem0[b_addr][ 7: 0] <= b_wr_data[ 7: 0]; mem1[b_addr][ 7: 0] <= b_wr_data[ 7: 0]; end
-            if (b_byte_en[1]) begin mem0[b_addr][15: 8] <= b_wr_data[15: 8]; mem1[b_addr][15: 8] <= b_wr_data[15: 8]; end
-            if (b_byte_en[2]) begin mem0[b_addr][23:16] <= b_wr_data[23:16]; mem1[b_addr][23:16] <= b_wr_data[23:16]; end
-            if (b_byte_en[3]) begin mem0[b_addr][31:24] <= b_wr_data[31:24]; mem1[b_addr][31:24] <= b_wr_data[31:24]; end
+            if (b_byte_en[0]) begin mem0[b_addr][ 7: 0] <= b_wr_data[ 7: 0]; mem1[b_addr][ 7: 0] <= b_wr_data[ 7: 0]; mem2[b_addr][ 7: 0] <= b_wr_data[ 7: 0]; end
+            if (b_byte_en[1]) begin mem0[b_addr][15: 8] <= b_wr_data[15: 8]; mem1[b_addr][15: 8] <= b_wr_data[15: 8]; mem2[b_addr][15: 8] <= b_wr_data[15: 8]; end
+            if (b_byte_en[2]) begin mem0[b_addr][23:16] <= b_wr_data[23:16]; mem1[b_addr][23:16] <= b_wr_data[23:16]; mem2[b_addr][23:16] <= b_wr_data[23:16]; end
+            if (b_byte_en[3]) begin mem0[b_addr][31:24] <= b_wr_data[31:24]; mem1[b_addr][31:24] <= b_wr_data[31:24]; mem2[b_addr][31:24] <= b_wr_data[31:24]; end
         end
     end
 
     always @(posedge b_clk or posedge b_rst) begin
         if (b_rst) b_rd_data <= 32'd0;
         else       b_rd_data <= mem0[b_addr];
+    end
+
+    // C 口：同步读（任务 C 的提前 load 读口）。与 B 口同址同拍时读到【旧值】，
+    // core.v 用"紧前一条是 store/AMO 就不走快通路"排除这种情况（见 unified_mem.v）。
+    always @(posedge b_clk or posedge b_rst) begin
+        if (b_rst) ld_rd_data <= 32'd0;
+        else       ld_rd_data <= mem2[ld_addr];
     end
 
     // ------------------------------------------------------------------

@@ -5,7 +5,14 @@ module core #(
     parameter DUAL_ISSUE = 0,
 
     // ---- [TASK-C 探针] 假 AGU（默认关）。开着只为综合量时序，功能不正确、不上板。----
-    parameter AGU_PROBE = 0
+    parameter AGU_PROBE = 0,
+
+    // ---- [任务 C] load 地址提前（EARLY_LD）----
+    // 1 = 把 load 的地址算到 ID 级、用【专用提前读口】早一拍取回数据，从而消掉
+    //     紧跟其后的 load-use 停顿；0 = 逐位回退到旧行为（load 数据在 WB 才到）。
+    // 只有"基址在 ID 级拿得到 + 地址落在 RAM 段 + 紧前不是 store/AMO"的 load
+    // 才走快通路，其余退回旧通路（有停顿，但正确）—— 判据见 ld_fast 那一段。
+    parameter EARLY_LD = 0
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -14,6 +21,14 @@ module core #(
     // ---- [TASK-C 探针] 假 AGU 观测口（AGU_PROBE=0 时恒 0、无逻辑）----
     // 用途：量"把地址计算搬到 ID 级"要多少时序（任务书 v7 §5.C 的判据）。
     output wire [31:0] agu_probe,
+
+    // ---- [任务 C] 提前 load 读口（只读、同步读 1 拍、与 A1/A2/B 同域）----
+    // 地址由【ID/EX 寄存器】驱动（即 load 的 EX 级），数据下一拍回来 —— 正好是
+    // 该 load 的 MEM 级，于是紧跟其后的指令在 EX 级就能前递到它，不用停一拍。
+    // 后端是 unified_mem 里【第三份数组 mem2】（写口同样广播），所以它与 B 口
+    // （store/AMO/旧通路 load 在用）不争端口。
+    output wire [13:0] ld_addr,       // word 索引
+    input  wire [31:0] ld_rdata,      // 同步读 1 拍延迟
 
     // ---- 取指口（A1 口）----
     // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
@@ -170,6 +185,25 @@ module core #(
     // [A 扩展] 本条是 AMO —— WB 级据此选 amo_wb_data 作为写回值
     reg        mem_wb_is_amo;
 
+    // ---- [任务 C] load 地址提前（EARLY_LD）：级间标志与提前读回的数据 ----
+    // ID/EX：这条 load 是否走快通路 + 它在 ID 级算好的地址
+    reg        id_ex_ld_fast;
+    reg [31:0] id_ex_ld_addr;
+    // EX/MEM：快通路 load 的标志（EX 级前递与未对齐判据要用）
+    reg        ex_mem_ld_fast;
+    // MEM/WB：快通路 load 的原始字（在它 MEM→WB 那个沿抓，旧通路抓的是实时
+    //   mem_rdata —— 快通路的数据早一拍到，必须在沿上寄存下来）
+    reg        mem_wb_ld_fast;
+    reg [31:0] mem_wb_ld_raw;
+    // 提前读回的"抢救快照"：与 wb_rdata_snap 同构 —— 访存冻结会让实时 ld_rdata
+    // 在下一拍跟到别人的地址上，所以停顿第一个沿先把它抓下来（理由见 WB 段）。
+    reg        ld_snap_en;
+    reg [31:0] ld_snap;
+    wire [31:0] ld_early_data;     // = 快通路 load 在【它的 MEM 级】的数据
+    // ID 级算出来的 load 地址与"能否走快通路"
+    wire [31:0] ld_id_addr;
+    wire        ld_fast;
+
     // ---- [A 扩展] AMO 单元输出（提前声明：访存口的 assign 在下面要用到它们）----
     wire        amo_stall;
     wire        amo_mem_re, amo_mem_we;
@@ -218,7 +252,10 @@ module core #(
     // control.v 的 AMO 分支【没有】置 mem_read/mem_write，所以两者互斥，
     // 这里做 or 而不是 mux。
     assign mem_we   = ex_mem_mem_write | amo_mem_we;
-    assign mem_re   = ex_mem_mem_read  | amo_mem_re;
+    // [任务 C] 快通路 load 的数据由【提前读口】给（它自己的 MEM 级就拿到了），
+    //   所以它不再占用 B 口这次读 —— 否则会白占端口、还会被 mem_ready/多拍总线
+    //   当成"一次在途访存"而多冻一拍。EARLY_LD=0 时 ex_mem_ld_fast 恒 0 ⇒ 逐位不变。
+    assign mem_re   = (ex_mem_mem_read && !ex_mem_ld_fast) | amo_mem_re;
     // [A 扩展] AMO 占 MEM 期间 mem_addr 切到它自己的地址：
     //   ex_mem_amo_addr 就是【前递后的 rs1】（AMO 的地址语义是 rs1，不是 rs1+imm，
     //   所以绝不能用 ex_mem_alu_result）。它在整个占用期间稳定不变（EX/MEM 被
@@ -493,7 +530,10 @@ module core #(
     //   也会误报一次停拍 —— 那条指令根本不在同拍发射，停它纯属浪费。
     //   实测（CoreMark ITER=1）：漏门控时每迭代多 9,906 拍（363,515 → 373,421），
     //   且 riscv-tests 全 PASS 也照样查不出来（那批测试几乎没有 load 后紧接依赖）。
-    assign stall = (id_ex_mem_read && (id_ex_rd != 5'd0) &&
+    // [任务 C] `!id_ex_ld_fast` 是新增的：走快通路的 load 数据早在 MEM 级就前递得到
+    //   （见下面 EX 段新增的 ld_fwd_* 一路），再停一拍就是纯浪费。
+    //   快通路 load 的判据保证它"一定"能在 MEM 级给出数据，所以这里可以无条件免停。
+    assign stall = (id_ex_mem_read && !id_ex_ld_fast && (id_ex_rd != 5'd0) &&
                     ((id_ex_rd == rs1) || (id_ex_rd == rs2) ||
                      (if_id_pair && ((id_ex_rd == rs1_b) || (id_ex_rd == rs2_b)))));
 
@@ -607,6 +647,96 @@ module core #(
         (ex_mem_b_wb_sel == 2'b11) ? ex_mem_b_imm :
         ex_mem_b_alu_result;
 
+    // ==================================================================
+    // [任务 C] ID 级地址生成（AGU）+ 快通路判据（EARLY_LD=0 时 ld_fast 恒 0）
+    // ------------------------------------------------------------------
+    // 为什么要提前：load 地址若在 EX 级才算，数据要 WB 才回来，紧跟其后的消费者
+    //   必须停一拍 —— 这就是区间内 27,181 拍 / 10.4% 的 load-use 停顿。
+    //   地址提前到 ID + 专用读口早一拍取回 ⇒ 消费者在 EX 级就能前递到数据。
+    //
+    // [!] 只让【能安全提前】的 load 走快通路，其余原样退回旧通路（旧通路一行未改）。
+    //     "判据先行"实测（+LDANAL，2026-10-11）：区间内 86.3% 的 load 可走快通路，
+    //     被挡住的只有 696（基址在 EX）+ 1,869（紧前是 store）+ 48（非 RAM）。
+    //       ① 基址在 ID 级拿得到 —— 不含"被 EX 级那条指令刚写出"（结果还在 ALU 里），
+    //          也不含"被 EX/MEM 里的 load/AMO 写"（数据还没回来）
+    //       ② 地址必须落在 RAM 段 —— 提前读口只镜像 RAM（外设/视频/兼容区没有）
+    //       ③ 紧前一条不能是 store —— 它与提前读口同址时是同拍写/读，读到旧值
+    //          （同理：紧前一条若是 AMO，它的写与冻结放开在同一沿）
+    //       ④ 前/后不能有 AMO
+    //     四条都是【保守】判据：判错只是退回旧通路（慢一拍、但一定对）。
+    // ==================================================================
+    // ---- ID 级 rs1 前递网（只服务 load 的地址计算；不含 EX 级本身 = 判据①）----
+    wire        ld_f_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == rs1);
+    wire        ld_f_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) && (ex_mem_rd == rs1) &&
+                           (ex_mem_wb_sel != 2'b01) && !ex_mem_is_amo;
+    wire        ld_f_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == rs1);
+    wire        ld_f_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == rs1);
+    wire [31:0] ld_base  = ld_f_exb ? ex_mem_forward_val_b :
+                           ld_f_ex  ? ex_mem_forward_val :
+                           ld_f_wbb ? wb_data_b :
+                           ld_f_wb  ? wb_data : rdata1;
+    // load 的地址 = base + imm（control.v 里 load 恒 alu_op=ADD、alu_b_sel=1 取 imm）
+    assign      ld_id_addr = ld_base + imm;
+
+    wire ld_bad_base = (id_ex_reg_write   && (id_ex_rd   != 5'd0) && (id_ex_rd   == rs1)) ||
+                       (id_ex_b_reg_write && (id_ex_b_rd != 5'd0) && (id_ex_b_rd == rs1)) ||
+                       ((ex_mem_rd != 5'd0) && (ex_mem_rd == rs1) &&
+                        (ex_mem_mem_read || ex_mem_is_amo));                  // 判据①
+    wire ld_bad_ram  = !((ld_id_addr[31:16] == 16'd0) &&
+                         (ld_id_addr[15:4] != 12'hFFF));                      // 判据②
+    wire ld_bad_st   = id_ex_mem_write;                                       // 判据③
+    wire ld_bad_amo  = id_ex_is_amo || ex_mem_is_amo;                         // 判据④
+
+    assign ld_fast = (EARLY_LD != 0) && mem_read &&
+                     !ld_bad_base && !ld_bad_ram && !ld_bad_st && !ld_bad_amo;
+
+    // 提前读口地址：由 ID/EX 驱动（= 该 load 的 EX 级）。非快通路时指 0（无用）。
+    assign ld_addr = id_ex_ld_fast ? id_ex_ld_addr[15:2] : 14'd0;
+
+    // 快通路 load 的数据：正常取实时 ld_rdata；访存冻结期间取快照（理由同 WB 段）
+    assign ld_early_data = (EARLY_LD != 0 && ld_snap_en) ? ld_snap : ld_rdata;
+
+    // 抢救快照：与 wb_rdata_snap 同构 —— 冻结的下一拍实时 ld_rdata 已经跟到
+    // 别人的地址上（ID/EX 里的后继指令重新驱动了读口），所以第一个停顿沿先抓。
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn || (EARLY_LD == 0)) begin
+            ld_snap    <= 32'd0;
+            ld_snap_en <= 1'b0;
+        end else if (mem_ready_int) begin
+            ld_snap_en <= 1'b0;
+        end else if (!ld_snap_en) begin
+            ld_snap    <= ld_rdata;
+            ld_snap_en <= 1'b1;
+        end
+    end
+
+    // [任务 C] 快通路 load 的数据前递：EX/MEM 里那条是快通路 load，它的数据【这一拍】
+    //   就在 ld_early_data 上（地址是它上一拍在 EX 级发的）—— 也正是"它 MEM 级"这一拍。
+    //   优先级最高：它是 EX/MEM 里那条更年轻的来源之一（同 lane A），而 lane B 比它更新。
+    //
+    // [!] 前递出去的必须是【解包后】的值，不能是原始字 —— lb/lbu/lh/lhu 要按 funct3
+    //     与地址低两位取字节/半字。2026-10-11 实踩：只前递原始字时 `lw` 全过、
+    //     `lb/lbu/lh` 全 FAIL（`lhu` 因为测试数据高半字恰好为 0 而蒙混过去），
+    //     CoreMark 的 matrix/state CRC 也全错（它用的是 u16）。
+    //     WB 段那条解包逻辑服务的是写回，这里必须【另来一份】服务前递。
+    wire [7:0]  ld_fwd_byte = (ex_mem_alu_result[1:0] == 2'd0) ? ld_early_data[7:0]   :
+                              (ex_mem_alu_result[1:0] == 2'd1) ? ld_early_data[15:8]  :
+                              (ex_mem_alu_result[1:0] == 2'd2) ? ld_early_data[23:16] :
+                                                                 ld_early_data[31:24];
+    wire [15:0] ld_fwd_half = ex_mem_alu_result[1] ? ld_early_data[31:16] : ld_early_data[15:0];
+    wire [31:0] ld_early_val =
+        (ex_mem_funct3 == 3'b000) ? {{24{ld_fwd_byte[7]}}, ld_fwd_byte} :    // LB
+        (ex_mem_funct3 == 3'b001) ? {{16{ld_fwd_half[15]}}, ld_fwd_half} :   // LH
+        (ex_mem_funct3 == 3'b100) ? {24'd0, ld_fwd_byte} :                   // LBU
+        (ex_mem_funct3 == 3'b101) ? {16'd0, ld_fwd_half} :                   // LHU
+        ld_early_data;                                                       // LW
+
+    wire        ld_fwd_en = (EARLY_LD != 0) && ex_mem_ld_fast && (ex_mem_rd != 5'd0);
+    wire        ld_fwd_a  = ld_fwd_en && (ex_mem_rd == id_ex_rs1);
+    wire        ld_fwd_b  = ld_fwd_en && (ex_mem_rd == id_ex_rs2);
+    wire        ld_fwd_ba = ld_fwd_en && (ex_mem_rd == id_ex_b_rs1);
+    wire        ld_fwd_bb = ld_fwd_en && (ex_mem_rd == id_ex_b_rs2);
+
     // lane A 操作数 1（id_ex_rs1）
     wire fwd_a_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_rs1);
     wire fwd_a_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
@@ -620,11 +750,13 @@ module core #(
     wire fwd_b_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_rs2);
     wire fwd_b_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_rs2);
 
-    wire [31:0] rs1_val = fwd_a_exb ? ex_mem_forward_val_b :
+    wire [31:0] rs1_val = ld_fwd_a  ? ld_early_val :           // [任务 C] 快通路 load
+                          fwd_a_exb ? ex_mem_forward_val_b :
                           fwd_a_ex  ? ex_mem_forward_val :
                           fwd_a_wbb ? wb_data_b :
                           fwd_a_wb  ? wb_data : id_ex_rdata1;
-    wire [31:0] rs2_val = fwd_b_exb ? ex_mem_forward_val_b :
+    wire [31:0] rs2_val = ld_fwd_b  ? ld_early_val :           // [任务 C] 快通路 load
+                          fwd_b_exb ? ex_mem_forward_val_b :
                           fwd_b_ex  ? ex_mem_forward_val :
                           fwd_b_wbb ? wb_data_b :
                           fwd_b_wb  ? wb_data : id_ex_rdata2;
@@ -701,11 +833,13 @@ module core #(
     wire fwd_bb_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs2);
     wire fwd_bb_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_b_rs2);
 
-    wire [31:0] rs1_val_b = fwd_ba_exb ? ex_mem_forward_val_b :
+    wire [31:0] rs1_val_b = ld_fwd_ba ? ld_early_val :         // [任务 C] 快通路 load
+                            fwd_ba_exb ? ex_mem_forward_val_b :
                             fwd_ba_ex  ? ex_mem_forward_val :
                             fwd_ba_wbb ? wb_data_b :
                             fwd_ba_wb  ? wb_data : id_ex_b_rdata1;
-    wire [31:0] rs2_val_b = fwd_bb_exb ? ex_mem_forward_val_b :
+    wire [31:0] rs2_val_b = ld_fwd_bb ? ld_early_val :         // [任务 C] 快通路 load
+                            fwd_bb_exb ? ex_mem_forward_val_b :
                             fwd_bb_ex  ? ex_mem_forward_val :
                             fwd_bb_wbb ? wb_data_b :
                             fwd_bb_wb  ? wb_data : id_ex_b_rdata2;
@@ -1010,7 +1144,10 @@ module core #(
             wb_rdata_snap_en <= 1'b1;
         end
     end
-    wire [31:0] load_src = wb_rdata_snap_en ? wb_rdata_snap : mem_rdata;
+    // [任务 C] 快通路 load 的原始字来自 MEM/WB 里寄存的那一份（见 MEM/WB 段），
+    //   旧通路仍用实时 mem_rdata（含 A.0 的冻结快照）。
+    wire [31:0] load_src = mem_wb_ld_fast ? mem_wb_ld_raw :
+                           (wb_rdata_snap_en ? wb_rdata_snap : mem_rdata);
     wire [7:0]  load_byte = (mem_wb_addr_low == 2'd0) ? load_src[7:0]   :
                             (mem_wb_addr_low == 2'd1) ? load_src[15:8]  :
                             (mem_wb_addr_low == 2'd2) ? load_src[23:16] :
@@ -1190,6 +1327,9 @@ module core #(
             id_ex_sys_ecall <= 1'b0;
             id_ex_mret      <= 1'b0;
             id_ex_valid     <= 1'b0;
+            // [任务 C]
+            id_ex_ld_fast   <= 1'b0;
+            id_ex_ld_addr   <= 32'd0;
             // lane B 一并清成气泡（pair_now=0 时本来就该是气泡）
             id_ex_b_reg_write <= 1'b0;
             id_ex_b_alu_a_sel <= 1'b0;
@@ -1241,6 +1381,9 @@ module core #(
             id_ex_illegal   <= id_illegal;
             id_ex_sys_ecall <= sys_ecall;
             id_ex_mret      <= sys_mret;
+            // [任务 C] 这条 load 能否走快通路 + 它在 ID 级算好的地址
+            id_ex_ld_fast   <= ld_fast;
+            id_ex_ld_addr   <= ld_id_addr;
             // 跟随 IF/ID 的实际内容：冲刷/填充期的气泡不能算有效，
             // 否则中断会拿气泡的 id_ex_pc(=0) 去写 mepc
             id_ex_valid     <= if_id_valid;
@@ -1300,6 +1443,8 @@ module core #(
             ex_mem_is_amo     <= 1'b0;
             ex_mem_amo_funct5 <= 5'd0;
             ex_mem_amo_addr   <= 32'd0;
+            // [任务 C]
+            ex_mem_ld_fast    <= 1'b0;
             // lane B（trap/mc_stall 一并清）
             ex_mem_b_reg_write  <= 1'b0;
             ex_mem_b_valid      <= 1'b0;
@@ -1335,6 +1480,8 @@ module core #(
             ex_mem_is_amo     <= id_ex_is_amo;
             ex_mem_amo_funct5 <= id_ex_amo_funct5;
             ex_mem_amo_addr   <= rs1_val_amo;
+            // [任务 C]
+            ex_mem_ld_fast    <= id_ex_ld_fast;
             // rs2 不单独存 —— ex_mem_wdata<= rs2_val 已经是前递后的值，AMO 直接复用。
             // ---- lane B ----
             // [!] `&& !ex_flush` 是承重的：ex_flush 那拍 lane A（跳转）与其同拍
@@ -1365,6 +1512,9 @@ module core #(
             mem_wb_funct3     <= 3'd0;
             mem_wb_is_amo     <= 1'b0;
             mem_wb_addr_low   <= 2'd0;
+            // [任务 C]
+            mem_wb_ld_fast    <= 1'b0;
+            mem_wb_ld_raw     <= 32'd0;
             mem_wb_b_reg_write  <= 1'b0;
             mem_wb_b_wb_sel     <= 2'b00;
             mem_wb_b_alu_result <= 32'd0;
@@ -1381,6 +1531,11 @@ module core #(
             mem_wb_funct3     <= ex_mem_funct3;
             mem_wb_is_amo     <= ex_mem_is_amo;
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
+            // [任务 C] 快通路 load 的原始字：它【在 MEM 级】就已经在 ld_early_data 上
+            //   （旧通路那条 load 要等 WB 级的实时 mem_rdata），所以必须在这里寄存。
+            //   [A.0 同类] 加 mem_ready_int 之外不用再做快照 —— ld_snap 已经承担了。
+            mem_wb_ld_fast    <= ex_mem_ld_fast;
+            mem_wb_ld_raw     <= ld_early_data;
             mem_wb_b_reg_write  <= ex_mem_b_reg_write;
             mem_wb_b_wb_sel     <= ex_mem_b_wb_sel;
             mem_wb_b_alu_result <= ex_mem_b_alu_result;

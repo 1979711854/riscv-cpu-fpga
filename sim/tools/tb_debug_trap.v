@@ -24,6 +24,9 @@ module tb_debug_trap;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
+    // [任务 C] 提前 load 读口（C 口）
+    wire [13:0] ld_addr;
+    wire [31:0] ld_rdata;
 
     // 接真实的定时器中断（来自 mem_bus 的 CLINT）—— 测中断必须接。
     // （早前为做新旧版本逐拍 diff 曾故意省略这两个端口，那个需求已完成。）
@@ -32,6 +35,7 @@ module tb_debug_trap;
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -43,6 +47,7 @@ module tb_debug_trap;
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),

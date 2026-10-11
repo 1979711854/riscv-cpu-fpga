@@ -22,6 +22,10 @@ module cpu_tb_riscv;
     wire [31:0] imem_rd;
     wire [13:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（64KB），别改窄
     wire [31:0] imem_rd2;
+    // [任务 C] 提前 load 读口（C 口）：core 出地址、mem_bus 回数据。必须接上，
+    // 悬空会让 core 的输入变 Z（约定 13）。
+    wire [13:0] ld_addr;
+    wire [31:0] ld_rdata;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
@@ -53,13 +57,23 @@ module cpu_tb_riscv;
     localparam ICACHE_OUT = 0;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d", DUAL_OUT, DCACHE_OUT, ICACHE_OUT);
+    // [任务 C] load 地址提前：编译时加 -DEARLYLD 即用 EARLY_LD=1。默认关。
+    // [!] core 与 mem_bus 必须收同一个值（一个算地址、一个例化那份阵列）。
+`ifdef EARLYLD
+    localparam EARLYLD_OUT = 1;
+`else
+    localparam EARLYLD_OUT = 0;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -71,10 +85,12 @@ module cpu_tb_riscv;
     );
 
     // 统一存储器（指令+数据）的行为模型由本 tb 提供（sim/mem_model.vh）
-    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT)) u_bus (
+    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT),
+              .EARLY_LD(EARLYLD_OUT)) u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
+        .ld_addr(ld_addr), .ld_rdata(ld_rdata),
         .mem_addr(mem_addr), .mem_wdata(mem_wdata), .mem_byte_en(mem_byte_en),
         .mem_we(mem_we), .mem_re(mem_re), .mem_rdata(mem_rdata),
         .mem_ready(mem_ready),
@@ -87,6 +103,20 @@ module cpu_tb_riscv;
         .irq_timer(irq_timer),
         .agu_probe_in(32'd0)   // [TASK-C 探针] 仿真恒 0（悬空会变 Z，约定 13）
     );
+
+    // ------------------------------------------------------------------
+    // [调试] +LDBUG：把每次 load 写回的原始字/地址 dump 出来（默认关，纯观测）。
+    //   用途：EARLY_LD 打开后比对"快通路 vs 旧通路"两次跑的 load 序列，
+    //   定位第一条读错数据的 load。稳定后本段可以删。
+    // ------------------------------------------------------------------
+    integer ldbug_on;
+    initial if ($test$plusargs("LDBUG")) ldbug_on = 1; else ldbug_on = 0;
+    always @(posedge clk) begin
+        if (ldbug_on && resetn && u_core.mem_wb_reg_write && (u_core.mem_wb_wb_sel == 2'b01))
+            $display("LD pc=%h rd=%0d fast=%b raw=%h out=%h",
+                     u_core.mem_wb_pc, u_core.mem_wb_rd,
+                     u_core.mem_wb_ld_fast, u_core.mem_wb_ld_raw, u_core.load_data);
+    end
 
     initial clk = 1'b0;
     always #5 clk = ~clk;   // 100MHz

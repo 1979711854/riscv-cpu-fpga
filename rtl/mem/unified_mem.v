@@ -17,8 +17,14 @@
 // 已经用掉了它们，所以把阵列【复制】一份：
 //     mem0 —— A1 取指（读） + B 访存（读/写）    （真双口 BRAM：口A 读、口B 读写）
 //     mem1 —— A2 取指（只读）                    （单口 BRAM）
-// 写口【广播】到两份阵列 ⇒ fence_i（自改码）语义与单发射版【逐位一致】：
-// store 写进去的东西，之后 A1/A2 取指都能读到。
+//     mem2 —— C 口：任务 C 的提前 load 读（只读，EARLY_LD=1 时才例化）
+// 写口【广播】到所有阵列 ⇒ fence_i（自改码）语义与单发射版【逐位一致】：
+// store 写进去的东西，之后 A1/A2 取指与提前 load 读都能读到。
+//
+// [!] C 口（mem2）与 B 口是【同拍写/读】关系：store 在 MEM 级写 mem2 的那一拍，
+//     若某条 load 正在提前读同一个 word，它读到的是【旧值】（非阻塞赋值）。
+//     core.v 用"紧前一条是 store/AMO 就不走快通路"把这种情况整个排除掉了 ——
+//     改这里（比如改成 write_first 语义）不会让 core 那侧变对，别只改一边。
 //
 // 为什么不用"64 位宽读 + 重整"：无 C 扩展时所有指令与分支目标都 4 字节对齐，
 // 但【不保证 8 字节对齐】——分支目标可以落在 word 索引为奇数处，64 位读就得
@@ -32,7 +38,11 @@
 // 本文件是【PDS 综合用】的行为模型；仿真时由 testbench 提供同名模型
 // （见 sim/mem_model.vh），所以 run_sim.ps1 显式不编译 rtl/mem/。
 // ============================================================================
-module unified_mem (
+module unified_mem #(
+    // [任务 C] 0 = 不例化第三份阵列（EARLY_LD 关时省掉那些 DRM）。
+    //          必须与 core.v / mem_bus.v / cpu_top.v 的 EARLY_LD 取值一致。
+    parameter EARLY_LD = 0
+) (
     // ---- A1 口：取指 1（只读）----
     input  wire [13:0] a_addr,
     output reg  [31:0] a_rd_data,
@@ -42,6 +52,14 @@ module unified_mem (
     // ---- A2 口：取指 2（只读，双发射第二读口；与 A1 同域，共用 a_clk/a_rst）----
     input  wire [13:0] a2_addr,
     output reg  [31:0] a2_rd_data,
+
+    // ---- C 口：任务 C 的"提前 load 读口"（只读，与 A1/A2 同域、同延迟）----
+    // 由 core 的 ID/EX 寄存器驱动（即 load 的 EX 级），数据下一拍（= 该 load 的
+    // MEM 级）回来。再做一份阵列的理由与 A2 完全一样：BRAM 只有 2 个物理端口，
+    // 而 A1 取指、B 访存已经用掉了它们，且 B 口的读/写地址是同一根 —— store 在
+    // MEM 级占据 B 口时，load 的提前读没法共用。写口同样【广播】到三份阵列。
+    input  wire [13:0] ld_addr,
+    output reg  [31:0] ld_rd_data,
 
     // ---- B 口：访存（读写）----
     input  wire [13:0] b_addr,
@@ -75,6 +93,38 @@ module unified_mem (
         $readmemh("mem.hex", mem0);
         $readmemh("mem.hex", mem1);
     end
+
+    // ------------------------------------------------------------------
+    // C 口阵列（任务 C 的提前 load 读口）：EARLY_LD=1 时才例化。
+    //   独立成一份、独立 always 块，是为了让 EARLY_LD=0 时它【整个不进网表】
+    //   （否则会白占 ~28 个 DRM，还会改变布局与时序报告的口径）。
+    //   写口同样广播 —— 三份内容必须永远相同（fence_i / st_ld 正确性）。
+    // ------------------------------------------------------------------
+    generate
+    if (EARLY_LD != 0) begin : g_ldmem
+        (* syn_ramstyle = "block_ram" *) reg [31:0] mem2 [0:16383];
+        initial $readmemh("mem.hex", mem2);
+
+        always @(posedge b_clk) begin
+            if (b_wr_en) begin
+                if (b_byte_en[0]) mem2[b_addr][ 7: 0] <= b_wr_data[ 7: 0];
+                if (b_byte_en[1]) mem2[b_addr][15: 8] <= b_wr_data[15: 8];
+                if (b_byte_en[2]) mem2[b_addr][23:16] <= b_wr_data[23:16];
+                if (b_byte_en[3]) mem2[b_addr][31:24] <= b_wr_data[31:24];
+            end
+        end
+
+        always @(posedge b_clk or posedge b_rst) begin
+            if (b_rst) ld_rd_data <= 32'd0;
+            else       ld_rd_data <= mem2[ld_addr];
+        end
+    end else begin : g_noldmem
+        always @(posedge b_clk or posedge b_rst) begin
+            if (b_rst) ld_rd_data <= 32'd0;
+            else       ld_rd_data <= 32'd0;
+        end
+    end
+    endgenerate
 
     // A1 口：同步读（非阻塞赋值 ⇒ 与写同址时读到旧值）
     always @(posedge a_clk or posedge a_rst) begin
