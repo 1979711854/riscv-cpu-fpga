@@ -13,7 +13,8 @@
 | `gomoku_dual_hud_60hz_rv32a_8c229a21.sbit` | 双发射 + HUD + **A 扩展** @85MHz —— **时序 −0.096 ns，不可用**（留作"单 seed 不收敛"的证据）| `8c229a21` |
 | `gomoku_dual_aext_ms_85mhz_3418c5fc.sbit` | 双发射 + HUD + **A 扩展** + **多 seed 布局** —— slack +0.064 ns | `3418c5fc` |
 | `gomoku_dual_aext_ms_85mhz_addrfix_f00c6659.sbit` | 上面那版 + **`imem_addr2` 截位修复**（约定 40）—— slack +0.236 ns。**已上板**（2026-10-10，两局五子棋正常，屏幕正常）| `f00c6659` |
-| **`coremark_dual_aext_ms_earlyld_dcache_76mhz_a69a19b5.sbit`** | **[二分用] 只开 D-Cache + 降频 76.5052 MHz**（ITER=3700，4 处常量=76,505,200）。setup **+0.717 ns**、hold **+0.145 ns**、**0 失败端点**；网表 `dcache` 659 / **`icache` 0** ✓。预期 `Total ticks ≈ 894,000,000` → 11.69 s → ≈316 分。**用途：一次烧录分清"I+D 失败"是 I-Cache 的问题还是 76.5 MHz 口径的问题**（见 `2026-10-12_handoff_completeness_first.md` §2.3）| `a69a19b5` |
+| **`coremark_dual_aext_ms_earlyld_dcache_76mhz_a69a19b5.sbit`** | **[二分用] 只开 D-Cache + 降频 76.5052 MHz**（ITER=3700，4 处常量=76,505,200）。setup **+0.717 ns**、hold **+0.145 ns**、**0 失败端点**；网表 `dcache` 659 / **`icache` 0** ✓。预期 `Total ticks ≈ 894,000,000` → 11.69 s → ≈316 分。**[OK] 2026-10-12 01:23 上板通过（日志 `doc/board/uart_20261012_012310.txt`）**：`Total ticks 893,885,762` → 11.6842 s、**351 行报告完整**、四个 CRC 逐位相同、`[cache] D hits=31,739,605 / miss=22,616`（99.929%）、`[cache] I` 全 0 ⇒ **得分 316.7**。
+⇒ **76.5 MHz 口径完全没问题，问题 100% 在 I-Cache**（用途达成）（见 `2026-10-12_handoff_completeness_first.md` §2.3）| `a69a19b5` |
 | ⚠️ **`coremark_dual_aext_ms_earlyld_idcache_76mhz_fa957dbd.sbit`** | **[完整条目] I+D 全开 + 降频 76.5052 MHz**（`RATIO0=15.0`，ITER=3372，4 处固件常量=76,505,200）。CPU 域 slack **+0.410 ns / 0 失败端点**（周期 13.071 ns）；**网表两个 cache 都在**（`dcache` 660 / `icache` 670 处）。⚠️ **[X] 2026-10-12 上板失败，别烧**（日志 `doc/board/uart_20261012_010314.txt` / `_010344.txt`）：
 串口只有 banner **重复约 590 次/秒**（13 秒 7,627 次），**没有任何 CoreMark 输出**，
 ⇒ CPU 跑飞后陷入非法指令 → `mtvec`(复位值 0 = `_start`) → 反复从头跑。

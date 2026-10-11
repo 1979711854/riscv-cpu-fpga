@@ -17,6 +17,15 @@
 > - 双发射五子棋跑通：位流 `3976aebd`，日志 `uart_20261006_172315.txt`
 > 汇总见 `doc/reports/2026-10-04_coremark_score.md`。
 
+## 【二分证据】D-Cache + 降频 76.5 MHz 板上通过 ⇒ 故障锁定 I-Cache（2026-10-12 01:23）
+
+位流 `coremark_dual_aext_ms_earlyld_dcache_76mhz_a69a19b5.sbit`（md5 `a69a19b5`，ITER=3700），
+日志 **`uart_20261012_012310.txt`**：`Total ticks 893,885,762` → **11.6842 s**，
+**四个 CRC 与仿真逐位相同**、`[cache] D hits=31,739,605 / miss=22,616`（**99.929%**）、
+`[cache] I` 全 0、得分 **316.7** ✓。
+**判读**：降频口径（RATIO0=15.0 + 4 处常量 + 固件）全部正确 ⇒
+**I+D 版（`fa957dbd`）板上的反复重启，故障 100% 在 I-Cache**（同一配置只把 I-Cache 打开就崩）。
+
 ## 【Cache 证据】D-Cache 板上实测通过：命中率 **99.93%**、CRC 与关 Cache 时逐位相同（2026-10-12）[OK]
 
 位流 `coremark_dual_aext_ms_stage01_earlyld_dcache_2f7a4d0a.sbit`（md5 `2f7a4d0a`，ITER=4116），
