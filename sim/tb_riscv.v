@@ -84,7 +84,8 @@ module cpu_tb_riscv;
         // [重点] 必须接！漏了它 irq_timer 悬空为 Z，core 里
         //   `int_timer = mie.MTIE & Z` 会是不定态，中断行为随机 ——
         //   表现为测试台与调试台跑出完全不同的结果（2026-09-23 实踩）。
-        .irq_timer(irq_timer)
+        .irq_timer(irq_timer),
+        .agu_probe_in(32'd0)   // [TASK-C 探针] 仿真恒 0（悬空会变 Z，约定 13）
     );
 
     initial clk = 1'b0;

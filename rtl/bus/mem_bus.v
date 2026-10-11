@@ -79,7 +79,10 @@ module mem_bus (
 
     // ---- 中断 ----
     // 定时器中断（mip.MTIP，bit7）。电平信号，直连 core.irq_timer。
-    output wire        irq_timer
+    output wire        irq_timer,
+
+    // ---- [TASK-C 探针] 假 AGU 观测口（AGU_PROBE=0 时上层给 0）----
+    input  wire [31:0] agu_probe_in
 );
 
     // ---- A.1 假 tag 路径开关（只为综合量时序；逻辑见文件末尾 mem_rdata 之前）----
@@ -100,6 +103,9 @@ module mem_bus (
     // 0 = 【默认】不例化 cache_i，取指通路逐位不变。
     // 1 = 例化 16KB/2 路组相联 I-Cache（见 rtl/bus/cache_i.v）。
     parameter ICACHE_EN = 0;
+
+    // ---- [TASK-C 探针] 假 AGU 观测口（默认关；见 core.v 的 AGU_PROBE）----
+    parameter AGU_PROBE = 0;
 
     // ------------------------------------------------------------------
     // 32 位自由跑周期计数器（27MHz），兼容区 0xFFF4 与外设区 TIMER 共用同一个。
@@ -358,6 +364,13 @@ module mem_bus (
     reg [31:0] legacy_rdata_d;
     reg [31:0] periph_rdata_d;
 
+    // [TASK-C 探针] 假 AGU 的只读回读（只为让综合器保留那条路径）
+    reg [31:0] agu_probe_r;
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) agu_probe_r <= 32'd0;
+        else         agu_probe_r <= agu_probe_in;
+    end
+
     wire [31:0] periph_rmux =
         (periph_off == `PERIPH_GPIO)       ? gpio_rdata      :
         (periph_off == `PERIPH_UART_RX)    ? uart_rx_rdata   :
@@ -366,7 +379,8 @@ module mem_bus (
         (periph_off == `PERIPH_DCACHE_HITS)? dcache_hits     :
         (periph_off == `PERIPH_DCACHE_MISS)? dcache_misses   :
         (periph_off == `PERIPH_ICACHE_HITS)? icache_hits     :
-        (periph_off == `PERIPH_ICACHE_MISS)? icache_misses   : 32'd0;
+        (periph_off == `PERIPH_ICACHE_MISS)? icache_misses   :
+        (periph_off == `PERIPH_AGU_PROBE) ? agu_probe_r     : 32'd0;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin

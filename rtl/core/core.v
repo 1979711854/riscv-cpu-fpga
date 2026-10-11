@@ -2,11 +2,18 @@
 module core #(
     // 0 = 位不变的单发射回退版（slot B 恒 invalid、第二取指结果丢弃、相关逻辑被综合裁掉）
     // 1 = 有限度 2-wide in-order 双发射
-    parameter DUAL_ISSUE = 0
+    parameter DUAL_ISSUE = 0,
+
+    // ---- [TASK-C 探针] 假 AGU（默认关）。开着只为综合量时序，功能不正确、不上板。----
+    parameter AGU_PROBE = 0
 ) (
     input  wire        clk,
     input  wire        resetn,
-    output wire [31:0] pc,            // = pc_r，板级调试/示波用
+    output wire [31:0] pc,
+
+    // ---- [TASK-C 探针] 假 AGU 观测口（AGU_PROBE=0 时恒 0、无逻辑）----
+    // 用途：量"把地址计算搬到 ID 级"要多少时序（任务书 v7 §5.C 的判据）。
+    output wire [31:0] agu_probe,
 
     // ---- 取指口（A1 口）----
     // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
@@ -1118,6 +1125,35 @@ module core #(
         // [!] 注意这里是"三者都不成立就【保持】"，不是清 ——
         //     访存停顿（mem_ready=0）属于这一类：停住不动，不清成气泡。
     end
+
+    // ==================================================================
+    // [TASK-C 探针] 假 AGU —— 只为【综合量时序】，默认关（任务书 v7 §5.C 的判据）
+    // ------------------------------------------------------------------
+    // 任务 C（消除 load-use 停顿）要把访存地址计算提前到 ID 级。这里插一条
+    // 【结构等价】的路径量它值多少 ns：
+    //     ID 级寄存器堆读 → 前递 mux → 32 位加法器 → ID/EX 寄存器
+    // 也就是"把 EX 里那个 ALU 加法器整体往前搬一级"。
+    //
+    // [!] 必须用【真实信号】喂，否则综合器会把整块当冗余删掉，得到假的"零影响"
+    //     结论（A.1 假 tag 探针的教训，见 doc/reports/2026-10-11_A1_cache_tag_probe.md）。
+    //     这里 rs1 取 rdata1（寄存器堆输出）与前递值做 2:1 mux，imm 取真实立即数，
+    //     选择端用真实的 ex_mem_reg_write —— 都消不掉。
+    // [!] AGU_PROBE=1 时 agu_probe 的值无功能意义（不上板、不跑分）；
+    //     =0 时恒 0、综合后无任何逻辑。
+    // ==================================================================
+    generate
+    if (AGU_PROBE != 0) begin : g_agu_probe
+        wire [31:0] agu_rs1 = ex_mem_reg_write ? ex_mem_forward_val : rdata1;
+        reg  [31:0] agu_r;
+        always @(posedge clk or negedge resetn) begin
+            if (!resetn) agu_r <= 32'd0;
+            else         agu_r <= agu_rs1 + imm;
+        end
+        assign agu_probe = agu_r;
+    end else begin : g_no_agu_probe
+        assign agu_probe = 32'd0;
+    end
+    endgenerate
 
     // ================= ID/EX 寄存器 =================
     always @(posedge clk or negedge resetn) begin

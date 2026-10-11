@@ -82,7 +82,8 @@ module tb_amo_int;
         .vid_vsel_d(), .vid_waddr_d(),
         .vid_rdata(32'd0),
         .done(done),
-        .irq_timer(irq_timer)
+        .irq_timer(irq_timer),
+        .agu_probe_in(32'd0)   // [TASK-C 探针] 仿真恒 0（悬空会变 Z，约定 13）
     );
 
     initial clk = 1'b0;

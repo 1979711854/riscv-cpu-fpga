@@ -83,7 +83,8 @@ module coremark_tb;
         .done(),           // 周期计数器已从 mem_bus 去掉（无使用者）
         // 接真实 MTIP：CoreMark 全程 MIE=0 且 mtimecmp 复位为全 1，
         // 所以它恒为低、不影响结果；接上是为了不让端口悬空成 Z。
-        .irq_timer(irq_timer)
+        .irq_timer(irq_timer),
+        .agu_probe_in(32'd0)   // [TASK-C 探针] 仿真恒 0（悬空会变 Z，约定 13）
     );
 
     // ========================================================================

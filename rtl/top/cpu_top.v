@@ -66,6 +66,9 @@ module cpu_top (
     // 0 = 【默认】不例化，取指通路逐位不变；1 = 开 16KB/2 路组相联 I-Cache。
     parameter ICACHE_EN = 0;
 
+    // ---- [TASK-C 探针] 假 AGU 开关（透传给 core + mem_bus）。默认 0 ----
+    parameter AGU_PROBE  = 0;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -84,7 +87,8 @@ module cpu_top (
     wire [31:0] gpio_rdata, uart_rx_rdata;
 
     // ---- 中断 ----
-    wire        irq_timer;      // mem_bus 里的 CLINT：mtime >= mtimecmp
+    wire        irq_timer;
+    wire [31:0] agu_probe;      // [TASK-C 探针] 假 AGU 的结果（AGU_PROBE=0 时恒 0）
 
     // ---- 程序结束标志 ----
     // 两个来源：CoreMark 的 0xFFF8 协议（start.S 里 main 返回后写），
@@ -102,7 +106,8 @@ module cpu_top (
 
     mem_bus #(.CACHE_TAG_PROBE(CACHE_TAG_PROBE),
               .DCACHE_EN      (DCACHE_EN),
-              .ICACHE_EN      (ICACHE_EN)) u_bus (
+              .ICACHE_EN      (ICACHE_EN),
+              .AGU_PROBE      (AGU_PROBE)) u_bus (
         .clk          (clk),
         .resetn       (resetn),
         .imem_addr    (imem_addr),
@@ -124,6 +129,7 @@ module cpu_top (
         .uart_rx_rdata(uart_rx_rdata),
         .done         (done_mmio),
         .irq_timer    (irq_timer),
+        .agu_probe_in (agu_probe),
         // 视频：翻译码在 mem_bus 里，显存本体在 video_top 里，这里只透传
         .vid_we       (vid_we),
         .vid_vsel     (vid_vsel),
@@ -135,10 +141,11 @@ module cpu_top (
         .vid_rdata    (vid_rdata)
     );
 
-    core #(.DUAL_ISSUE(DUAL_ISSUE)) u_core (
+    core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),
+        .agu_probe   (agu_probe),
         .imem_addr   (imem_addr),
         .imem_rd     (imem_rd),
         .imem_addr2  (imem_addr2),
