@@ -13,7 +13,8 @@
 | `gomoku_dual_hud_60hz_rv32a_8c229a21.sbit` | 双发射 + HUD + **A 扩展** @85MHz —— **时序 −0.096 ns，不可用**（留作"单 seed 不收敛"的证据）| `8c229a21` |
 | `gomoku_dual_aext_ms_85mhz_3418c5fc.sbit` | 双发射 + HUD + **A 扩展** + **多 seed 布局** —— slack +0.064 ns | `3418c5fc` |
 | `gomoku_dual_aext_ms_85mhz_addrfix_f00c6659.sbit` | 上面那版 + **`imem_addr2` 截位修复**（约定 40）—— slack +0.236 ns。**已上板**（2026-10-10，两局五子棋正常，屏幕正常）| `f00c6659` |
-| **`coremark_dual_aext_ms_stage01_4f1b0977.sbit`** | **当前最新（2026-10-10）**：`imem_addr2` 修复 + 版本自证 + **阶段0（-O3 编译选项）+ 阶段1（到达级分支重定向）** —— CoreMark **ITER=3796** @85MHz，slack **+0.544 ns**（89.13 MHz），失败端点 0。预期板上 ~11.70 s / **324 分**。**尚未上板** | `4f1b0977` |
+| **`coremark_dual_aext_ms_stage01_a0cache_03d8a7eb.sbit`** | **当前最新（2026-10-11）**：`4f1b0977` + **A.0（`mem_ready`/访存停顿收尾）+ I/D Cache 骨架（默认关，等于没有）+ 外设 one-shot 门控**。slack **+0.578 ns**（89.40 MHz），失败端点 0，ITER=3796。**串口日志与 `4f1b0977` 逐位应一致**（Cache 关时功能逐位不变）| `03d8a7eb` |
+| `coremark_dual_aext_ms_stage01_4f1b0977.sbit` | **当前最新（2026-10-10）**：`imem_addr2` 修复 + 版本自证 + **阶段0（-O3 编译选项）+ 阶段1（到达级分支重定向）** —— CoreMark **ITER=3796** @85MHz，slack **+0.544 ns**（89.13 MHz），失败端点 0。预期板上 ~11.70 s / **324 分**。**尚未上板** | `4f1b0977` |
 | `coremark_dual_aext_ms_85mhz_mimpid_492714a8.sbit` | `imem_addr2` 修复 + **版本自证**（`mimpid` 打出 `RTL=`，约定 42）—— CoreMark ITER=3170 @85MHz，slack +0.525 ns，失败端点 0。**已板上实测 270.82** | `492714a8` |
 | **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
@@ -21,6 +22,9 @@
 > [!] 旧的 `gomoku_dual_hud_85mhz_e5bc227a.sbit`（60.71Hz）保留作对照 ——
 > **它能复现"画面抖动/撕裂"那个症状**，是刷新率那条结论的证据。
 
+> [!] **2026-10-11 起"当前源码"对应的是 `03d8a7eb`**（A.0 + Cache 骨架，Cache 默认关）。
+> `4f1b0977` 保留作它的对照。
+>
 > [!] **`4f1b0977` 才是"当前源码"对应的位流**（2026-10-10，阶段0+1）——
 > 串口第一行应为 `[build] FW=COREMARK RTL=0x2026_1011`（`DESIGN_REV` 已递增，
 > **自证是阶段1 之后的网表**；`492714a8` / `7b6e5e05` 读出来的都是 `0x2026_1010`）。
