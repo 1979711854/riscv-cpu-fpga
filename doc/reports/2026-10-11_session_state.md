@@ -46,7 +46,7 @@
 
 | 序 | 任务 | 理由 |
 |---|---|---|
-| **1** | **确认生产位流已重出**（`build_bitstream.ps1 coremark`，Cache 关） | 收尾动作，别让 `generate_bitstream/` 里躺着一版带 Cache 的 |
+| ~~1~~ | ~~生产位流重出~~ | ✅ **已完成**：md5 `03d8a7eb`，slack **+0.578 ns**（89.40 MHz），归档 `bitstreams/coremark_dual_aext_ms_stage01_a0cache_03d8a7eb.sbit` |
 | **2** | **任务 C：消除 load-use 停顿**（+10.4% 上限） | **真涨分的那一项**。**先按 §5.C 判据做假路径评估**（半天），再决定全量做 |
 | 3 | Cache 重估 | 只在任务 C 做完之后。**C 不自动让 Cache 收敛**，那是假说 |
 | 4 | E. 双发射配对率（+3.5~7%，低风险） | 只改 `pair_now`，顺手可做 |
@@ -73,10 +73,13 @@
 | | |
 |---|---|
 | 仓库 | `D:\riscv-cpu-fpga_merged`，分支 `dualissue` |
-| 工作区 | 见 `git status`（本会话的提交在下面一条里） |
+| 工作区 | **干净**（全部已提交） |
+| 生产位流 | `bitstreams/coremark_dual_aext_ms_stage01_a0cache_03d8a7eb.sbit`（md5 `03d8a7eb`，ITER=3796，预期 324.4 分） |
+| 板上 | **本会话未烧** —— Cache 开的四个配置全部时序不收敛；Cache 关的生产位流与已上板验证过的 `4f1b0977` 功能逐位相同 |
 | 未推送 | 本会话的提交**未 push**（代理 `127.0.0.1:31181` 要开着） |
 
 **本会话提交**：
 * `073578a` feat(cache): 并入队友 A.0/A.1 + 实现 16KB 2 路组相联 D-Cache（默认关）
 * `583b459` feat(cache): I-Cache（16KB/2 路组相联，默认关）+ 外设 one-shot 门控
-* （本条文档 + Cache 参数化 + 主报告，见最后一个提交）
+* `d8b2a40` docs(cache): 四个时序配置实测 + 答辩口径 + 会话备忘
+* `1961b84` build(cache): 生产位流重出并归档 —— md5 `03d8a7eb`，slack +0.578 ns（无退化）
