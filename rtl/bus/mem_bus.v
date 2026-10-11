@@ -82,6 +82,20 @@ module mem_bus (
     output wire        irq_timer
 );
 
+    // ---- A.1 假 tag 路径开关（只为综合量时序；逻辑见文件末尾 mem_rdata 之前）----
+    // 0 = 逐位不变（访存读数据 = ram_rdata）。1 = 插入"假 tag 比较 + way mux"。
+    // 同 DUAL_ISSUE：PDS 命令行传不了 -D 宏，所以靠 parameter 默认值切换，
+    // 综合量时序时临时把 cpu_top.v 里的默认值改成 1，量完改回 0。
+    parameter CACHE_TAG_PROBE = 0;
+
+    // ---- D-Cache 开关（高阶任务①）----
+    // 0 = 【默认】不例化 cache_d，访存通路逐位不变（跑分口径）。
+    // 1 = 例化 16KB/2 路组相联 D-Cache（见 rtl/bus/cache_d.v）。
+    // 同 DUAL_ISSUE / CACHE_TAG_PROBE：PDS 命令行传不了 -D，靠参数默认值切换，
+    // 由 cpu_top.v 透传。
+    // [!] 打开时 cpu_top.v 的默认值也要一起改（仿真侧 tb_* 直接传参数）。
+    parameter DCACHE_EN = 0;
+
     // ------------------------------------------------------------------
     // 32 位自由跑周期计数器（27MHz），兼容区 0xFFF4 与外设区 TIMER 共用同一个。
     // CoreMark 的 get_time() 与 ee_printf 的忙等都靠它，必须保持 1 拍可读。
@@ -201,11 +215,78 @@ module mem_bus (
         .b_ready  (ram_ready)
     );
 
+    // ==================================================================
+    // [D-Cache] 高阶任务① 的 L1 数据 Cache（默认关）
+    // ------------------------------------------------------------------
+    // 位置：夹在 core 的访存口与 unified_mem 的 B 口之间，**只缓存读**；
+    //   写仍由上面 u_mem 的 .b_wr_en 组合打进 BRAM（写通、零寄存器），
+    //   所以 st_ld / fence.i（自改码）语义与不开 Cache 时【完全一致】。
+    // 缺失停一拍：d_stall_w → mem_ready 拉低 → core 走既有的 freeze 通路
+    //   （A.0 收尾的那套 mem_ready/mem_ready_int 就是为这个准备的）。
+    // [!] 本模块的唯一消费者是【load】的结果：ram_rdata_eff 只在 rsel_d==0
+    //     那一支里被选，而 store 的 WB 级不读 mem_rdata，所以 store 命中
+    //     时数据阵列的"同址读写"不会污染任何东西（见 cache_d.v 的注释）。
+    // [!] 必须先于下面的 mem_ready 声明（iverilog 14 要求先声明后使用 —— 约定 1）。
+    // ==================================================================
+    wire        d_stall_w;
+    wire [31:0] d_rdata_w;
+    wire        d_hit_w;
+    wire        d_miss_w;
+
+    generate
+    if (DCACHE_EN != 0) begin : g_dcache
+        cache_d u_dcache (
+            .clk       (clk),
+            .resetn    (resetn),
+            .req       (ram_hit && (mem_re || mem_we)),
+            .we        (mem_we),
+            .word      (ram_word),
+            .wdata     (mem_wdata),
+            .be        (mem_byte_en),
+            .bram_rdata(ram_rdata),
+            .stall     (d_stall_w),
+            .rdata     (d_rdata_w),
+            .hit_pulse (d_hit_w),
+            .miss_pulse(d_miss_w)
+        );
+    end else begin : g_nodcache
+        assign d_stall_w = 1'b0;
+        assign d_rdata_w = 32'd0;
+        assign d_hit_w   = 1'b0;
+        assign d_miss_w  = 1'b0;
+    end
+    endgenerate
+
+    // ------------------------------------------------------------------
+    // Cache 命中/缺失计数器（答辩证据；默认关时恒 0）
+    // ------------------------------------------------------------------
+    reg [31:0] dcache_hits;
+    reg [31:0] dcache_misses;
+
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            dcache_hits   <= 32'd0;
+            dcache_misses <= 32'd0;
+        end else begin
+            if (d_hit_w)  dcache_hits   <= dcache_hits   + 32'd1;
+            if (d_miss_w) dcache_misses <= dcache_misses + 32'd1;
+        end
+    end
+
     // [!] 现在只有 RAM 参与就绪。命中 RAM 时听 RAM 的 b_ready；其余地址
     //     （兼容区 / 外设区 / 视频区）都是 1 拍必回，直接给 1 —— 视频显存的
     //     A 口也是同步 BRAM，地址进、次拍数据出，与统一存储器同拍。
     //     日后加 APB/AXI 桥时，把桥的 ready 也并进来（相与）。
-    assign mem_ready = ram_hit ? ram_ready : 1'b1;
+    // [A.0 修复] 只在【真的有一次 RAM 访存在途】时才跟随 ram_ready。
+    //   原来写成 `ram_hit ? ram_ready : 1'b1` —— 只要 MEM 级指令的 mem_addr 落在
+    //   RAM 段就听 ram_ready，哪怕那条指令根本不是 load/store（非访存指令的
+    //   alu_result 也常落在 0x0~0xEFFF）⇒ 空闲期 mem_ready 也会被自由跑的
+    //   ram_ready 拉低，违反 bus_upgrade_plan §3.1 契约第 5 条
+    //   （"空闲期 mem_ready 必须为 1，不允许在没有访存在途时拉低"）。
+    //   MEMWAIT=0 时 ram_ready≡1 ⇒ 本行与原来【逐位相同】。
+    // [D-Cache] 但 D-Cache 缺失时还要再压一拍（缺失只有 1 拍：见 cache_d.v 时序）——
+    //   缺的那一拍里后端 BRAM 的 ram_rdata 正好就是本条 load 的字，所以数据仍然对齐。
+    assign mem_ready = (ram_hit && (mem_re || mem_we)) ? (ram_ready && !d_stall_w) : 1'b1;
 
     // ------------------------------------------------------------------
     // 读数据选择位 + 非 RAM 源的读数据，都在 MEM→WB 沿寄存（约束 2）
@@ -215,10 +296,12 @@ module mem_bus (
     reg [31:0] periph_rdata_d;
 
     wire [31:0] periph_rmux =
-        (periph_off == `PERIPH_GPIO)     ? gpio_rdata    :
-        (periph_off == `PERIPH_UART_RX)  ? uart_rx_rdata :
-        (periph_off == `PERIPH_TIMER)    ? cyc           :   // = mtime
-        (periph_off == `PERIPH_MTIMECMP) ? mtimecmp      : 32'd0;
+        (periph_off == `PERIPH_GPIO)       ? gpio_rdata      :
+        (periph_off == `PERIPH_UART_RX)    ? uart_rx_rdata   :
+        (periph_off == `PERIPH_TIMER)      ? cyc             :   // = mtime
+        (periph_off == `PERIPH_MTIMECMP)   ? mtimecmp        :
+        (periph_off == `PERIPH_DCACHE_HITS)? dcache_hits     :
+        (periph_off == `PERIPH_DCACHE_MISS)? dcache_misses   : 32'd0;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
@@ -240,9 +323,44 @@ module mem_bus (
         end
     end
 
+    // ==================================================================
+    // [A.1] 假 tag 路径（CACHE_TAG_PROBE）—— 只为【综合量时序】，默认关
+    // ------------------------------------------------------------------
+    // 目的：真做 I/D Cache 时，"set 索引 → 读两路 tag → 与地址 tag 比较 →
+    //   way 选择 → 数据 mux" 这一段会压到访存关键路径上，而当前余量只有
+    //   4.6%（+0.544 ns）。先插一条【结构等价】的假路径综合一次，量出它到底
+    //   吃掉多少余量，再决定要不要写完整 Cache（任务书 v7 §5.A.1）。
+    //
+    // [!] 为什么 tag 和数据都借【真实信号】而不是接常数：
+    //   一条"恒命中"的假逻辑是【冗余】的，综合器会整个消掉 → 时序报告纹丝
+    //   不动 → 得到假的"无影响"结论（这正是本步最大的坑）。这里把 tag/数据
+    //   都接到真实存储端口上（ram_rdata / imem_rd / imem_rd2 / vid_rdata 对
+    //   综合器都是未知内容），比较结果确实未知、mux 选择确实有效 ⇒ 逻辑
+    //   一定保留，量到的就是"真加 Cache 会多深"。
+    //   代价：PROBE=1 时访存读数据不再等于 ram_rdata（功能不正确、CoreMark
+    //   会错）—— 但本开关【只用于综合量时序】，默认关、不上板、不跑分。
+    //   PROBE=0 时三目被常量折叠成 ram_rdata 直通 ⇒ 逐位不变。
+    // ==================================================================
+    wire [19:0] p_addr_tag = mem_addr[31:12];   // 地址 tag（20 位，同真实 Cache）
+    wire [19:0] p_tag0     = ram_rdata[31:12];  // "way0 存的 tag"（借 BRAM 读数据）
+    wire [19:0] p_tag1     = imem_rd2[31:12];   // "way1 存的 tag"（借第二取指口）
+    wire        p_hit0     = (p_tag0 == p_addr_tag);
+    wire        p_hit1     = (p_tag1 == p_addr_tag);
+    wire [31:0] p_d0       = ram_rdata;         // way0 数据
+    wire [31:0] p_d1       = imem_rd;           // way1 数据（独立真实源，防折叠）
+    wire [31:0] p_fill     = vid_rdata;         // 缺失回填口（第三个真实源）
+    // 两级 mux：way 选择（命中 way0 优先）+ 命中/回填选择 —— 与真实 Cache 同深
+    wire [31:0] p_way_data = p_hit0 ? p_d0 : p_d1;
+    wire [31:0] p_rdata    = (p_hit0 | p_hit1) ? p_way_data : p_fill;
+
+    // [D-Cache] DCACHE_EN=1 时访存读数据改为走 cache_d（命中给阵列数据、
+    //   缺失那两拍直通后端 BRAM）；两个开关互斥使用，默认都为 0 ⇒ 逐位是 ram_rdata。
+    wire [31:0] ram_rdata_eff = (CACHE_TAG_PROBE != 0) ? p_rdata   :
+                                (DCACHE_EN       != 0) ? d_rdata_w : ram_rdata;
+
     assign mem_rdata = (rsel_d == 2'd3) ? vid_rdata :
                        (rsel_d == 2'd1) ? legacy_rdata_d :
-                       (rsel_d == 2'd2) ? periph_rdata_d : ram_rdata;
+                       (rsel_d == 2'd2) ? periph_rdata_d : ram_rdata_eff;
 
     // ------------------------------------------------------------------
     // 外设写选通（组合，零拍；u8 写入按低字节取，与 sb/sh/sw 都兼容）

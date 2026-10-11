@@ -982,7 +982,28 @@ module core #(
     // ================= WB =================
     // mem_rdata 由 mem_bus 在 MEM→WB 沿给出（RAM / 兼容区 / 外设区一律 1 拍
     // 延迟，无特例），load 指令进入 WB 阶段时正好有效。
-    wire [31:0] load_src = mem_rdata;
+    //
+    // [A.0 修复] 但 mem_rdata 是【实时】的，只在"WB 恰好一拍"时才对：
+    //   mem_ready=0 会把 MEM/WB 冻住（见文件尾），同一条 load 于是在 WB 里滞留
+    //   多拍。第二拍起 mem_rdata 已经跟到 MEM 级【更年轻那条】指令的地址上，
+    //   写回值 wb_data 与 WB→EX 前递值一起被改错 —— MEMWAIT=0 时看不出来
+    //   （永不冻结），+MEMWAIT 下每对相邻访存就炸一次。
+    //   所以停顿的第一个沿把当时（仍属于本条 load）的读数据抓进快照、之后一直
+    //   用它。mem_ready_int=1 时快照恒不生效 ⇒ MEMWAIT=0 逐位不变。
+    reg [31:0] wb_rdata_snap;
+    reg        wb_rdata_snap_en;
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            wb_rdata_snap    <= 32'd0;
+            wb_rdata_snap_en <= 1'b0;
+        end else if (mem_ready_int) begin
+            wb_rdata_snap_en <= 1'b0;          // WB 正常推进：下条指令用实时 mem_rdata
+        end else if (!wb_rdata_snap_en) begin  // 停顿第一个沿：抓一次（此后 mem_rdata 已失效）
+            wb_rdata_snap    <= mem_rdata;
+            wb_rdata_snap_en <= 1'b1;
+        end
+    end
+    wire [31:0] load_src = wb_rdata_snap_en ? wb_rdata_snap : mem_rdata;
     wire [7:0]  load_byte = (mem_wb_addr_low == 2'd0) ? load_src[7:0]   :
                             (mem_wb_addr_low == 2'd1) ? load_src[15:8]  :
                             (mem_wb_addr_low == 2'd2) ? load_src[23:16] :
@@ -1218,7 +1239,16 @@ module core #(
     always @(posedge clk or negedge resetn) begin
         // [!] AMO 占 MEM 期间必须【保持】EX/MEM —— 跑状态机的就是它，
         //     清掉它 = 读-改-写被拦腰截断（trap/mc_stall 同理一律压住）。
-        if (!resetn || ((mc_stall || trap) && !amo_hold)) begin
+        // [A.0 修复] 还必须门控 mem_ready_int：访存停顿（EX/MEM 里是一条尚未
+        //     完成的 load/store）与 EX 级 mc_stall（mul/div 多拍）可以【同时】成立
+        //     —— 前一条是访存、紧邻一条是 mul/div 时就会撞上。若此时仍按 mc_stall
+        //     把 EX/MEM 清成气泡，停在 MEM 的那条访存就【永久丢失】其寄存器写/内存写。
+        //     实测：+MEMWAIT=1 下 matrix_test 内层的 lh 紧邻 mul，lh 写回被吃、
+        //     后续 mul 拿错操作数，matrix CRC 全错。
+        //     mem_ready_int=0 时整条流水线冻结、任何平移都不能发生，故清 EX/MEM
+        //     也必须一起压住。对 trap 同样安全：那拍 ID/EX 已被 trap 清空，
+        //     放开后 EX/MEM <= 气泡，效果与当场清等价；而更老的访存得以正常退休。
+        if (!resetn || ((mc_stall || trap) && !amo_hold && mem_ready_int)) begin
             ex_mem_reg_write  <= 1'b0;
             ex_mem_mem_read   <= 1'b0;
             ex_mem_mem_write  <= 1'b0;

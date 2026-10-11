@@ -16,6 +16,11 @@
                                    *      只接受整字写（sw），sb/sh 会被忽略。
                                    *      复位值为全 1，所以上电时不会误触发。
                                    *      要开中断还需 mie.MTIE(bit7) 与 mstatus.MIE(bit3)。*/
+/* Cache 命中/缺失计数器（只读，高阶任务①的答辩证据）
+ *   只在 mem_bus 的 DCACHE_EN=1 时累加；默认关时两者恒 0。
+ *   命中率 = HITS / (HITS + MISSES)。用 *(volatile unsigned int*) 整字读。 */
+#define DCACHE_HITS 0x80000018u   /* R: D-Cache 命中的 load 次数 */
+#define DCACHE_MISS 0x8000001Cu   /* R: D-Cache 缺失的 load 次数 */
 
 /* ---------------------------------------------------------------------------
  * 视频区 —— tile PPU 背景层。分界线：addr[17:16]==0 是外设区，非 0 是视频区。

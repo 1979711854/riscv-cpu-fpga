@@ -39,7 +39,16 @@ module tb_amo_int;
 `else
     localparam DUAL_OUT = 0;
 `endif
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d", DUAL_OUT);
+    // D-Cache 开关：编译时加 -DDCACHE 即用 DCACHE_EN=1（高阶任务①）。
+    // 与 DUAL 同理：脚本必须【显式】传，默认关 —— 跑分一律用关的配置。
+`ifdef DCACHE
+    localparam DCACHE_OUT = 1;
+`else
+    localparam DCACHE_OUT = 0;
+`endif
+
+    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d", DUAL_OUT, DCACHE_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
@@ -53,7 +62,7 @@ module tb_amo_int;
         .irq_ext  (1'b0)
     );
 
-    mem_bus u_bus (
+    mem_bus #(.DCACHE_EN(DCACHE_OUT)) u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),

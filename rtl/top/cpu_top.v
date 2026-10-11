@@ -51,6 +51,17 @@ module cpu_top (
     //   仿真侧另有编译期开关：tb_riscv / tb_coremark 加 -DDUAL 即用 1。
     parameter DUAL_ISSUE = 1;
 
+    // ---- A.1 假 tag 路径开关（透传给 mem_bus）----
+    // 0 = 逐位不变（默认）。1 = 在访存读通路上插"假 tag 比较 + way mux"，
+    //   只为综合量时序（任务书 v7 §5.A.1），不上板、不跑分。同 DUAL_ISSUE：
+    //   PDS 命令行传不了 -D，所以靠这个默认值切换。
+    parameter CACHE_TAG_PROBE = 0;
+
+    // ---- D-Cache 开关（高阶任务①）----
+    // 0 = 【默认】不例化，跑分口径不变；1 = 开 16KB/2 路组相联 D-Cache。
+    // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。
+    parameter DCACHE_EN = 0;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -85,7 +96,8 @@ module cpu_top (
     end
     assign done = done_mmio | halt;
 
-    mem_bus u_bus (
+    mem_bus #(.CACHE_TAG_PROBE(CACHE_TAG_PROBE),
+              .DCACHE_EN      (DCACHE_EN)) u_bus (
         .clk          (clk),
         .resetn       (resetn),
         .imem_addr    (imem_addr),
