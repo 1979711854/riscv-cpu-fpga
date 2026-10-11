@@ -62,6 +62,12 @@
         85 MHz 下大概率不收敛，通常要配合降频（改 ipcore/pll/pll.idf 的 STATIC_RATIO0）
         一起用 —— 降频记得同步 CLAUDE.md 约定 27 的 4 处常量 + ITER + expectLines。
 
+.PARAMETER DCacheOnly
+    [任务C 之后新增] 只开 **D-Cache**（DCACHE_EN=1 / ICACHE_EN=0）。
+    用途：实测（2026-10-11）D-Cache 在 85 MHz 下**不再吃余量**（+0.151 ns），
+    所以这一版是"85 MHz 下带 2 路组相联 D-Cache"的可交付位流；
+    而 I+D 全开仍不收敛（−0.844 ns），要用 -Cache + 降频。
+
 .PARAMETER Single
     综合【单发射】回退版（把 cpu_top.v 的 DUAL_ISSUE 临时改成 0，结束后自动还原）。
     默认是双发射(1)。
@@ -84,7 +90,8 @@ param(
     [int]$Iter = 4116,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
-    [switch]$Cache,       # 综合【带 I/D Cache】版（高阶任务①）：DCACHE_EN=ICACHE_EN 临时改 1，结束还原
+    [switch]$Cache,
+    [switch]$DCacheOnly,       # 综合【带 I/D Cache】版（高阶任务①）：DCACHE_EN=ICACHE_EN 临时改 1，结束还原
 
     [switch]$NoBuild
 )
@@ -170,9 +177,14 @@ if ($Cache) {
         exit 1
     }
     $cacheNewTxt = $cacheOrigTxt -replace 'parameter\s+DCACHE_EN\s*=\s*\d+', 'parameter DCACHE_EN = 1'
-    $cacheNewTxt = $cacheNewTxt -replace 'parameter\s+ICACHE_EN\s*=\s*\d+', 'parameter ICACHE_EN = 1'
-    [System.IO.File]::WriteAllText($cpuTopFile, $cacheNewTxt, $utf8NoBomCpuTop)
-    Write-Host "    -Cache：cpu_top.v 的 DCACHE_EN / ICACHE_EN 临时改为 1（结束时自动还原）" -ForegroundColor Green
+    if ($DCacheOnly) {
+        # 只开 D：I-Cache 那条取指链在 85 MHz 下仍不收敛（实测 −0.844 ns）
+        $cacheNewTxt = $cacheNewTxt -replace 'parameter\s+ICACHE_EN\s*=\s*\d+', 'parameter ICACHE_EN = 0'
+        Write-Host "    -DCacheOnly：cpu_top.v 的 DCACHE_EN=1 / ICACHE_EN=0（结束时自动还原）" -ForegroundColor Green
+    } else {
+        $cacheNewTxt = $cacheNewTxt -replace 'parameter\s+ICACHE_EN\s*=\s*\d+', 'parameter ICACHE_EN = 1'
+        Write-Host "    -Cache：cpu_top.v 的 DCACHE_EN / ICACHE_EN 临时改为 1（结束时自动还原）" -ForegroundColor Green
+    }
     Write-Host "    [!] 固件侧要把 0x8000_0018~0x24 的命中/缺失计数打出来看效果" -ForegroundColor DarkGray
 }
 
