@@ -96,6 +96,11 @@ module mem_bus (
     // [!] 打开时 cpu_top.v 的默认值也要一起改（仿真侧 tb_* 直接传参数）。
     parameter DCACHE_EN = 0;
 
+    // ---- I-Cache 开关（高阶任务①）----
+    // 0 = 【默认】不例化 cache_i，取指通路逐位不变。
+    // 1 = 例化 16KB/2 路组相联 I-Cache（见 rtl/bus/cache_i.v）。
+    parameter ICACHE_EN = 0;
+
     // ------------------------------------------------------------------
     // 32 位自由跑周期计数器（27MHz），兼容区 0xFFF4 与外设区 TIMER 共用同一个。
     // CoreMark 的 get_time() 与 ee_printf 的忙等都靠它，必须保持 1 拍可读。
@@ -193,10 +198,14 @@ module mem_bus (
     wire [31:0] ram_rdata;
     wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 
+    // [!] A1 口的读数据先落到内部线 a1_bram，再由下面的 I-Cache（或直通）驱动
+    //     imem_rd。A2 口【不经过 I-Cache】，直连 imem_rd2（理由见 cache_i.v 文件头）。
+    wire [31:0] a1_bram;
+
     unified_mem u_mem (
         // A1 口：取指 1（只读）
         .a_addr   (imem_addr),
-        .a_rd_data(imem_rd),
+        .a_rd_data(a1_bram),
         .a_clk    (clk),
         .a_rst    (~resetn),
         // A2 口：取指 2（只读，双发射第二读口；与 A1 同域）
@@ -273,6 +282,56 @@ module mem_bus (
         end
     end
 
+    // ==================================================================
+    // [I-Cache] 高阶任务① 的 L1 指令 Cache（默认关）
+    // ------------------------------------------------------------------
+    // 只缓存 A1（imem_addr）；A2（imem_addr2）仍直连 BRAM —— 它恒 1 拍就绪、
+    // 与 A1 天然同拍，缓存它只会多花 16KB BRAM 与两套 tag（见 cache_i.v）。
+    // 缺失时用 mem_ready 当取指停顿（取指口没有就绪信号，理由见 cache_i.v）。
+    // ==================================================================
+    wire        i_stall_w;
+    wire [31:0] i_rdata_w;
+    wire        i_hit_w;
+    wire        i_miss_w;
+
+    generate
+    if (ICACHE_EN != 0) begin : g_icache
+        cache_i u_icache (
+            .clk       (clk),
+            .resetn    (resetn),
+            .word      (imem_addr),
+            .bram_rdata(a1_bram),
+            .stall     (i_stall_w),
+            .rdata     (i_rdata_w),
+            .hit_pulse (i_hit_w),
+            .miss_pulse(i_miss_w)
+        );
+    end else begin : g_noicache
+        assign i_stall_w = 1'b0;
+        assign i_rdata_w = 32'd0;
+        assign i_hit_w   = 1'b0;
+        assign i_miss_w  = 1'b0;
+    end
+    endgenerate
+
+    assign imem_rd = (ICACHE_EN != 0) ? i_rdata_w : a1_bram;
+
+    // ------------------------------------------------------------------
+    // I-Cache 命中/缺失计数器（答辩证据；默认关时恒 0）
+    // ------------------------------------------------------------------
+    reg [31:0] icache_hits;
+    reg [31:0] icache_misses;
+
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            icache_hits   <= 32'd0;
+            icache_misses <= 32'd0;
+        end else begin
+            if (i_hit_w)  icache_hits   <= icache_hits   + 32'd1;
+            if (i_miss_w) icache_misses <= icache_misses + 32'd1;
+        end
+    end
+
     // [!] 现在只有 RAM 参与就绪。命中 RAM 时听 RAM 的 b_ready；其余地址
     //     （兼容区 / 外设区 / 视频区）都是 1 拍必回，直接给 1 —— 视频显存的
     //     A 口也是同步 BRAM，地址进、次拍数据出，与统一存储器同拍。
@@ -286,7 +345,11 @@ module mem_bus (
     //   MEMWAIT=0 时 ram_ready≡1 ⇒ 本行与原来【逐位相同】。
     // [D-Cache] 但 D-Cache 缺失时还要再压一拍（缺失只有 1 拍：见 cache_d.v 时序）——
     //   缺的那一拍里后端 BRAM 的 ram_rdata 正好就是本条 load 的字，所以数据仍然对齐。
-    assign mem_ready = (ram_hit && (mem_re || mem_we)) ? (ram_ready && !d_stall_w) : 1'b1;
+    // [I-Cache] 取指缺失也必须压 mem_ready（取指口没有就绪信号，理由见 cache_i.v）。
+    //   [!] 它是【无条件】相与的：哪怕本拍是外设访问，取指缺失也要把整条流水线冻住
+    //       —— 代价是外设选通会多高着几拍，所以下面三个选通必须做 one-shot 门控。
+    wire mem_ready_core = (ram_hit && (mem_re || mem_we)) ? (ram_ready && !d_stall_w) : 1'b1;
+    assign mem_ready = mem_ready_core && !i_stall_w;
 
     // ------------------------------------------------------------------
     // 读数据选择位 + 非 RAM 源的读数据，都在 MEM→WB 沿寄存（约束 2）
@@ -301,7 +364,9 @@ module mem_bus (
         (periph_off == `PERIPH_TIMER)      ? cyc             :   // = mtime
         (periph_off == `PERIPH_MTIMECMP)   ? mtimecmp        :
         (periph_off == `PERIPH_DCACHE_HITS)? dcache_hits     :
-        (periph_off == `PERIPH_DCACHE_MISS)? dcache_misses   : 32'd0;
+        (periph_off == `PERIPH_DCACHE_MISS)? dcache_misses   :
+        (periph_off == `PERIPH_ICACHE_HITS)? icache_hits     :
+        (periph_off == `PERIPH_ICACHE_MISS)? icache_misses   : 32'd0;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
@@ -376,10 +441,22 @@ module mem_bus (
     //     而且是静默数据损坏。**那时必须把这三个选通与"本次访问的首次那一拍"
     //     相与**（桥里锁存一个 one-shot，或者在 core 引出 mem_req）。
     //     详见 doc/reports/2026-09-27_bus_upgrade_plan.md §3。
-    assign gpio_we      = periph_hit && mem_we && (periph_off == `PERIPH_GPIO);
-    assign uart_tx_we   = (periph_hit && mem_we && (periph_off == `PERIPH_UART_TX))
-                          || (legacy_utx && mem_we);
-    assign uart_rx_ack  = periph_hit && mem_re && (periph_off == `PERIPH_UART_RX);
+    // [I-Cache] **上面那条警告现在成真了**：取指缺失会压 mem_ready，于是外设访问
+    //   可能被冻住若干拍。所以按 bus_upgrade_plan §3 说的做法补 one-shot 门控：
+    //   只在"本次访问的首次那一拍"放选通。
+    //   判据：`bus_stall_r` 是上一拍 mem_ready 的反相 —— 正常（不冻）时恒 0，
+    //   所以缓存关时本门控恒为 1，行为逐位不变。
+    reg bus_stall_r;
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) bus_stall_r <= 1'b0;
+        else         bus_stall_r <= !mem_ready;
+    end
+    wire bus_first = !bus_stall_r;
+
+    assign gpio_we      = periph_hit && mem_we && (periph_off == `PERIPH_GPIO) && bus_first;
+    assign uart_tx_we   = ((periph_hit && mem_we && (periph_off == `PERIPH_UART_TX))
+                          || (legacy_utx && mem_we)) && bus_first;
+    assign uart_rx_ack  = periph_hit && mem_re && (periph_off == `PERIPH_UART_RX) && bus_first;
     assign periph_wdata = mem_wdata;
 
     // ------------------------------------------------------------------

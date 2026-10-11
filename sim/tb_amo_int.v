@@ -47,8 +47,15 @@ module tb_amo_int;
     localparam DCACHE_OUT = 0;
 `endif
 
+    // I-Cache 开关：编译时加 -DICACHE 即用 ICACHE_EN=1（高阶任务①）。默认关。
+`ifdef ICACHE
+    localparam ICACHE_OUT = 1;
+`else
+    localparam ICACHE_OUT = 0;
+`endif
+
     // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d", DUAL_OUT, DCACHE_OUT);
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d", DUAL_OUT, DCACHE_OUT, ICACHE_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
@@ -62,7 +69,7 @@ module tb_amo_int;
         .irq_ext  (1'b0)
     );
 
-    mem_bus #(.DCACHE_EN(DCACHE_OUT)) u_bus (
+    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT)) u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),

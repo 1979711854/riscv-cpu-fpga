@@ -4,6 +4,7 @@
     [int]$FirstN = 0,           # >0 时只跑前 N 个测试（快速回归用）
     [int]$MemWait = 0,          # >0 时给访存注入等待（+MEMWAIT=n，验 mem_ready 停顿逻辑）；0 = 逐位不变
     [switch]$DCache,            # 打开 D-Cache（-DDCACHE，DCACHE_EN=1）。默认关
+    [switch]$ICache,            # 打开 I-Cache（-DICACHE，ICACHE_EN=1）。默认关
     [switch]$Single,            # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
 )
@@ -20,6 +21,7 @@
 $ErrorActionPreference = "Stop"
 $dualIssue = if ($Single) { 0 } else { 1 }
 $dcacheEn  = if ($DCache) { 1 } else { 0 }
+$icacheEn  = if ($ICache) { 1 } else { 0 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $env:PATH = "$Toolchain;$env:PATH"
@@ -87,7 +89,8 @@ if ($FirstN -gt 0) { $elfs = $elfs[0..([Math]::Min($FirstN, $elfs.Count) - 1)] }
 # vvp 文件名带配置后缀，避免"单发射产物"被误当成双发射的构建结果。
 $vvpName = if ($dualIssue -eq 1) { "tb_riscv_dual.vvp" } else { "tb_riscv_single.vvp" }
 if ($dcacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_dcache.vvp" }
-Write-Host "[2/3] 编译 testbench ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn（$vvpName）"
+if ($icacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_icache.vvp" }
+Write-Host "[2/3] 编译 testbench ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn（$vvpName）"
 $sim = Join-Path $repo "sim"
 $vvp = Join-Path $sim $vvpName
 $rtl = @()
@@ -97,6 +100,7 @@ foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
 $defs = @()
 if ($dualIssue -eq 1) { $defs += "-DDUAL" }
 if ($dcacheEn  -eq 1) { $defs += "-DDCACHE" }
+if ($icacheEn  -eq 1) { $defs += "-DICACHE" }
 $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
@@ -117,7 +121,7 @@ if ($widthWarn.Count -gt 0) {
 }
 
 # ---- 3) 逐个跑 ----
-Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn MEMWAIT=$MemWait）"
+Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn MEMWAIT=$MemWait）"
 $pass = 0; $fail = 0; $timeout = 0; $other = 0
 $lines = @()
 foreach ($elf in $elfs) {
@@ -137,9 +141,9 @@ foreach ($elf in $elfs) {
     Write-Host ("  {0,-10} {1}" -f $name, $txt)
 }
 
-@("SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn MEMWAIT=$MemWait") + $lines | Set-Content (Join-Path $prog "results.txt")
+@("SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn MEMWAIT=$MemWait") + $lines | Set-Content (Join-Path $prog "results.txt")
 Write-Host ""
 Write-Host "======== 汇总 ========"
-Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn MEMWAIT=$MemWait" -ForegroundColor Cyan
+Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn MEMWAIT=$MemWait" -ForegroundColor Cyan
 Write-Host "PASS=$pass  FAIL=$fail  TIMEOUT=$timeout  OTHER=$other"
 Write-Host "明细: sim/programs/results.txt（首行即本次配置）"

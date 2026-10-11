@@ -21,6 +21,8 @@
  *   命中率 = HITS / (HITS + MISSES)。用 *(volatile unsigned int*) 整字读。 */
 #define DCACHE_HITS 0x80000018u   /* R: D-Cache 命中的 load 次数 */
 #define DCACHE_MISS 0x8000001Cu   /* R: D-Cache 缺失的 load 次数 */
+#define ICACHE_HITS 0x80000020u   /* R: I-Cache 命中的取指次数 */
+#define ICACHE_MISS 0x80000024u   /* R: I-Cache 缺失的取指次数 */
 
 /* ---------------------------------------------------------------------------
  * 视频区 —— tile PPU 背景层。分界线：addr[17:16]==0 是外设区，非 0 是视频区。

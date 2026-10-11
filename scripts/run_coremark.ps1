@@ -5,7 +5,8 @@
     [switch]$SkipSim,                                                      # 只生成固件、不跑仿真
     [int]$MemWait = 0,                                                     # >0 时给访存注入等待（+MEMWAIT=n，验 mem_ready 停顿逻辑）；0 = 逐位不变
     [switch]$Single,                                                       # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
-    [switch]$DCache                                                        # 打开 D-Cache（-DDCACHE，DCACHE_EN=1）。默认关 —— 跑分一律用关的配置
+    [switch]$DCache,                                                       # 打开 D-Cache（-DDCACHE，DCACHE_EN=1）。默认关 —— 跑分一律用关的配置
+    [switch]$ICache                                                        # 打开 I-Cache（-DICACHE，ICACHE_EN=1）。默认关 —— 跑分一律用关的配置
 )
 
 # -SkipSim 的用途：上板流程只需要 mem.hex，不需要仿真。
@@ -22,6 +23,7 @@
 $ErrorActionPreference = "Stop"
 $dualIssue = if ($Single) { 0 } else { 1 }
 $dcacheEn  = if ($DCache) { 1 } else { 0 }
+$icacheEn  = if ($ICache) { 1 } else { 0 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $env:PATH = "$Toolchain;$env:PATH"
@@ -73,7 +75,8 @@ if ($SkipSim) {
 
 $vvpName = if ($dualIssue -eq 1) { "tb_coremark_dual.vvp" } else { "tb_coremark_single.vvp" }
 if ($dcacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_dcache.vvp" }
-Write-Host "[3/3] 编译 testbench 并仿真 ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn（$vvpName）"
+if ($icacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_icache.vvp" }
+Write-Host "[3/3] 编译 testbench 并仿真 ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn（$vvpName）"
 $sim = Join-Path $repo "sim"
 $vvp = Join-Path $sim $vvpName
 $rtl = @()
@@ -83,6 +86,7 @@ foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
 $defs = @()
 if ($dualIssue -eq 1) { $defs += "-DDUAL" }
 if ($dcacheEn  -eq 1) { $defs += "-DDCACHE" }
+if ($icacheEn  -eq 1) { $defs += "-DICACHE" }
 $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,

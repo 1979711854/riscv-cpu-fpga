@@ -75,6 +75,9 @@ param(
     [int]$Iter = 3796,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
+    [switch]$Cache        # 综合【带 I/D Cache】版（高阶任务①）：DCACHE_EN=ICACHE_EN=1；结束后自动还原。
+                          # [!] 会吃时序余量（A.1 实测约 0.45 ns），85 MHz 下大概率不收敛，
+                          #     通常要配合降频（改 pll.idf 的 STATIC_RATIO0）一起用。
 
     [switch]$NoBuild
 )
@@ -130,6 +133,7 @@ if ($cpuTopTxt -notmatch 'parameter\s+DUAL_ISSUE\s*=\s*(\d+)') {
     exit 1
 }
 $dualOrig  = [int]$Matches[1]   # cpu_top.v 里的原值（还原时要用）
+$utf8NoBomCpuTop = New-Object System.Text.UTF8Encoding($false)
 $dualIssue = $dualOrig
 
 # ---- -Single：综合【单发射】回退版 ----
@@ -139,12 +143,28 @@ $dualIssue = $dualOrig
 #     还原在下面的 finally 里，和 DEBUG_LED 一起。
 $cpuTopOrig = $cpuTopTxt
 if ($Single -and $dualIssue -ne 0) {
-    $noBomCpuTop = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($cpuTopFile,
         ($cpuTopTxt -replace 'parameter\s+DUAL_ISSUE\s*=\s*\d+', 'parameter DUAL_ISSUE = 0'),
-        $noBomCpuTop)
+        $utf8NoBomCpuTop)
     $dualIssue = 0
     Write-Host "    -Single：cpu_top.v 的 DUAL_ISSUE 临时改为 0（结束时自动还原）" -ForegroundColor Green
+}
+
+# ---- -Cache：综合【带 I/D Cache】版（高阶任务①）----
+# [!] 同 DUAL_ISSUE/DEBUG_LED：PDS 命令行传不了 -D 宏，只能"改 parameter 默认值 →
+#     综合 → 还原"。还原在下面的 finally 里。
+$cacheOrigTxt = [System.IO.File]::ReadAllText($cpuTopFile, $utf8NoBomCpuTop)
+if ($Cache) {
+    if ($cacheOrigTxt -notmatch 'parameter\s+DCACHE_EN\s*=\s*\d+' -or
+        $cacheOrigTxt -notmatch 'parameter\s+ICACHE_EN\s*=\s*\d+') {
+        Write-Host "!! 在 cpu_top.v 里找不到 parameter DCACHE_EN / ICACHE_EN —— 版本不匹配，停下。" -ForegroundColor Red
+        exit 1
+    }
+    $cacheNewTxt = $cacheOrigTxt -replace 'parameter\s+DCACHE_EN\s*=\s*\d+', 'parameter DCACHE_EN = 1'
+    $cacheNewTxt = $cacheNewTxt -replace 'parameter\s+ICACHE_EN\s*=\s*\d+', 'parameter ICACHE_EN = 1'
+    [System.IO.File]::WriteAllText($cpuTopFile, $cacheNewTxt, $utf8NoBomCpuTop)
+    Write-Host "    -Cache：cpu_top.v 的 DCACHE_EN / ICACHE_EN 临时改为 1（结束时自动还原）" -ForegroundColor Green
+    Write-Host "    [!] 固件侧要把 0x8000_0018~0x24 的命中/缺失计数打出来看效果" -ForegroundColor DarkGray
 }
 
 # 每迭代周期数（取决于配置与编译选项）—— 别再写死：算 ITER 和算得分都用它
@@ -269,6 +289,11 @@ finally {
     if ($topNew -ne $topOrig) {
         [System.IO.File]::WriteAllText($topBoard, $topOrig, $utf8NoBom)
         Write-Host "    （DEBUG_LED 已还原为 1）" -ForegroundColor DarkGray
+    }
+    # 同样还原 cpu_top.v 的 DCACHE_EN / ICACHE_EN（-Cache 时临时改过）
+    if ($Cache -and $cacheOrigTxt -ne $null) {
+        [System.IO.File]::WriteAllText($cpuTopFile, $cacheOrigTxt, $utf8NoBomCpuTop)
+        Write-Host "    （DCACHE_EN / ICACHE_EN 已还原为 0）" -ForegroundColor DarkGray
     }
     # 同样还原 cpu_top.v 的 DUAL_ISSUE（-Single 时临时改过）
     if ($cpuTopOrig -ne [System.IO.File]::ReadAllText($cpuTopFile, $utf8NoBom)) {

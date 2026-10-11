@@ -108,5 +108,31 @@ portable_init(core_portable *p, int *argc, char *argv[])
 void
 portable_fini(core_portable *p)
 {
+    /* [!] Cache 命中/缺失上报（高阶任务①，2026-10-11 加）。
+     *   位置刻意放在 portable_fini：它在 CoreMark 报告【之后】、计时区间【之外】，
+     *   所以既不影响 Total ticks，也不影响四个 CRC。
+     *   计数器是 mem_bus 里的只读 MMIO（0x8000_0018~0x24，见 scripts/demo/addr_map.h）；
+     *   DCACHE_EN/ICACHE_EN=0 时它们恒 0，所以这里无条件打也无害。
+     *   同样直写 0xFFFC、不走 ee_printf（理由见 portable_init 的长注释）。 */
+    {
+        volatile ee_u8 *uart = (volatile ee_u8 *)0xFFFC;
+        static const char hx[] = "0123456789abcdef";
+        struct { const char *label; ee_u32 addr; } tab[4];
+        int t, i;
+
+        tab[0].label = "[cache] D hits=0x"; tab[0].addr = 0x80000018u;
+        tab[1].label = "[cache] D miss=0x"; tab[1].addr = 0x8000001Cu;
+        tab[2].label = "[cache] I hits=0x"; tab[2].addr = 0x80000020u;
+        tab[3].label = "[cache] I miss=0x"; tab[3].addr = 0x80000024u;
+
+        for (t = 0; t < 4; t++) {
+            ee_u32 v = *(volatile ee_u32 *)tab[t].addr;
+            const char *q;
+            for (q = tab[t].label; *q; q++) *uart = (ee_u8)*q;
+            for (i = 28; i >= 0; i -= 4) *uart = (ee_u8)hx[(v >> i) & 0xF];
+            *uart = (ee_u8)'\r';
+            *uart = (ee_u8)'\n';
+        }
+    }
     p->portable_id = 0;
 }

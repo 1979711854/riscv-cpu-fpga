@@ -45,8 +45,15 @@ module coremark_tb;
     localparam DCACHE_OUT = 0;
 `endif
 
+    // I-Cache 开关：编译时加 -DICACHE 即用 ICACHE_EN=1（高阶任务①）。默认关。
+`ifdef ICACHE
+    localparam ICACHE_OUT = 1;
+`else
+    localparam ICACHE_OUT = 0;
+`endif
+
     // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d", DUAL_OUT, DCACHE_OUT);
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d", DUAL_OUT, DCACHE_OUT, ICACHE_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
@@ -64,7 +71,7 @@ module coremark_tb;
 
     // mem_bus 自带周期计数器（0xFFF4 的读回源），与 tb 的 cycle_count 同时复位、
     // 同步递增，故 get_time() 读数与改造前一致。
-    mem_bus #(.DCACHE_EN(DCACHE_OUT)) u_bus (
+    mem_bus #(.DCACHE_EN(DCACHE_OUT), .ICACHE_EN(ICACHE_OUT)) u_bus (
         .clk(clk), .resetn(resetn),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
@@ -225,7 +232,7 @@ module coremark_tb;
             // ---- D-Cache 命中/缺失（高阶任务①）----
             // 直接层次化读 mem_bus 里的计数器，不改固件。DCACHE_EN=0 时两者恒 0。
             begin : dcache_report
-                reg [31:0] dch, dcm;
+                reg [31:0] dch, dcm, ich, icm;
                 dch = u_bus.dcache_hits;
                 dcm = u_bus.dcache_misses;
                 if (dch + dcm > 0) begin
@@ -235,6 +242,16 @@ module coremark_tb;
                              (dch * 100.0) / (dch + dcm));
                 end else begin
                     $display("DCACHE            : off (DCACHE_EN=0)");
+                end
+                ich = u_bus.icache_hits;
+                icm = u_bus.icache_misses;
+                if (ich + icm > 0) begin
+                    $display("ICACHE fetch hits : %0d", ich);
+                    $display("ICACHE fetch miss : %0d", icm);
+                    $display("ICACHE hit rate   : %f%%",
+                             (ich * 100.0) / (ich + icm));
+                end else begin
+                    $display("ICACHE            : off (ICACHE_EN=0)");
                 end
             end
             if (cycle_count > 0)

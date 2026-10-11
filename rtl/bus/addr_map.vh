@@ -75,6 +75,8 @@
 // ---------------------------------------------------------------------------
 `define PERIPH_DCACHE_HITS 4'h6           // 0x18  R D-Cache 命中的 load 次数
 `define PERIPH_DCACHE_MISS 4'h7           // 0x1C  R D-Cache 缺失的 load 次数
+`define PERIPH_ICACHE_HITS 4'h8           // 0x20  R I-Cache 命中的取指次数
+`define PERIPH_ICACHE_MISS 4'h9           // 0x24  R I-Cache 缺失的取指次数
 
 // ---------------------------------------------------------------------------
 // 视频区 0x8001_0000 起 —— tile PPU 的显存 + 控制寄存器

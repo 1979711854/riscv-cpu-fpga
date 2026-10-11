@@ -62,6 +62,10 @@ module cpu_top (
     // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。
     parameter DCACHE_EN = 0;
 
+    // ---- I-Cache 开关（高阶任务①）----
+    // 0 = 【默认】不例化，取指通路逐位不变；1 = 开 16KB/2 路组相联 I-Cache。
+    parameter ICACHE_EN = 0;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -97,7 +101,8 @@ module cpu_top (
     assign done = done_mmio | halt;
 
     mem_bus #(.CACHE_TAG_PROBE(CACHE_TAG_PROBE),
-              .DCACHE_EN      (DCACHE_EN)) u_bus (
+              .DCACHE_EN      (DCACHE_EN),
+              .ICACHE_EN      (ICACHE_EN)) u_bus (
         .clk          (clk),
         .resetn       (resetn),
         .imem_addr    (imem_addr),
