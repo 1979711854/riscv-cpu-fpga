@@ -442,7 +442,9 @@
       而 `tb_demo` / `tb_rtthread` / `tb_gomoku` / `tb_video_bars` 例化的是 `cpu_top`，**本来就是双发射**。
     * 脚本 `run_riscv_tests.ps1` / `run_coremark.ps1` / `run_own_tests.ps1` **默认双发射**，加 `-Single` 出单发射。
     * 测试台 t=0 打印 `SIM CONFIG: DUAL_ISSUE=%0d`；`sim/programs/results.txt` 首行记录配置。
-    * **回归两条并列基线**：双发射 49/1/0 + **313,886**（默认）；单发射 49/1/0 + **363,515**（`-Single`）。
+    * **回归四条并列基线**（2026-10-12 起）：双发射 + `EARLY_LD` 49/1/0 + **241,633**（默认 = 板上口径）；
+      `EARLY_LD=0` **262,018**；单发射 49/1/0 + **312,428**（`-Single`）；
+      **带 Cache 243,933**（`-DCache -ICache -EarlyLd`，本轮新增覆盖的 corner）。
     * `build_bitstream.ps1` 支持 `-Single` 出回退位流，期望值**按 `DUAL_ISSUE` 自动算**。
     * **位流归档名必须带 `_dual_` / `_single_`** —— 两者文件名与字节数完全一样，不标就分不出来，
       而烧错的表现只是"分数差 15.8%"，**比烧错固件更难发现**。

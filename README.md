@@ -48,7 +48,8 @@
 > 累计（单发射线）：75.24（27MHz）→ 125.40（45MHz）→ 140.89（49.89MHz）→ 170.64（62.03MHz）→ 233.85（85.01MHz）。
 >
 > [重点] **本工程 = CPU 优化线（两拍乘法器 + 提频 + 双发射）+ 视频线（PPU/HDMI）合并**。
-> 双发射 CPU 域每迭代 **313,886** 拍（单发射 363,515），与视频无关、直接可用。
+> 双发射 CPU 域每迭代 **241,633** 拍（含任务C `EARLY_LD`；`EARLY_LD=0` 时 262,018；单发射 312,428），
+> 与视频无关、直接可用。
 >
 > [重点] 提频的依据是 PDS"满足约束即收敛"（`Estimated Frequency` **不是设计上限**，而是"这次被要求跑多快"）：
 > 同一份 RTL 只改分频比实测，请求 85.01 MHz → 达 91.3993 MHz、slack +0.823；请求 99.79 MHz → 失败。
@@ -141,9 +142,11 @@ scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
 >
 > **ITER 的分子是你往哪儿烧的那个时钟，改流水线或换平台都要重算。**
-> 当前设计（**双发射**）每迭代 **313,886** 周期（与时钟无关；**单发射**是 363,515）：
-> * **板上 85.0051 MHz：ITER=3170 → 11.70 秒**（余量 17%；单发射时代用 ITER=2740）
-> * 仿真 / 远程平台 27 MHz：`270,000,000 ÷ 313,886 ≈ 860`；27 MHz 时代用的是 **ITER=820**
+> 当前设计（**双发射 + 任务C `EARLY_LD`**）每迭代 **241,633** 周期（与时钟无关；
+> `EARLY_LD=0` → 262,018；**单发射** → 312,428；**带 Cache** → 243,933）：
+> * **板上 85.0051 MHz：ITER=4116 → 11.70 秒**（余量 17%）
+> * **I+D Cache 版（76.5052 MHz）：ITER=3668 → 11.70 秒**
+> * 仿真 / 远程平台 27 MHz：`270,000,000 ÷ 241,633 ≈ 1117`；27 MHz 时代用的是 **ITER=820**
 >   （当时每迭代 358,857 → 实测 10.898 秒）
 >
 > **用错分子的后果**：ITER 算错会跑不满 10 秒 —— **CoreMark 要求 ≥10 秒，会判 invalid。**
@@ -225,8 +228,10 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 | 配置 | 怎么跑 | riscv-tests | CoreMark 每迭代 |
 |---|---|---|---|
-| **双发射（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **313,886 拍** |
-| **单发射（回退版口径）** | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | 363,515 拍 |
+| **双发射 + `EARLY_LD`（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **241,633 拍** |
+| 双发射 + `EARLY_LD=0` | 上面不传 `-EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | 262,018 拍 |
+| **单发射（回退版口径）** | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | 312,428 拍 |
+| **带 Cache** | 加 `-DCache -ICache -EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | **243,933 拍** |
 
 > `tb_riscv` / `tb_coremark` 靠编译期 `-DDUAL` 选配置；测试台 t=0 打印 `SIM CONFIG: DUAL_ISSUE=?`
 > （也进 `sim/programs/results.txt` 首行）；`build_bitstream.ps1` 综合前打印它将综合的 `DUAL_ISSUE`
