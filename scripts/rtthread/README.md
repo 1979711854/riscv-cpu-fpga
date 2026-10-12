@@ -14,7 +14,7 @@
 | 镜像占用 | `.text` 18,801 / `.data` 188 / `.bss` 2,528 = **21,517 字节 (65.7%)** |
 | 堆剩余 | **7,155 字节** |
 | **仿真验证** | **[OK] 通过** —— 见下面「仿真验证结果」 |
-| 上板验证 | [ ] 待做 —— 步骤见下面「上板」 |
+| **上板验证** | **[OK] 已上板**（2026-10-12 确认；判据同仿真：banner / tick delta 精确 / ping-pong 交替）。原始串口日志待补入 `doc/board/` |
 
 ## 上板（2026-09-27 起 `build_bitstream.ps1` 已支持 `rtthread` 变体）
 
@@ -185,12 +185,10 @@ SW_handler（interrupt_gcc.S 提供）：
    RT-Thread 从上下文切换到 trap 分发到处读写 CSR。
    **CoreMark 那边用纯 `-march=rv32im` 也能过，因为它不碰 CSR —— 别照抄那边。**
 
-2. **我们的 CPU 没有 A 扩展，必须用软原子**
-   `libcpu/risc-v/common/atomic_riscv.c` 无条件用 `amoswap.w` / `lr.w` / `sc.w`，编不过。
-   `rtatomic.h` 本来就有软实现分支：**没定义 `RT_USING_STDC_ATOMIC` 时走
-   `rt_soft_atomic_*`**（`rt_inline` 写在头文件里，用关中断临界区做读改写）。
-   所以正确做法是**不编 `atomic_riscv.c`**，而不是去凑 A 扩展。
-   > 单核下这样是正确的。日后 CPU 若加了 A 扩展，删掉排除项即可用硬件原子（更快）。
+2. ~~**我们的 CPU 没有 A 扩展，必须用软原子**~~ **[OK] 已过时（2026-10-08 起 CPU 有 A 扩展）**
+   RV32A（AMO/LR/SC）已实现（`rtl/core/amo_unit.v`），`atomic_riscv.c` 可以编入，
+   RT-Thread `--Atomic` 构建已验证可用。软原子分支（`rt_soft_atomic_*`）保留作回退。
+   > 历史：A 扩展之前 `amoswap.w`/`lr.w`/`sc.w` 编不过，做法是不编 `atomic_riscv.c`。
 
 3. **`src/klibc` 必须单独列进源码目录**
    构建脚本的 `Get-ChildItem` 不递归，漏了它会在链接期报一大串
@@ -217,7 +215,7 @@ PowerShell 5.1 读**无 BOM** 的 `.ps1` 时按 GBK 解析，中文注释会把�
 用**静态线程**（`rt_thread_init` + 自己的栈数组）而不是 `rt_thread_create`：
 32KB 下更省，且栈不够时链接期就报错，不会运行期莫名崩。
 
-## 内存账（32KB 怎么花的）
+## 内存账（[!] 2026-10-10 起 RAM 为 64 KB；下表数字出自 32 KB 布局的构建 —— 拆线程/合入 CoreMark 前按 64 KB 重划并重测）
 
 | 项 | 字节 | 说明 |
 |---|---|---|

@@ -40,9 +40,12 @@
 
 ### 4 条指令的实现依据（写进报告用）
 
-- **FENCE / FENCE.I 作 NOP 的正当性**：本设计没有 I/D Cache，也就没有需要"刷"的
-  写缓冲；且存储器已统一（`rtl/mem/unified_mem.v`），store 对后续取指天然可见，
-  FENCE.I 的语义已由硬件结构本身保证。RISC-V 规范允许无 Cache 的实现视其为 NOP。
+- **FENCE / FENCE.I 作 NOP 的正当性**：默认配置不开 Cache，无写缓冲需要"刷"；
+  且存储器已统一（`rtl/mem/unified_mem.v`），store 对后续取指天然可见。
+  RISC-V 规范允许无 Cache 的实现视其为 NOP。
+  [!] I/D Cache 已可实现（parameter 默认关）——开了 I-Cache 后 `fence.i` 仍是 NOP，
+  现状安全（无自修改代码）；若将来支持"软件写指令存储"，必须升级为冲刷 I-Cache
+  （见 `doc/spec.md` §4.4）。
 - **ECALL**：**已实现为 mcause=11 的同步异常**（2026-09-23），跳 `mtvec`、
   写 `mepc`/`mcause`。
 - **EBREAK**：**已实现为 mcause=3 的同步异常**。顶层的 `done` 停机钩子改从 trap
@@ -69,9 +72,9 @@
 ## 地址映射
 
 ```
-0x0000_0000 - 0x0000_7FEF   RAM（统一存储器，32KB 内可用部分）
-0x0000_7FF0 - 0x0000_7FFF   兼容区（CoreMark 移植层硬编码，不可移动）
-    0x7FF4 R  周期计数器[31:0]      0x7FF8 W  done        0x7FFC W  UART 发送
+0x0000_0000 - 0x0000_FFEF   RAM（统一存储器，64KB；可用 0x0~0xEFFF = 60KB，栈顶 0xF000）
+0x0000_FFF0 - 0x0000_FFFF   兼容区（CoreMark 移植层硬编码，不可移动）
+    0xFFF4 R  周期计数器[31:0]      0xFFF8 W  done        0xFFFC W  UART 发送
 0x8000_0000 起              外设区（字内偏移 = addr[5:2]）
     0x00 W LED[7:0] / R {key[7:0], led[7:0]}      0x08 W UART 发送
     0x0C R UART 接收（读弹出）                      0x10 R 周期计数器
@@ -87,7 +90,7 @@
 | BTB 动态分支预测 | [OK] **已完成**（2026-09-25）：`core.v` 里 **256 项、2 位饱和计数器、带 tag 的 BHT**（`bht_tag/bht_ctr/bht_valid`，索引 `PC[9:2]`、tag `PC[31:8]`），**只预测条件分支方向**（`jal` 走静态后向预测、`jalr` 不预测）。收益 358,846 → **354,119** 拍（省 1.32%）。<br>残余：256 项表偏小、别名冲突（实测 341 个静态条件分支里 **149 个冲突**），扩到 1024/4096 项预计还能回收约 1% —— **可优化项，不是缺陷** |
 | 外部中断 MEIP | [!] 只做了接口（`cpu_top` 接了 UART RX 非空），**没有测试**，不得当作已验证能力 |
 | **2 路组相联 I/D Cache** | [OK] **已实现并上板**（4 KB/侧，`DCACHE_EN` / `ICACHE_EN` 两个 parameter，默认关）。只开 D：85 MHz 下**不吃余量**（+0.151 ns）、分数与不开 Cache **完全相同**（351.86）；**I+D 全开：85 MHz 塞不进（−1.143 ns / 343 失败端点）⇒ 降频到 76.5052 MHz 收敛并上板实测通过（313.63 分）**，2026-10-12。<br>[!] **对分数贡献 = 0**（后端是单周期片内 BRAM，命中与不命中的数据通路一样快）—— 价值在**功能条目**；代价与账见 `doc/resource_efficiency.md` §14 |
-| 边缘 AI 加速 | [ ] 未做。32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行 |
+| 边缘 AI 加速 | [ ] 未做。RAM 仅 64 KB（无片外存储），当前硬件条件下不可行 |
 
 > 统一存储器已为 I/D Cache 备好后端（两块 Cache 共用这份 backing store，
 > 实现见 `rtl/bus/cache_i.v` / `cache_d.v` / `mem_bus.v`）。

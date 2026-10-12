@@ -1,4 +1,4 @@
-# 架构文档 spec.md — RV32IM 五级流水线 SoC
+# 架构文档 spec.md — RV32IMA 五级流水线（顺序双发射）SoC
 
 > 最近更新：**2026-10-12**（补 §4.4 I/D Cache；当前实现还含**顺序双发射**、**A 扩展**、
 > **CSR/异常/中断**、**任务C `EARLY_LD`** —— 这些见 `doc/resource_efficiency.md` §14 与 `CLAUDE.md`）
@@ -256,11 +256,14 @@ parameter ICACHE_EN = 0;   // 指令 Cache
 
 | 配置 | riscv-tests | CoreMark 每迭代 |
 |---|---|---|
-| **双发射（默认，= 板上口径）** | 49 PASS / 1 FAIL / 0 TIMEOUT | **313,886** |
-| 单发射（`-Single`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **363,515** |
+| **双发射 + `EARLY_LD`（默认，= 板上口径）** | 49 PASS / 1 FAIL / 0 TIMEOUT | **241,633** |
+| 双发射 + `EARLY_LD=0` | 49 PASS / 1 FAIL / 0 TIMEOUT | **262,018** |
+| 单发射（`-Single`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **312,428** |
+| 带 Cache（`-DCache -ICache -EarlyLd`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **243,933** |
 
 > 演进：`420,070`（基线）→ `382,972`（取指重定向）→ `358,846`（ID 级静态预测）
-> → `354,119`（BHT，2026-09-25）→ `363,515`（两拍乘法器）→ **`313,886`（顺序双发射，2026-10-06）**。
+> → `354,119`（BHT，2026-09-25）→ `363,515`（两拍乘法器）→ `313,886`（顺序双发射，2026-10-06）
+> → **`241,633`（+ 任务C `EARLY_LD`，2026-10-11，当前）**；I+D Cache 版 `243,933`（2026-10-12）。
 
 ## 6. 已知限制与后续方向
 
@@ -316,11 +319,14 @@ parameter ICACHE_EN = 0;   // 指令 Cache
 
 **高阶任务方向（尚未做）**
 
-- **2 路组相联 I/D Cache**：在统一存储器之上加两块 Cache。注意届时 `fence.i`
-  必须从 NOP 升级为"冲刷 I-Cache"，否则会退化回 `fence_i` 失败。
-  **但先想清楚**：存储器是行为级单周期 BRAM，访存恒 1 拍、无缺失惩罚、
-  无结构冲突，Cache 只会引入缺失惩罚，是负收益（详见 `doc/resource_efficiency.md`）
-- **边缘 AI 加速**：32KB BRAM 是硬墙（无片外存储），当前硬件条件下不可行
+- ~~**2 路组相联 I/D Cache**~~ **[OK] 已于 2026-10-12 实现并上板**（见 §4.4）：
+  实测结论 = **对分数贡献 0**（后端单周期 BRAM，命中与不命中一样快），价值在功能条目。
+  `fence.i` 仍为 NOP（现状无自修改代码，安全）；若将来支持"软件写指令存储"，
+  必须升级为"冲刷 I-Cache"。
+- **边缘 AI 加速**：RAM 仅 64 KB（无片外存储），当前硬件条件下不可行
 
-**扩展注意**：RAM 容量写死在 3 处 —— `unified_mem` 的数组深度、`mem_bus` 的
-`mem_addr[14:2]`、`core` 的 `imem_addr[12:0]`。扩容必须三处同步改，否则高位被静默截断。
+**扩展注意**：RAM 容量（字索引线宽）牵动多处 —— 现行清单在 `rtl/bus/addr_map.vh` 文件头：
+`unified_mem` 的 `mem0`/`mem1` 数组深度、`core.v` 的 `imem_addr` 切片、`mem_bus` 的
+`ram_word` 切片与 `ram_hit` 范围、仿真 `mem_model.vh`、兼容区地址，以及双发射第二取指口
+`imem_addr2` 的宽度。扩容必须按该清单逐处同步改，否则高位被静默截断
+（`imem_addr2` 漏改曾酿成"代码 >32KB 取错指令"的 bug）。

@@ -3,7 +3,7 @@
 > 全国大学生嵌入式芯片与系统设计竞赛 —— FPGA 赛道 · 紫光同创选题
 
 器件：紫光同创 **Logos2 PG2L200H-6FBB676**　工具：**Pango Design Suite 2022.2-SP6.4**
-处理器：**RV32I + A/M 扩展**，5 级流水线（IF/ID/EX/MEM/WB），双发射
+处理器：**RV32IMA**（+ Zicsr/Zifencei），5 级流水线（IF/ID/EX/MEM/WB），**顺序双发射**
 
 ## 当前成绩
 
@@ -124,14 +124,14 @@ Python 3:    用于把 ELF 拆成 hex
 
 ```powershell
 # 上板唯一入口（一条命令：生成固件 → 同步并校验 → 综合出 .sbit，约 5 分钟）
-scripts\build_bitstream.ps1 coremark    # 跑分版（双发射，ITER=3170，板上约 11.7 秒）
+scripts\build_bitstream.ps1 coremark    # 跑分版（双发射+EARLY_LD，ITER=4116，板上约 11.7 秒）
 scripts\build_bitstream.ps1 demo        # 演示版（读按键 → 写 LED → 串口打印）
 ```
 
 想分步走也可以（**但别漏第 2 步**）：
 
 ```powershell
-scripts\run_coremark.ps1 -Iter 3170 -SkipSim  # 跑分用（双发射）：85.0051MHz 下约 11.7 秒，满足 ≥10s
+scripts\run_coremark.ps1 -Iter 4116 -SkipSim  # 跑分用（双发射+EARLY_LD）：85.0051MHz 下约 11.7 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用
 scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目录
 ```
@@ -200,9 +200,9 @@ riscv-cpu-fpga/
 单点定义在 `rtl/bus/addr_map.vh`：
 
 ```
-0x0000_0000 - 0x0000_7FEF   RAM（32KB 内可用部分，栈顶 ≤ 0x7FF0）
-0x0000_7FF0 - 0x0000_7FFF   兼容区（CoreMark 移植层硬编码，不可移动）
-    0x7FF4 R 周期计数   0x7FF8 W done   0x7FFC W UART 发送
+0x0000_0000 - 0x0000_FFEF   RAM（64KB；可用 0x0~0xEFFF = 60KB，栈顶 0xF000）
+0x0000_FFF0 - 0x0000_FFFF   兼容区（CoreMark 移植层硬编码，不可移动）
+    0xFFF4 R 周期计数   0xFFF8 W done   0xFFFC W UART 发送
 0x8000_0000 起              外设区
     0x00 W LED / R {key, led}   0x08 W UART 发送
     0x0C R UART 接收（读弹出）   0x10 R 周期计数
@@ -261,13 +261,17 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 ##  Git 协作
 
 ```powershell
-git pull origin main                    # 开始工作前
+git pull origin dualissue               # 开始工作前
 git add .
 git commit -m "feat: 描述你做了什么"
-git push origin main
+git push origin dualissue
 ```
 
 提交信息前缀：`feat:` 新功能 · `fix:` 修复 · `docs:` 文档 · `refactor:` 重构
+
+> [!] **主线分支是 `dualissue`，不是 `main`。** `main` 是"原始 CPU 线"的历史存档
+> （两条历史无关，不能直接合并）。**绝不 `git push --force origin main`** ——
+> 会把原始历史抹掉。详见 `doc/reports/2026-10-12_taskbook_v8.md` §9。
 
 > [!] **不要提交 PDS 生成物**（`compile/`、`synthesize/`、`.sbit` 等）。
 > `.gitignore` 已配置好，用 `git add .` 时它们不会被加入。
