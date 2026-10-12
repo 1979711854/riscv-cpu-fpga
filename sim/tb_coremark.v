@@ -174,6 +174,14 @@ module coremark_tb;
     reg [63:0] tc_br_tot, tc_br_tk, tc_br_bwd, tc_br_bwd_tk;
     reg [63:0] tc_jal, tc_jalr;
     reg [63:0] tc_redir, tc_mispred;
+    // [A4] 未归类周期归因：把"没有退休且没有已知理由"的拍再分成
+    //   (a) 重定向后 3 拍内 ⇒ 前端重填（不是独立的一类，是分支代价的一部分）
+    //   (b) 其余            ⇒ 真正无解释，才是 A4 要找的东西
+    reg [63:0] tc_noret, tc_noret_refill, tc_noret_dark, tc_noret_nofetch;
+    reg [63:0] tc_noret_mc, tc_noret_stall, tc_noret_flush;
+    reg [1:0]  fl_q, rd_q;      // {2拍前, 1拍前} 的冲刷 / 预测重定向事件
+    wire       a4_recent = u_core.ex_flush || u_core.ex_mispred ||
+                           u_core.p_redirect || fl_q[0] || fl_q[1] || rd_q[0] || rd_q[1];
 
     // ---- [TASK-C 分析] 消除 load-use 停顿的可达收益分类（+LDANAL，默认关）----
     // 纯被动观测：只读 core 的内部信号（层次引用），不驱动任何输入，不影响周期数。
@@ -376,6 +384,14 @@ module coremark_tb;
                              tc_mul_near);
                     $display("region flush     : %0d  %f%%", tc_flush,
                              (tc_flush * 100.0) / tc_all);
+                    // [A4] 未归类周期归因
+                    $display("region noretire  : %0d  （v_wb=0）", tc_noret);
+                    $display("  mc_stall 占    : %0d", tc_noret_mc);
+                    $display("  load-use 占    : %0d", tc_noret_stall);
+                    $display("  冲刷当拍占     : %0d", tc_noret_flush);
+                    $display("  重定向 3 拍内  : %0d  （= 前端重填）", tc_noret_refill);
+                    $display("  [!] 真正无解释  : %0d  ← A4 要找的就是这个", tc_noret_dark);
+                    $display("  其中 IF/ID 空  : %0d", tc_noret_nofetch);
                     $display("region fwd ex    : %0d", tc_fwdex);
                     $display("region fwd wb    : %0d", tc_fwdwb);
                     $display("region mem acc   : %0d", tc_mem);
@@ -444,6 +460,10 @@ module coremark_tb;
             tc_br_bwd <= 64'd0; tc_br_bwd_tk <= 64'd0;
             tc_jal <= 64'd0; tc_jalr <= 64'd0;
             tc_redir <= 64'd0; tc_mispred <= 64'd0;
+            tc_noret <= 64'd0; tc_noret_refill <= 64'd0;
+            tc_noret_dark <= 64'd0; tc_noret_nofetch <= 64'd0;
+            tc_noret_mc <= 64'd0; tc_noret_stall <= 64'd0; tc_noret_flush <= 64'd0;
+            fl_q <= 2'd0; rd_q <= 2'd0;
         end else if (prof_on || pairtr_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             // [!] 冻结判据一律用 core 的 mc_stall（多拍功能单元停顿的并集：
@@ -502,6 +522,10 @@ module coremark_tb;
             if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
             if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
                 c_jump <= c_jump + 64'd1;
+            // [A4] 重定向事件的 2 拍历史（非阻塞赋值 ⇒ 本拍读到的 fl_q[0]/[1]
+            //   正是 1 拍前 / 2 拍前的事件）
+            fl_q <= {fl_q[0], (u_core.ex_flush || u_core.ex_mispred)};
+            rd_q <= {rd_q[0], u_core.p_redirect};
 
             // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0xFFF4）----
             if (u_core.mem_re && u_core.mem_addr == 32'hFFF4) begin
@@ -526,6 +550,22 @@ module coremark_tb;
                 if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
                 if (u_core.mem_re || u_core.mem_we)     tc_mem   <= tc_mem + 64'd1;
                 if (v_wb)             tc_commit <= tc_commit + 64'd1;
+                // ---- [A4] 未归类周期归因 ----
+                if (!v_wb) begin
+                    tc_noret <= tc_noret + 64'd1;
+                    // 互斥优先链 —— 五个桶之和必须 = tc_noret（不再重叠）
+                    if      (u_core.mc_stall)
+                        tc_noret_mc    <= tc_noret_mc    + 64'd1;
+                    else if (u_core.stall)
+                        tc_noret_stall <= tc_noret_stall + 64'd1;
+                    else if (u_core.ex_flush || u_core.ex_mispred)
+                        tc_noret_flush <= tc_noret_flush + 64'd1;
+                    else if (a4_recent)
+                        tc_noret_refill <= tc_noret_refill + 64'd1;
+                    else
+                        tc_noret_dark   <= tc_noret_dark   + 64'd1;
+                    if (!u_core.if_id_valid) tc_noret_nofetch <= tc_noret_nofetch + 64'd1;
+                end
                 if (u_core.id_ex_branch) begin
                     tc_br_tot <= tc_br_tot + 64'd1;
                     if (u_core.id_ex_imm[31]) tc_br_bwd <= tc_br_bwd + 64'd1;
