@@ -3,7 +3,7 @@
 > 全国大学生嵌入式芯片与系统设计竞赛 —— FPGA 赛道 · 紫光同创选题
 
 器件：紫光同创 **Logos2 PG2L200H-6FBB676**　工具：**Pango Design Suite 2022.2-SP6.4**
-处理器：**RV32I + A/M 扩展**，5 级流水线（IF/ID/EX/MEM/WB）
+处理器：**RV32I + M 扩展**，5 级流水线（IF/ID/EX/MEM/WB）
 
 ## 当前成绩
 
