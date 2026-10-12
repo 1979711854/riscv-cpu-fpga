@@ -1,6 +1,7 @@
 # 架构文档 spec.md — RV32IM 五级流水线 SoC
 
-> 最近更新：2026-09-25
+> 最近更新：**2026-10-12**（补 §4.4 I/D Cache；当前实现还含**顺序双发射**、**A 扩展**、
+> **CSR/异常/中断**、**任务C `EARLY_LD`** —— 这些见 `doc/resource_efficiency.md` §14 与 `CLAUDE.md`）
 > 本文件是比赛《性能分析报告》的架构依据，描述**当前实现**（不是计划）。
 > 任务分解见 `doc/plan.md`，基础任务核对见 `doc/base_task_status.md`。
 
@@ -40,7 +41,13 @@
 | `rtl/periph/uart_tx.v` | uart_tx | UART 发送，1024 深 FIFO |
 | `rtl/periph/uart_rx.v` | uart_rx | UART 接收，中点采样 + 16 深 FIFO |
 | `rtl/periph/gpio.v` | gpio | 8 位 LED 输出 + 8 位按键输入（2 级同步） |
-| `rtl/top/cpu_top.v` | cpu_top | SoC 顶层，只做连线 |
+| `rtl/top/cpu_top.v` | cpu_top | SoC 顶层，只做连线（`DUAL_ISSUE` / `DCACHE_EN` / `ICACHE_EN` / `EARLY_LD` 等 parameter 都在这里）|
+| `rtl/core/csr_file.v` | csr_file | CSR 文件 + 异常/中断 + **`mimpid` 承载设计版本号 `DESIGN_REV`**（改 RTL 必须递增，见 `CLAUDE.md` 约定 42）|
+| `rtl/core/multiplier.v` | multiplier | M 扩展乘法，**拆成 2 拍**（换时序余量）|
+| `rtl/core/amo_unit.v` | amo_unit | A 扩展原子指令（AMO* / LR / SC）|
+| `rtl/bus/cache_i.v` / `cache_d.v` | cache_i / cache_d | **I/D Cache**（4 KB/侧、2 路组相联，`parameter` 开关，默认关）—— 见 §4.4 |
+| `rtl/top/cpu_top_board.v` | cpu_top_board | **上板顶层**（PDS 的 top）：PLL 27 → 85.0051 MHz + 引脚约束 + HDMI |
+| `rtl/video/*.v` | video_top 等 | 视频子系统（tile PPU + TMDS），**独立于 CPU**，细节见 `rtl/video/video_top.v` 文件头 |
 
 ## 3. 流水线
 
@@ -187,6 +194,49 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
   那会在判断里就把字节吃掉。
 - GPIO 按键低电平有效，且**只做 2 级同步、不做硬件消抖**；去抖放在软件里
   （采样—延时—再采样），更容易仿真验证。
+
+### 4.4 I/D Cache（4 KB/侧、2 路组相联，**可选**，2026-10-12 已上板）
+
+**开关是 `parameter`，不是 `-D` 宏**（PDS 命令行传不了宏；`scripts\build_bitstream.ps1` 的做法是
+"临时改默认值 → 综合 → 还原"）：
+
+```verilog
+parameter DCACHE_EN = 0;   // 数据 Cache（rtl/top/cpu_top.v）
+parameter ICACHE_EN = 0;   // 指令 Cache
+```
+
+| 项 | 值 |
+|---|---|
+| 容量 / 组织 | **4 KB/侧**、2 路组相联、LRU（`IDX_BITS = 9`）|
+| 位置 | `rtl/bus/cache_d.v`（数据）、`cache_i.v`（指令），插在 `mem_bus.v` 与 `unified_mem` 之间 |
+| 命中延迟 | **1 拍**（与不命中**相同** —— 后端是单周期片内 BRAM）|
+| 缺失代价 | 指令缺失冻结整条流水线约 5 拍（`stall_r`）；数据缺失由 `mem_ready=0` 停顿 |
+| 命中/缺失计数 | 只读 MMIO：`0x8000_0018`(D 命中) / `0x1C`(D 缺失) / `0x20`(I 命中) / `0x24`(I 缺失) |
+
+**时序代价（CPU 域实测）**：
+
+| 配置 | 85.0051 MHz | 76.5052 MHz（`RATIO0=15.0`）|
+|---|---|---|
+| 不开 Cache | **+0.045 ns** ✓ | — |
+| 只开 D-Cache | **+0.151 ns** ✓（分数与不开完全相同）| — |
+| **I+D 全开** | **−1.143 ns / 343 失败端点 ✗** | **+0.589 ns / 0 失败端点 ✓** |
+
+**为什么 I+D 必须降频**：I-Cache 挂在**取指关键链**上
+（`D-Cache 数据阵列 → 前递/分支/重定向 → fetch_addr → I-Cache tag 比较 → 命中`，15~17 级、Route 占 63%）。
+**不是逻辑问题、是布局拥塞**（所以"压逻辑"没用）。⇒ 想回 85 MHz 只有 PCE 区域约束或
+把 I-Cache tag 比较移出取指链。
+
+**对性能的实际影响**（板上实测）：I+D 全开 = **313.63 分**（@76.5052 MHz、ITER=3668），
+相对 351.86 分 **−10.9%**，其中 **−10.0% 是主频、只有 −0.95% 是 Cache 周期代价**
+（I-Cache 缺失 **2,455 次/迭代**，但冻结的拍几乎全藏在原有气泡里）。
+命中率：**I 98.985% / D 99.929%**。
+
+**`fence.i` 仍是 NOP** —— 现状安全（无自修改代码、无片外存储）；若将来支持
+"软件写指令存储"，必须升级为**冲刷 I-Cache**。
+
+> [!] **改容量/组织时的清单**（漏一处就是静默错位）：
+> `cache_i.v` / `cache_d.v` 的 `IDX_BITS` → `mem_bus.v` 的实例化传参 →
+> 相关地址切片。改完**必须**跑 `-DCache -ICache -EarlyLd` 回归。
 
 ## 5. 仿真与验证
 

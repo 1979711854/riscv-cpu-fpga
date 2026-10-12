@@ -6,16 +6,42 @@
 > 板上资源：`clk=D18`(27MHz 晶振)、`resetn=C22`、`UART=B24/C24`、LED/KEY 见
 > `pds/RV32I_1/RV32I_1.fdc` 头部注释。
 
-> [!] **当前板上口径（2026-10-06）：85.0051 MHz + 顺序双发射**（PLL `STATIC_RATIO0` 18.5 → 13.5；
-> `cpu_top.v` 的 `DUAL_ISSUE = 1`，见 `doc/board_bringup.md`）。
+> [!] **当前板上口径（2026-10-12）：85.0051 MHz + 顺序双发射 + 任务C `EARLY_LD`**
+> （PLL `STATIC_RATIO0` = 13.5；`cpu_top.v` 的 `DUAL_ISSUE = 1`、`EARLY_LD = 1`、
+> `DCACHE_EN` / `ICACHE_EN` 默认 0；见 `doc/board_bringup.md`）。
 > **下面各节的 MHz 数、位流 md5、以及"当前设计"这类措辞，按【当时那一代】理解。**
-> 本节记录的时间跨度是 2026-09-23 ~ 2026-10-04，期间跑的是 27 / 45 / 49.89 / 62.03 MHz 的单发射位流。
 >
-> **2026-10-06 新增的两代证据不在这里**（本节未重排）：
-> - 单发射 @85.0051 MHz：CoreMark **233.85**，位流 `ae4deea9`，日志 `uart_20261004_114730.txt`
-> - **双发射 @85.0051 MHz：CoreMark 270.82**，位流 `5c4893de`，日志 `uart_20261006_162410.txt`
-> - 双发射五子棋跑通：位流 `3976aebd`，日志 `uart_20261006_172315.txt`
-> 汇总见 `doc/reports/2026-10-04_coremark_score.md`。
+> **最新两代（2026-10-11/12，本节顶部已单列）**：
+> - 85.0051 MHz 双发射 + `EARLY_LD`：CoreMark **351.86**（ITER=4116），位流 `2ddaf32f`（无 Cache）
+>   / **`2f7a4d0a`（只开 D-Cache，分数完全相同 —— 提交档）**，日志 `uart_20261011_225624.txt` /
+>   `uart_20261012_002541.txt`
+> - **I+D Cache 全开 @76.5052 MHz：CoreMark 313.63**，位流 **`c6b12d95`**，日志 `uart_20261012_155934.txt`
+> - ⚠️ I+D 的**前一版 `fa957dbd` 板上失败**（含 bug，只有 banner 循环）：
+>   日志 `uart_20261012_010314.txt` / `_010344.txt`
+>
+> 更早的各代见下方各节与 `doc/reports/2026-10-04_coremark_score.md`。
+
+## 【[OK] I+D Cache 上板通过】完整 I/D Cache 首次在真板上跑通（2026-10-12 15:59）
+
+位流 `coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`（md5 `c6b12d95`；
+`RATIO0=15.0` → 76.5052 MHz；**`RTL=0x20261016`**，含 `wb_rdata_snap` 根因修复），
+ITER=3668，日志 **`uart_20261012_155934.txt`**：
+
+| 项 | 值 |
+|---|---|
+| 首行 | `[build] FW=COREMARK **RTL=0x20261016**`（修复后的网表自证）|
+| `Total ticks` | **894,745,801** → **11.6952 s**（≥10 s，有效）|
+| **得分** | **313.63**（`3668 × 76,505,200 ÷ 894,745,801`）|
+| 四个 CRC | `e9f5 / e714 / 1fd7 / 8e3a` **与关 Cache 时逐位相同** + `Correct operation validated` |
+| `[cache] D` | hits 31,555,354 / miss 22,423 ⇒ **99.929%** |
+| `[cache] I` | hits 878,103,971 / miss 9,006,928 ⇒ **98.985%** ← **I-Cache 首次板上计数非 0** |
+
+**判读**：① 逻辑对（四个 CRC + 官方结论行）；② **两个 Cache 都真在跑**（计数都非 0）；
+③ 相对 85 MHz 版 **−10.9%**，其中 **−10.0% 是主频、只有 −0.95% 是 Cache 周期代价**。
+全流程见 `doc/reports/2026-10-12_idcache_board_bitstream.md`。
+
+> [!] **上一版 `fa957dbd`（同配置、含 bug）板上只有 banner 循环、两个 cache 计数全 0**
+> —— 两节对照，就是"修好了"的证据形态。
 
 ## 【二分证据】D-Cache + 降频 76.5 MHz 板上通过 ⇒ 故障锁定 I-Cache（2026-10-12 01:23）
 

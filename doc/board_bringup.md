@@ -79,9 +79,13 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 * [!] **仿真仍然是 27 MHz**（测试台例化 `cpu_top`，不传参数 → 分频 234）。
   所以：**仿真 27 MHz / 上板 85.01 MHz**，两套口径别混。
   远程 FPGA 平台**没有 PLL，也是 27 MHz**。
-* **降频的出路**（若板上不稳）：改 `ipcore/pll/pll.idf` 的 `STATIC_RATIO0` 再跑
+* **降频的出路**（若板上不稳 / 要开 I+D Cache）：改 `ipcore/pll/pll.idf` 的 `STATIC_RATIO0` 再跑
   `ip_generate.exe -i pll.idf`，然后同步上面 4 处常量重算 ITER。
-  `CLKOUT0 = 1147.5 ÷ STATIC_RATIO0`：`16.0 → 71.72`、`14.5 → 79.14`、`13.5 → 85.0`（当前）。
+  `CLKOUT0 = 1147.5 ÷ STATIC_RATIO0`：`16.0 → 71.72`、**`15.0 → 76.5052`（I+D Cache 用的档）**、
+  `14.5 → 79.14`、**`13.5 → 85.0051`（当前跑分档）**。
+  > [!] **I+D Cache 全开在 85 MHz 塞不进**（CPU 域 −1.143 ns / 343 失败端点）⇒ 必须降频；
+  > 76.5052 MHz 收敛（setup +0.589 / hold +0.147 / 0 端点），板上实测 313.63 分。
+  > **改完频率必须全部还原**（见 `CLAUDE.md` 约定 50）。
 
 | 信号 | 管脚 | 板上丝印 | 说明 |
 |---|---|---|---|
@@ -116,7 +120,8 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 **队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
 ```powershell
-scripts\build_bitstream.ps1 coremark    # 跑分版（双发射，ITER=3170，板上约 11.7 s）
+scripts\build_bitstream.ps1 coremark            # 跑分版（双发射+EARLY_LD，ITER=4116，板上约 11.7 s）
+scripts\build_bitstream.ps1 coremark -DCacheOnly # 同上 + 只开 D-Cache（**推荐提交档**：分数不变）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
 scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版（banner + 两个线程交替打印）
 scripts\build_bitstream.ps1 video       # HDMI 彩条版（填显存画 8 条竖条 + 串口读回自检）
@@ -187,7 +192,7 @@ User Guide》第 4 章）：
 
 ```powershell
 # ① 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 3170 -SkipSim     # 跑分版（双发射，85.0051 MHz 的取值）
+scripts\run_coremark.ps1 -Iter 4116 -SkipSim     # 跑分版（双发射+EARLY_LD，85.0051 MHz 的取值）
 scripts\run_demo.ps1 -SkipSim                    # 演示程序版
 
 # ② 同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
@@ -278,22 +283,24 @@ KEY=0x00 LED=0x00
 
 **约 12 秒后**打印。
 
-**当前设计（85.0051 MHz，双发射，ITER=3170）的板上实测原始输出**
-（日志 `doc/board/uart_20261006_162410.txt`，2026-10-06）：
+**当前跑分档（85.0051 MHz，双发射 + 任务C `EARLY_LD`，ITER=4116）的板上实测原始输出**
+（日志 `doc/board/uart_20261012_002541.txt`，2026-10-12；只开 D-Cache 的 `2f7a4d0a` 分数完全相同）：
 
 ```
 CoreMark Size    : 666
-Total ticks      : 994988178
+Total ticks      : 994386960
 Total time (secs): 11
-Iterations/Sec   : 270
-Iterations       : 3170
-Compiler flags   : -O2 -march=rv32im -mabi=ilp32
+Iterations/Sec   : 374      ← 整数截断，不是得分（见下）
+Iterations       : 4116
 seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 Correct operation validated.
 ```
 
-实测：994,988,178 ÷ 85,005,100 = **11.7050 s** → **270.82 CoreMark**（满足赛题 ≥10 s）。
-推算值 3.186 × 85.0051 = 270.82 与实测**分毫不差**。
+实测：994,386,960 ÷ 85,005,100 = **11.69797 s** → **351.86 CoreMark**（满足赛题 ≥10 s）。
+
+**I+D Cache 版（76.5052 MHz，ITER=3668）**（日志 `doc/board/uart_20261012_155934.txt`）：
+首行 `[build] FW=COREMARK RTL=0x20261016`，`Total ticks 894,745,801` →
+**11.6952 s → 313.63 CoreMark**；`[cache] I` 98.985% / `[cache] D` 99.929%。
 
 **历史（单发射 85.0051 MHz / ITER=2740）**：`Total ticks 996,015,474` ÷ 85,005,100 =
 **11.7171 s / 233.85 CoreMark**（日志 `doc/board/uart_20261004_114730.txt`）。
@@ -339,7 +346,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[2:0]` 被 `pll_locked`/`video_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
-| **`Iterations/Sec` 显示 270** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的 11 算的（3170 ÷ 11 ≈ 270）。**真实得分是 270.82 CoreMark**（= 3170 ÷ 11.7050）。历史单发射 85 MHz 那版显示 `249` / 真实 233.85；45 MHz 那版显示 `136` / 真实 125.40。见 §4 的说明 |
+| **`Iterations/Sec` 显示 374 / 333** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的整数秒算的（4116 ÷ 11 ≈ 374；I+D 版 3668 ÷ 11 ≈ 333）。**真实得分要自己算**：85 MHz 跑分档 = `4116 ÷ 11.69797` = **351.86**；I+D 版 = `3668 ÷ 11.6952` = **313.63**。历史：双发射 3170 显示 `270` / 真实 270.82；单发射 85 MHz 显示 `249` / 真实 233.85。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。

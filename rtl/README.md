@@ -31,9 +31,11 @@ top.v     早期 LED 点灯练习工程顶层（保留，不在 PDS 源文件列
 2. **总线时序契约**（`bus/mem_bus.v` 头注释）：写通路零寄存器、读路径固定 1 拍。
    破坏任一条都会让 load 读到错值，且没有 stall 机制能救。
 
-改完 RTL 请跑回归：riscv-tests 的 **49/1/0** 与 CoreMark 的**计时区间 313,886 拍**（双发射；单发射 `-Single` 是 363,515）
-（测试台总周期 1,457,776）必须同时不变。
-详见 `doc/test_report_riscv-tests.md`。
+改完 RTL 请跑回归：riscv-tests 的 **49/1/0** 与 CoreMark 的**计时区间**必须同时不变。
+**当前基线（2026-10-12，四条，别混）**：
+**241,633**（双发射 + `EARLY_LD`，默认 = 板上口径）/ **262,018**（`EARLY_LD=0`）/
+**312,428**（单发射 `-Single`）/ **243,933**（带 Cache：`-DCache -ICache -EarlyLd`）。
+详见 `doc/test_report_riscv-tests.md` 末尾的「回归纪律」。
 
 > 上板还有一步容易漏：**同步固件**（`scripts\sync_firmware.ps1`）。PDS 综合读的是
 > `pds/RV32I_1/mem.hex`，不是 `sim/programs/mem.hex`，而且不看时间戳 ——
