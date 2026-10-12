@@ -1,0 +1,22 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-12 15:59:34
+[build] FW=COREMARK RTL=0x20261016
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 894745801
+Total time (secs): 11
+Iterations/Sec   : 333
+Iterations       : 3668
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xb6ce
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x01e17f1a
+[cache] D miss=0x00005797
+[cache] I hits=0x3456cda3
+[cache] I miss=0x00896f50
+# 结束于 2026-10-12 15:59:53，共 20 行

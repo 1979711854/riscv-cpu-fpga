@@ -4,6 +4,8 @@
 
 | 文件 | 内容 | md5 |
 |---|---|---|
+| **`coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`** | **[OK] I+D 全开（完整 2 路组相联 I/D Cache）+ 降频 76.5052 MHz**（`RATIO0=15.0`），含 `wb_rdata_snap` 根因修复（`2026-10-12_icache_wb_snap_fix.md`）+ `DESIGN_REV` 递增到 `0x2026_1016`（约定 42）。CPU 域 **setup +0.589 ns / hold +0.147 ns / 0 失败端点**（19,021 端点）；网表自证 **`dcache` 655 / `icache` 670** ✓。ITER=3668（`3668 × 244,034`）、`UART_DIV=664`、`EE_TICKS_PER_SEC=76,505,200`。**[OK] 2026-10-12 15:59 已上板通过**（日志 `doc/board/uart_20261012_155934.txt`）：首行 **`RTL=0x20261016`**、`Total ticks 894,745,801` → **11.6952 s** → **313.63 分**（日志里的 `333` 是整数截断，别用）、**四个 CRC 逐位相同**、`Correct operation validated`、**`[cache] I` hits 878,103,971 / miss 9,006,928（98.985%）+ `[cache] D` 31,555,354 / 22,423（99.929%）**；拍/迭代 **243,932.9**（仿真 244,034，差 −0.041%）。全流程见 `doc/reports/2026-10-12_idcache_board_bitstream.md` | `c6b12d95` |
+| `coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_d073366b.sbit` | 上面那条的**同设计孪生**（在 `idcache` 仓库副本综合）：**网表逐字节相同**（md5 `A4814916…`）、时序数字逐位相同。`.sbit` 里内嵌工程路径不同 ⇒ md5 不同。**归档只为留一手，烧哪个都一样** | `d073366b` |
 | `gomoku_pll62mhz_2cee98c9.sbit` | 五子棋版（62 MHz 时代）—— 提频出问题时的回退版 | `2cee98c9` |
 | `coremark_pll85mhz_ae4deea9.sbit` | **单发射** CoreMark @ 85 MHz —— **已板上实测 233.85 分**（ITER=2740）| `ae4deea9` |
 | `gomoku_pll85mhz_f4e78dc6.sbit` | **单发射** 五子棋 @ 85 MHz —— 已上板跑通（含串口棋盘快照等）| `f4e78dc6` |
@@ -15,7 +17,7 @@
 | `gomoku_dual_aext_ms_85mhz_addrfix_f00c6659.sbit` | 上面那版 + **`imem_addr2` 截位修复**（约定 40）—— slack +0.236 ns。**已上板**（2026-10-10，两局五子棋正常，屏幕正常）| `f00c6659` |
 | **`coremark_dual_aext_ms_earlyld_dcache_76mhz_a69a19b5.sbit`** | **[二分用] 只开 D-Cache + 降频 76.5052 MHz**（ITER=3700，4 处常量=76,505,200）。setup **+0.717 ns**、hold **+0.145 ns**、**0 失败端点**；网表 `dcache` 659 / **`icache` 0** ✓。预期 `Total ticks ≈ 894,000,000` → 11.69 s → ≈316 分。**[OK] 2026-10-12 01:23 上板通过（日志 `doc/board/uart_20261012_012310.txt`）**：`Total ticks 893,885,762` → 11.6842 s、**351 行报告完整**、四个 CRC 逐位相同、`[cache] D hits=31,739,605 / miss=22,616`（99.929%）、`[cache] I` 全 0 ⇒ **得分 316.7**。
 ⇒ **76.5 MHz 口径完全没问题，问题 100% 在 I-Cache**（用途达成）（见 `2026-10-12_handoff_completeness_first.md` §2.3）| `a69a19b5` |
-| ⚠️ **`coremark_dual_aext_ms_earlyld_idcache_76mhz_fa957dbd.sbit`** | **[完整条目] I+D 全开 + 降频 76.5052 MHz**（`RATIO0=15.0`，ITER=3372，4 处固件常量=76,505,200）。CPU 域 slack **+0.410 ns / 0 失败端点**（周期 13.071 ns）；**网表两个 cache 都在**（`dcache` 660 / `icache` 670 处）。⚠️ **[X] 2026-10-12 上板失败，别烧**（日志 `doc/board/uart_20261012_010314.txt` / `_010344.txt`）：
+| ⚠️ **`coremark_dual_aext_ms_earlyld_idcache_76mhz_fa957dbd.sbit`** | **【已作废 —— 根因已修，用上表的 `c6b12d95`】** [完整条目] I+D 全开 + 降频 76.5052 MHz（`RATIO0=15.0`，ITER=3372，4 处固件常量=76,505,200）。CPU 域 slack **+0.410 ns / 0 失败端点**（周期 13.071 ns）；**网表两个 cache 都在**（`dcache` 660 / `icache` 670 处）。⚠️ **[X] 2026-10-12 上板失败，别烧**（日志 `doc/board/uart_20261012_010314.txt` / `_010344.txt`）：
 串口只有 banner **重复约 590 次/秒**（13 秒 7,627 次），**没有任何 CoreMark 输出**，
 ⇒ CPU 跑飞后陷入非法指令 → `mtvec`(复位值 0 = `_start`) → 反复从头跑。
 **仿真（ITER=1）是过的**（四个 CRC 正确、265,408 拍/迭代）⇒ 属于"仿真过、板上不过"。

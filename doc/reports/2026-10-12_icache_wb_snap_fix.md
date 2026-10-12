@@ -117,15 +117,22 @@ P cyc=8120 ... ldfx_i=1 ldfx_e=1 ... snen=1 snap=00000066 wbsen=1 wbsnap=0000006
 
 ---
 
-## 6. 下一步
+## 6. 下一步 —— **已执行完毕（2026-10-12 晚）**
 
-1. **重出 I+D 位流**（`EARLY_LD=1 + DCACHE_EN=1 + ICACHE_EN=1`）——
-   逻辑既然修对了，**优先在 85 MHz 再试一次**（此前 −0.857 ns 是含这个 bug 的网表量的，
-   值不值得信要重测）；不收敛再退回 **76.5 MHz（`RATIO0=15.0`）**。
-   步骤照 `2026-10-12_handoff_completeness_first.md` §2.1（PLL 重生成 + 4 处固件常量 + ITER 重算）。
-2. **上板复验**：判据 = 串口出完整 CoreMark（不再是 banner 循环）+ 四个 CRC 逐位相同 +
-   `[cache] I/D` 计数非 0。
-3. **把 `-DCache -ICache -EarlyLd` 加进回归**（当前四条回归覆盖不到这个 corner）。
+> 全流程、数字与判据见 **[`2026-10-12_idcache_board_bitstream.md`](2026-10-12_idcache_board_bitstream.md)**。
+
+1. **[OK] 重出 I+D 位流** —— 两个仓库副本**并行**跑了 85 MHz 与 76.5 MHz：
+   * **85 MHz 仍不收敛**：CPU 域 setup **−1.143 ns / 343 失败端点**（该修复动的是 WB/前递链，
+     而 I-Cache 挂在取指链上 ⇒ **主频不会因此回来**）。
+   * **76.5052 MHz 收敛**：setup **+0.589 / hold +0.147 / 失败端点 0**；网表 `dcache` 655 / `icache` 670。
+   * 交付位流：`bitstreams/coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`。
+2. **[OK] 上板复验 —— 通过（2026-10-12 15:59）**：串口首行 **`RTL=0x20261016`**
+   （新增：本修复漏了约定 42，已补递增 `DESIGN_REV` 并重出位流）+
+   `Total ticks 894,745,801` / **11.6952 s / 313.63 分** + 四个 CRC 逐位相同 +
+   **`[cache] I` 计数非 0**（9,006,928 缺失 / 98.985%）。日志
+   `doc/board/uart_20261012_155934.txt`。
+3. **[OK] 回归已覆盖这个 corner**：本机用 `-DCache -ICache -EarlyLd` 重跑
+   **riscv-tests 49/1/0**、**CoreMark 四 CRC 全对**（1,556,268 拍、不跑飞）。
 
 ---
 

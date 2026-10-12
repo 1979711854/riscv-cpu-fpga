@@ -672,12 +672,19 @@
 ## 待办
 -  **[OK] 2026-10-12 I+D 板上失败的根因已定位并修复**（`core.v` 的 `wb_rdata_snap`
   停顿快照取错流水级，一行；见约定 47 与 `doc/reports/2026-10-12_icache_wb_snap_fix.md`）。
-  **下一步（不是上 ILA）**：
-  1. **重出 I+D 位流**：先试 **85 MHz**（旧的 −0.857 是含 bug 的网表量的，值不值得信要重测），
-     不收敛再退 **76.5 MHz（`RATIO0=15.0`）**；步骤见
-     `doc/reports/2026-10-12_handoff_completeness_first.md` §2.1。
-  2. **上板复验**：判据 = 串口出完整 CoreMark + 四个 CRC 逐位相同 + `[cache] I/D` 计数非 0。
-  3. **把 `-DCache -ICache -EarlyLd` 加进回归**（当前四条回归盖不住这个 corner）。
+  **[OK] 位流已出（2026-10-12 晚）**：85 MHz **仍不收敛**（−1.143 / 343 端点），
+  **76.5052 MHz 收敛**（setup **+0.589** / hold +0.147 / 失败端点 0）⇒ 交付位流
+  `bitstreams/coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`
+  （`DESIGN_REV` 已按约定 42 递增到 `0x2026_1016` ⇒ 串口首行 `RTL=0x20261016`）。
+  全流程见 `doc/reports/2026-10-12_idcache_board_bitstream.md`。
+  **[OK] 2026-10-12 15:59 已上板通过**（`doc/board/uart_20261012_155934.txt`）：
+  `RTL=0x20261016`、`Total ticks 894,745,801` → **11.6952 s / 313.63 分**、
+  四个 CRC 逐位相同、`Correct operation validated`、**`[cache] I`/`[cache] D` 都非 0**
+  （I 98.985% / D 99.929%）⇒ **I/D Cache 上板任务完成**。
+  性能：相对 351.86 分 **−10.9% = 主频 −10.0% + 周期 −0.95%** ⇒
+  **I+D 的代价几乎全在主频，Cache 周期代价只有 +0.95%**（文档旧写 +9.8% 的口径错）。
+  > [!] 顺带更正：I+D 的真实周期代价是 **+0.99%（244,034 拍/迭代）**，不是文档旧写的
+  > **+9.8%**（那是**漏了 `EARLY_LD`** 的口径，265,408）⇒ `ITER` 取 **3668**。
 -  **[!] 交接给队友看这两份（2026-10-11 晚）**：
   * **`doc/reports/2026-10-11_taskbook_v7.md` 的 §8** —— 现状 + Cache 阶段性总结 +
     交接清单（P0 = 提高双发射配对率；P0-2 = 解 Cache 布局拥塞）+ 纪律。
