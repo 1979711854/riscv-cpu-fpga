@@ -647,7 +647,37 @@
     **推论（更一般）**：`parameter` 开关的位流，"配置自证"只能靠**网表/资源/时序数**，
     与约定 42 的 `DESIGN_REV`（那证明的是 **RTL 版本**，**证明不了开关**）分工不同，两个都要看。
 
+47. [!] **级间快照/前递的"选源信号"必须与它服务的【流水级】同源**（2026-10-12 实踩，
+    I+D 位流"板上只反复打 banner"的真凶）。
+    `core.v` 的 `wb_rdata_snap` 服务的是 **MEM/WB** 级的 load，却在停顿沿写成
+    `wb_rdata_snap <= ex_mem_ld_fast ? ld_early_data : mem_rdata;` ——
+    `ex_mem_*` / `ld_early_data` 是 **EX/MEM** 级（**下一条**指令）的信号 ⇒
+    I-Cache 缺失冻结时，把下一条 load 的值写进了本条 load 的写回路径。
+    **修法一行**：停顿那支**只能取 `mem_rdata`** —— 快通路 load 在自己的前进沿
+    已被第一支抓过快照，走不到这一支，所以这一支服务的必然是普通 load。
+    **判据/教训**：
+    * **"信号名里带 `ex_mem_` 就属于 EX/MEM 级"** —— 用它去服务 `mem_wb_*` 那级
+      是**张冠李戴**，编译不报、短仿真也未必崩（本例 8,124 拍才跑飞）。
+    * **要触发它，四个条件缺一不可**：`EARLY_LD=1`（否则 `ex_mem_ld_fast≡0`，
+      三元式退化成 `mem_rdata`，bug 不可达）+ `ICACHE_EN=1`（提供**大量停顿**）
+      + `DCACHE_EN=1` + "普通 load 在 WB 且快通路 load 在 EX/MEM"。
+      ⇒ **四条回归默认都是 `EARLY_LD=0`，天然盖不住它** ——
+      验 Cache / 任务 C 时必须**显式**带上 `-DCache -ICache -EarlyLd`，
+      并**核对 vvp 首行 `SIM CONFIG:`**（别再拿"长仿真过了"当结论，见下条）。
+    * **"仿真过了 ⇒ 逻辑对"这个推理不成立**，除非**配置打印全对**。
+      项目此前记的"I+D ITER=50 长仿真四个 CRC 全对"与本 bug **直接冲突**
+      （未修 RTL 8,124 拍就崩），几乎肯定是**漏了 `-EarlyLd`** ⇒ 该结论作废。
+      详见 `doc/reports/2026-10-12_icache_wb_snap_fix.md`。
+
 ## 待办
+-  **[OK] 2026-10-12 I+D 板上失败的根因已定位并修复**（`core.v` 的 `wb_rdata_snap`
+  停顿快照取错流水级，一行；见约定 47 与 `doc/reports/2026-10-12_icache_wb_snap_fix.md`）。
+  **下一步（不是上 ILA）**：
+  1. **重出 I+D 位流**：先试 **85 MHz**（旧的 −0.857 是含 bug 的网表量的，值不值得信要重测），
+     不收敛再退 **76.5 MHz（`RATIO0=15.0`）**；步骤见
+     `doc/reports/2026-10-12_handoff_completeness_first.md` §2.1。
+  2. **上板复验**：判据 = 串口出完整 CoreMark + 四个 CRC 逐位相同 + `[cache] I/D` 计数非 0。
+  3. **把 `-DCache -ICache -EarlyLd` 加进回归**（当前四条回归盖不住这个 corner）。
 -  **[!] 交接给队友看这两份（2026-10-11 晚）**：
   * **`doc/reports/2026-10-11_taskbook_v7.md` 的 §8** —— 现状 + Cache 阶段性总结 +
     交接清单（P0 = 提高双发射配对率；P0-2 = 解 Cache 布局拥塞）+ 纪律。

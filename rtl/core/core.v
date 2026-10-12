@@ -1162,7 +1162,16 @@ module core #(
         end else if (mem_ready_int) begin
             wb_rdata_snap_en <= 1'b0;          // WB 正常推进：下条指令用实时 mem_rdata
         end else if (!wb_rdata_snap_en) begin  // 停顿第一个沿：抓一次（此后实时值已失效）
-            wb_rdata_snap    <= ex_mem_ld_fast ? ld_early_data : mem_rdata;
+            // [!] 只能取 mem_rdata。冻在 MEM/WB 的指令若需要本快照，它一定是
+            //     【普通 load】—— 快通路 load 在它自己的前进沿已被上面第一支抓过
+            //     （snap_en=1），走不到本支。
+            //     历史上这里写成 `ex_mem_ld_fast ? ld_early_data : mem_rdata`，
+            //     用【EX/MEM 级】指令的信号选源，而本快照服务的是【MEM/WB 级】
+            //     指令：I-Cache 缺失冻结下实测——普通 load 冻在 WB、快通路 load
+            //     占着 EX/MEM 时，抓到的是后者的提前读数据（2026-10-12：
+            //     `lw s2,36(sp)` 写回了下一条 `lw s1,40(sp)` 的值，CoreMark
+            //     跑几万拍后 trap，riscv-tests 因代码短碰不到）。
+            wb_rdata_snap    <= mem_rdata;
             wb_rdata_snap_en <= 1'b1;
         end
     end
