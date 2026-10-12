@@ -133,6 +133,12 @@ module coremark_tb;
     reg [63:0] c_stall, c_div, c_mul, c_flush;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
     reg [63:0] c_commit, c_inst_in;
+    // [A1 可行性] mul 结果被【紧邻的下一条】消费的次数。
+    //   判据与 core.v:533 的 load-use 检查同构（ID 级 rs1/rs2 + pair 的 rs1_b/rs2_b）。
+    //   意义：把乘法器改成 II=1 后，mul 只占 1 拍 EX、结果要 2 拍后才到 WB，
+    //        于是"紧邻的消费者"会改成自己停 1 拍 ⇒ **只有距离 > 1 的 mul 才真省周期**。
+    //   所以可省上限 = mul 总数 − c_mul_near。
+    reg [63:0] c_mul_near;
 
     // 条件分支的方向细分。
     // **设计分支预测器需要 not-taken 的条数** —— 现在 not-taken 是零代价的，
@@ -163,7 +169,7 @@ module coremark_tb;
     reg [63:0] t_timer_cyc [0:7];
     integer    t_timer_n;
     reg        in_timed;
-    reg [63:0] tc_all, tc_stall, tc_div, tc_mul, tc_flush;
+    reg [63:0] tc_all, tc_stall, tc_div, tc_mul, tc_flush, tc_mul_near;
     reg [63:0] tc_fwdex, tc_fwdwb, tc_mem, tc_commit;
     reg [63:0] tc_br_tot, tc_br_tk, tc_br_bwd, tc_br_bwd_tk;
     reg [63:0] tc_jal, tc_jalr;
@@ -364,6 +370,10 @@ module coremark_tb;
                     $display("region div stall : %0d  %f%%", tc_div,
                              (tc_div * 100.0) / tc_all);
                     $display("region mul exec  : %0d", tc_mul);
+                    // [A1 可行性] 其中"紧邻下一条就消费"的条数；去阻塞(II=1) 后
+                    //   这些仍会停 1 拍 ⇒ 真正可省的上限 = (tc_mul − tc_mul_near) 拍。
+                    $display("region mul near  : %0d  （紧邻消费，去阻塞后仍停 1 拍）",
+                             tc_mul_near);
                     $display("region flush     : %0d  %f%%", tc_flush,
                              (tc_flush * 100.0) / tc_all);
                     $display("region fwd ex    : %0d", tc_fwdex);
@@ -413,6 +423,7 @@ module coremark_tb;
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             c_stall <= 64'd0; c_div <= 64'd0; c_mul <= 64'd0; c_flush <= 64'd0;
+            c_mul_near <= 64'd0;
             c_fwdex <= 64'd0; c_fwdwb <= 64'd0; c_mem <= 64'd0;
             c_br_taken <= 64'd0; c_jump <= 64'd0;
             c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
@@ -425,6 +436,7 @@ module coremark_tb;
             t_timer_n <= 0;
             in_timed  <= 1'b0;
             tc_all <= 64'd0; tc_stall <= 64'd0; tc_div <= 64'd0; tc_mul <= 64'd0;
+            tc_mul_near <= 64'd0;
             tc_flush <= 64'd0;
             tc_fwdex <= 64'd0; tc_fwdwb <= 64'd0; tc_mem <= 64'd0;
             tc_commit <= 64'd0;
@@ -462,6 +474,12 @@ module coremark_tb;
             // mul_start 每条 mul 恰好高 1 拍（见 multiplier.v），所以它直接就是
             // 动态 mul 条数 —— 这也是"乘法器拆成两拍"代价的唯一实测口径。
             if (u_core.mul_start)  c_mul    <= c_mul + 64'd1;
+            // [A1] 紧邻下一条就读 mul 的目的寄存器（含双发射 lane B）
+            if (u_core.mul_start && (u_core.id_ex_rd != 5'd0) &&
+                ((u_core.id_ex_rd == u_core.rs1) || (u_core.id_ex_rd == u_core.rs2) ||
+                 (u_core.if_id_pair && ((u_core.id_ex_rd == u_core.rs1_b) ||
+                                        (u_core.id_ex_rd == u_core.rs2_b)))))
+                c_mul_near <= c_mul_near + 64'd1;
             if (u_core.ex_flush)   c_flush  <= c_flush + 64'd1;
             if (u_core.fwd_a_ex || u_core.fwd_b_ex) c_fwdex <= c_fwdex + 64'd1;
             if (u_core.fwd_a_wb || u_core.fwd_b_wb) c_fwdwb <= c_fwdwb + 64'd1;
@@ -498,6 +516,11 @@ module coremark_tb;
                 if (u_core.stall)     tc_stall  <= tc_stall + 64'd1;
                 if (u_core.div_stall) tc_div    <= tc_div + 64'd1;
                 if (u_core.mul_start) tc_mul    <= tc_mul + 64'd1;
+                if (u_core.mul_start && (u_core.id_ex_rd != 5'd0) &&
+                    ((u_core.id_ex_rd == u_core.rs1) || (u_core.id_ex_rd == u_core.rs2) ||
+                     (u_core.if_id_pair && ((u_core.id_ex_rd == u_core.rs1_b) ||
+                                            (u_core.id_ex_rd == u_core.rs2_b)))))
+                    tc_mul_near <= tc_mul_near + 64'd1;
                 if (u_core.ex_flush)  tc_flush  <= tc_flush + 64'd1;
                 if (u_core.fwd_a_ex || u_core.fwd_b_ex) tc_fwdex <= tc_fwdex + 64'd1;
                 if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
