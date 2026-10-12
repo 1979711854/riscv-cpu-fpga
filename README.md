@@ -124,14 +124,14 @@ Python 3:    用于把 ELF 拆成 hex
 
 ```powershell
 # 上板唯一入口（一条命令：生成固件 → 同步并校验 → 综合出 .sbit，约 5 分钟）
-scripts\build_bitstream.ps1 coremark    # 跑分版（双发射，ITER=3170，板上约 11.7 秒）
+scripts\build_bitstream.ps1 coremark    # 跑分版（双发射 + EARLY_LD，ITER=4116，板上约 11.7 秒）
 scripts\build_bitstream.ps1 demo        # 演示版（读按键 → 写 LED → 串口打印）
 ```
 
 想分步走也可以（**但别漏第 2 步**）：
 
 ```powershell
-scripts\run_coremark.ps1 -Iter 3170 -SkipSim  # 跑分用（双发射）：85.0051MHz 下约 11.7 秒，满足 ≥10s
+scripts\run_coremark.ps1 -Iter 4116 -SkipSim  # 跑分用（双发射 + EARLY_LD）：85.0051MHz 下约 11.70 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用
 scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目录
 ```

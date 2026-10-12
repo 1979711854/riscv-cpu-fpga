@@ -42,7 +42,7 @@
 
 ---
 
-## 当前进度（2026-10-06：顺序双发射 `DUAL_ISSUE=1`，板上实测 270.82 CoreMark；此前 2026-10-04：85.0051 MHz 提频；再前 2026-09-28：62.03 MHz + 两拍乘法器 + BTB/BHT）
+## 当前进度（2026-10-12：**I/D Cache 上板跑通** + 任务C `EARLY_LD` —— **当前跑分口径 = 85.0051 MHz 顺序双发射 + `EARLY_LD`，板上实测 351.86 CoreMark**（I+D Cache 版 313.63 @76.5052 MHz）；此前 2026-10-06：双发射 270.82；2026-10-04：85.0051 MHz 提频；再前 2026-09-28：62.03 MHz + 两拍乘法器 + BTB/BHT）
 基础任务完成度详见 `doc/base_task_status.md`：
 
 | 基础任务 | 状态 |
@@ -73,9 +73,9 @@
   > **速算式：`ITER = 时钟频率 × 10s ÷ 每迭代周期数`** —— **分子是哪个频率，取决于你往哪儿烧**：
   >   * **本地盘古板：850,051,000 ÷ 每迭代周期数**（85.0051 MHz × 10 s）
   >   * 仿真 / 远程平台：270,000,000 ÷ 每迭代周期数（27 MHz × 10 s）
-  > 取整后留 5~10% 余量。**当前（双发射）313,886 周期/迭代 → 板上 ITER=3170**
-  > （3170 × 313,886 ÷ 85,005,100 = **11.70 s**，余量 17%）。
-  > 单发射时代是 363,515 周期/迭代 → ITER=2740（同一频率下 11.72 s）。
+  > 取整后留 5~10% 余量。**当前（双发射 + `EARLY_LD`）241,633 周期/迭代 → 板上 ITER=4116**
+  > （4116 × 241,633 ÷ 85,005,100 = **11.70 s**，余量 17%）—— **这也是 `build_bitstream.ps1` 的默认值**。
+  > 其他配置：`EARLY_LD=0` 是 262,018 → 3796；单发射是 363,515 → 2740（同一频率下 11.72 s）。
   > 上板流程（唯一入口）：`scripts\build_bitstream.ps1 coremark` —— 它会生成固件、同步、
   > 综合一条龙，并打印 md5。
   > 历史（27 MHz 时代）：420,094 周期/迭代时 ITER=700 = 10.89s（远程平台实测）；
@@ -169,11 +169,12 @@
   > 它把"生成固件 → 同步 → 校验 mem.hex 字数 → 综合出 .sbit"串成一条，并打印 md5。
   > 别再手工跑 `run_coremark.ps1` + `sync_firmware.ps1` 两步，容易漏第二步。
 - **流水线效率基线（改动流水线后用来对比）**：CoreMark 计时区间
-  * **双发射（当前板上口径）**：**313,886** 拍（仿真）/ **313,876** 拍（板上）→ 效率 **3.186 CoreMark/MHz**。
-  * **单发射（回退版口径）**：**363,515** 拍（两拍乘法器之后的新基线；BTB/BHT 后曾是 354,119）
-    / 提交 288,056 条指令 → **CPI 1.2620** / 效率 2.751。
+  * **双发射 + `EARLY_LD`（当前板上口径）**：**241,633** 拍（仿真）/ **241,584** 拍（板上）→ 效率 **4.139 CoreMark/MHz**。
+    （`EARLY_LD=0` 回退口径 **262,018**；I+D Cache 版 **243,933** / 4.099。）
+  * **单发射（回退版口径）**：**312,428** 拍（2026-10-11 阶段0/1 之后的新基线；
+    再往前是 **363,515** = 两拍乘法器之后）/ 提交 288,056 条指令 → **CPI 1.2620** / 效率 2.751（363,515 口径）。
   > [!] 下面这条**精确闭合式是【单发射】口径**（四项相加 = 363,515）；双发射的分解式不同，
-  > 板上是 313,876 拍/迭代。两条基线与跑法见文末「回归纪律」。
+  > 板上是 241,584 拍/迭代。四条基线与跑法见文末「回归纪律」。
   **精确闭合式（单发射，`+PROF` 实测，四项相加 = 区间总数）**：
   ```
   288,056（提交）+ 20,720（load-use）+ 9,396（mul 多拍）+ 45,343（分支）= 363,515  [OK]
@@ -211,13 +212,15 @@
   > 关键取舍见 `doc/spec.md` §6：只支持 M 模式（MPP 硬连线）；未实现的 CSR 读 0、写忽略、
   > 不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
 
-**回归纪律（重要，2026-10-06 改为两条基线）**：改动 RTL 后，riscv-tests 与 CoreMark
-**各跑两种配置**，两条基线**不同、不能混**：
+**回归纪律（重要，2026-10-12 起为四条并列基线）**：改动 RTL 后，riscv-tests 与 CoreMark
+**各跑多种配置**，各条基线**不同、不能混**：
 
 | 配置 | 怎么跑 | riscv-tests | CoreMark 每迭代（计时区间） |
 |---|---|---|---|
-| **双发射（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **313,886 拍** |
-| 单发射（回退版口径） | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | 363,515 拍 |
+| **双发射 + `EARLY_LD`（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **241,633 拍** |
+| 双发射 + `EARLY_LD=0` | 上面不传 `-EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | 262,018 拍 |
+| 单发射（回退版口径） | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | 312,428 拍 |
+| 带 Cache（corner —— **约定 47 的 bug 只在这里可达**） | 加 `-DCache -ICache -EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | 243,933 拍 |
 
 > [!] **为什么必须两条都跑**：`tb_riscv` / `tb_coremark` 是**直接例化 `core`**、靠编译期
 > `-DDUAL` 选配置，而板上走的是 `cpu_top`（参数 `DUAL_ISSUE=1`，`cpu_top_board` 不覆盖它）。
@@ -227,10 +230,11 @@
 > 现在三处自证、配置不靠默认值：测试台 t=0 打印 `SIM CONFIG: DUAL_ISSUE=?`（也进
 > `sim/programs/results.txt` 首行）；`run_*` 脚本用 `-Single` 显式切换、默认双发射；
 > `build_bitstream.ps1` 综合前打印它将综合的 `DUAL_ISSUE`（与 md5 并列）。
-> 双发射 313,886 是**当前板上基线**；单发射 363,515 只属回退版，**别拿它算板级得分**。
+> 双发射 + `EARLY_LD` 的 **241,633** 是**当前板上基线**；单发射 312,428 只属回退版，**别拿它算板级得分**。
 > 历史基线（均为**单发射**口径）：`420,070`（原始）→ `382,972`（取指重定向）→ `358,846`
-> （ID 级静态后向预测 + jal）→ `354,119`（2026-09-25 BTB/BHT）→ `363,515`（2026-09-28 两拍乘法器）。
-> 双发射基线 `313,886`（2026-10-06，−13.65%）另起一条。
+> （ID 级静态后向预测 + jal）→ `354,119`（2026-09-25 BTB/BHT）→ `363,515`（2026-09-28 两拍乘法器）
+> → `312,428`（2026-10-11 阶段0/1）。
+> 双发射另起一条：`313,886`（2026-10-06，−13.65%）→ **`241,633`（2026-10-11 任务C `EARLY_LD`，−7.79%）**。
 > [OK] **2026-09-25（45 MHz 迁移）复测通过**：49 PASS / 1 FAIL / 0 TIMEOUT、
 > 358,846 拍 / 1,462,898 总周期，两者都**逐位不变** —— 证明 `core.v` 的
 > `addr_result` 旁路确实是纯组合改动（不增删任何周期）。
@@ -239,38 +243,50 @@
 > 与 `addr_result` 无关。判回归时**只认 49/1/0 这个组合**，别去对 testnum。
 
 ## 仓库结构（以此为准，勿再新建顶层目录）
-- `rtl/core/`    CPU 核：`core.v`(5 级流水线/冒险/分支/trap) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
-                 `csr_file.v`(**CSR 寄存器组 + trap/mret 副作用**，只支持 M 模式)
-- `rtl/mem/`     `unified_mem.v` —— **统一存储器**（指令+数据共用一块双端口 BRAM：A 口取指 / B 口访存）。
+- `rtl/core/`    CPU 核：`core.v`(5 级流水线 / 冒险 / 分支 / trap / **顺序双发射**) `control.v`(主控译码) `alu.v`(含 M 扩展乘法) `divider.v`(多拍除法) `imm_gen.v` `regfile.v`
+                 `csr_file.v`(**CSR 寄存器组 + trap/mret 副作用 + `DESIGN_REV` 版本号**，只支持 M 模式)
+                 `multiplier.v`(两拍乘法器) `amo_unit.v`(**A 扩展 AMO 4 拍状态机**) `rvc_expand.v`(RVC 展开器 —— **已写但无模块引用，未集成**)
+- `rtl/mem/`     `unified_mem.v` —— **统一存储器**（指令+数据共用一块双端口 BRAM：A 口取指 / B 口访存 /
+                 **第三份阵列 `mem2` = 任务C 快通路 load 专用读口**）。
                  行为级、仅 PDS 综合用，`$readmemh` 读 PDS 工程目录下的 `mem.hex`
 - `rtl/bus/`     `addr_map.vh`(地址映射单点定义) `mem_bus.v`(**唯一的地址译码处** + 读数据 mux)
+                 `cache_d.v` `cache_i.v`(**4 KB/侧、2 路组相联 I/D Cache**，NRU 替换 + 写通；**默认关**，理由见约定 43)
 - `rtl/periph/`  `uart_tx.v`(发送，1024 深 FIFO) `uart_rx.v`(接收，16 深 FIFO、读弹出) `gpio.v`(LED+按键)
-- `rtl/top/`     `cpu_top.v` SoC 顶层，只做连线（地址映射见 `rtl/bus/addr_map.vh`）
-                 `cpu_top_board.v` **上板专用顶层**（PDS 的 top）：包住 `cpu_top`，
+- `rtl/video/`   **HDMI 视频子系统**：`video_core.v` `ppu.v` `vram_dp/b32/pal.v` `sync_vg.v` `tmds_encoder.v`
+                 `rgb2tmds.v` `outputserdes.v` `colorbar_gen.v`。
+                 **`video_top.v` 例化 PDS 专有原语（`pll_video` / OSERDES），iverilog 里不存在** ⇒
+                 测试台只接 `video_core`（`sim/tb_gomoku.v` 是接法范例，见约定 41）
+- `rtl/top/`     `cpu_top.v` SoC 顶层，只做连线 + **配置开关**（`DUAL_ISSUE` / `EARLY_LD` / `DCACHE_EN` / `ICACHE_EN` / 探针；
+                 地址映射见 `rtl/bus/addr_map.vh`）
+                 `cpu_top_board.v` **上板专用顶层**（PDS 的 top）：包住 `cpu_top` + PLL + HDMI，
                  不引出 `pc[31:0]`/`done`（原因见"当前进度"里的 [!]）
 - `rtl/top.v`    早期 LED 点灯练习工程顶层（保留）
 - `sim/`         `mem_model.vh`(存储器行为模型，被各 tb `include)
-                 `tb_riscv.v` `tb_coremark.v` `tb_demo.v`（集成）+ `tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v`（单元）
-                 `sim/tests/` **自写汇编测试**（`exceptions.S` `timer_irq.S` + `test_macros.h`）
-                 `sim/tools/tb_debug_trap.v` 逐拍调试台（需 -WithCore；放在 tools/ 以免被 run_sim 的通配捞走）
+                 整核/SoC 测试台：`tb_riscv.v` `tb_coremark.v` `tb_demo.v` `tb_amo_int.v` `tb_rtthread.v`
+                 `tb_gomoku.v` `tb_video.v` `tb_video_core.v` `tb_video_bars.v` `tb_ppu.v` `tb_rvc.v`
+                 单元测试：`tb_alu_*` `tb_control.v` `tb_gpio.v` `tb_uart_rx.v` `tb_uart_fifo.v` `tb_multiplier.v` `tb_amo.v`
+                 `sim/tests/` **自写汇编测试**（`exceptions.S` `timer_irq.S` `amo_int.S` `dep_probe.S` + `test_macros.h`）
+                 `sim/tools/` 逐拍调试台（`tb_debug_trap.v` `tb_memdbg.v` `tb_icache_dbg.v`；需 -WithCore，放 tools/ 以免被 run_sim 通配捞走）
                  `sim/programs/` 为生成的 hex/ELF（**不入库**）
 - `scripts/`     `run_sim.ps1` `run_coremark.ps1` `run_riscv_tests.ps1`(支持 `-ElfDir` 免源码回归) `run_demo.ps1` `sync_firmware.ps1`
                  `run_own_tests.ps1`(**自写测试**：汇编 → 跑 → 汇总) `elf2mem.py`(出 imem/dmem/mem 三种 hex)
-                 `trace2svg.py`(逐拍 trace → 流水线波形 SVG) `riscv_tests_link.ld` `coremark_port/` `demo/`(演示程序)
-                 `build_bitstream.ps1`(**上板唯一入口**：固件→同步→综合出 `.sbit`，一条命令)
+                 `trace2svg.py`(逐拍 trace → 流水线波形 SVG) `pair_analyze.py`(双发射配对率) `audit_rvc_width.py` `run_video.ps1`
+                 `riscv_tests_link.ld` `coremark_port/` `demo/` `gomoku/`(**五子棋**) `rtthread/`(**RT-Thread 移植**)
+                 `build_bitstream.ps1`(**上板唯一入口**：固件→同步→综合出 `.sbit`，一条命令；`-Single` / `-Cache` 出变体位流)
                  `serial_monitor.ps1`(**串口抓取**，零依赖；默认落盘 `doc/board/uart_<时间戳>.txt`)
+                 `pack_for_teammate.ps1` `pack_handoff.ps1`(打包交接)
 - `pds/RV32I_1/`  **正式 CPU 工程**（`.pds` 内源文件已重指 `../../rtl/**`，单一真相）
                  `ipcore/pll/` **Pango PLL IP**（27MHz→85.0051MHz，`RATIO0=13.5`）。`pll.v` 是 IP 生成产物，
                  **必须经 `.pds` 的 `wgt_my_ips_src` 引用**，不能当普通源文件加（见关键约定 24）
                  `bitstreams/` 归档的 `.sbit`（`.sbit` 被 gitignore，只入库 README）
-- `pds/riscv_cpu/` 早期 LED 练习工程
+                 `mem.hex` **固件快照（有意入库）** —— PDS 综合读的是**它**，不是 `sim/programs/mem.hex`（见约定 8）
 - `third_party/coremark/`  官方 CoreMark 源码（含 LICENSE）
 - `third_party/riscv-tests-elf/`    50 个**预编译基线 ELF**（回归金标准）
 - `third_party/riscv-tests-env/`    上游 riscv-tests 的 **env 头文件**（encoding.h / riscv_test.h），
                                     自写汇编测试要用；从队友原件抢救入库，详见其 README
-- `doc/`          `plan.md`(计划) `spec.md`(架构) `base_task_status.md`(基础任务核对) `RV32I指令集参考.md` `setup_env.md`(环境搭建) `test_report_riscv-tests.md` `resource_efficiency.md`(赛题三条性能指标成文) `ila_analysis.md`(流水线效率+ILA方案) `board_bringup.md`(**上板教程**) `board/`(**板上实测证据**：串口原始日志 + 索引) `figures/`(波形图) `patches/`(给队友的兼容补丁) `reports/`(会话报告/交接)
-- `.vscode/`      `tasks.json`(一键仿真) `settings.json`(Verilog lint 已改用 iverilog)
-- `riscv32-FPGA-pds/`  队友交接的**原件**（已 gitignore，仅作回归对照，验证完可删）
+- `doc/`          `plan.md`(计划) `spec.md`(架构) `base_task_status.md`(基础任务核对) `RV32I指令集参考.md` `setup_env.md`(环境搭建) `test_report_riscv-tests.md` `resource_efficiency.md`(赛题三条性能指标成文) `ila_analysis.md`(流水线效率+ILA方案) `board_bringup.md`(**上板教程**) `board/`(**板上实测证据**：串口原始日志 + ILA 硬件波形 + 索引) `figures/`(波形图) `patches/`(给队友的兼容补丁) `paper/`(**论文草稿 + 获奖策略**) `reports/`(会话报告/交接)
+- [!] **已不存在的旧条目（2026-10-12 核实，别再往这些路径写东西）**：`.vscode/`、
+  `riscv32-FPGA-pds/`（队友交接原件，验证完已删）、`pds/riscv_cpu/`（早期 LED 练习工程）
 
 ## 工具链与常用命令
 - **iverilog 14 + GTKWave**（scoop 安装）、**riscv-none-elf-gcc 15.2.0**（`D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin`，等价赛题写的 `riscv32-unknown-elf-`）、PDS 2022.2-SP6.4
@@ -746,10 +762,10 @@
   | **C. 游戏本体** | P1 | **不能跑 NES 模拟器**（装不下）；自己做，素材原创（版权）|
   | D. 收尾（报告+录像）| P1 | `doc/board/` 里目前只有串口文本，缺录像 |
 
-  **赛题对齐（2026-09-25 核对）**：基础任务 3 条**全达标 [OK]**；高阶任务：
+  **赛题对齐（2026-09-25 首次核对；2026-10-12 更新了 Cache 一行）**：基础任务 3 条**全达标 [OK]**；高阶任务：
   | 高阶任务 | 赛题原文要点 | 我们 |
   |---|---|---|
-  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | [X] **决定不做**（负收益，答辩话术见进度报告 §3.1）|
+  | ① 存储优化 | 2 路组相联 I/D Cache + 总线突发 | **[OK] I/D Cache 已实现并上板**（4 KB/侧、2 路组相联，2026-10-12）——但**默认关、判定为负收益**（约定 43）。**总线突发未做。** 答辩口径："实现并量化评估后判定为负收益" |
   | ② 高级控制 | **动态分支预测器（如 BTB）** *以及* **完整异常/中断机制** | **[OK] 已完整**（异常/中断 09-23、BTB/BHT 09-25）|
   | ③ AI 加速 | YOLO / 轻量 LLM + 传感器 | [X] **硬件不可行**（32KB BRAM 硬墙，话术见 §3.2）|
 
@@ -758,13 +774,13 @@
 
   **性能（[历史记录] 下表是 2026-09-25「49.89 MHz / 140.89 分」当时写的"已冻结"清单；
   2026-09-28 起已解冻，推进到两拍乘法器 + 85.0051 MHz 提频 + 顺序双发射，
-  当前板上实测 **270.82 CoreMark**（双发射），见「当前进度」）：**
+  当前板上实测 **351.86 CoreMark**（85.0051 MHz 双发射 + `EARLY_LD`；I+D Cache 版 313.63），见「当前进度」）：**
   | 可选项 | 收益 | 说明 |
   |---|---|---|
   | BHT 表扩容（256 → 1024/4096 项）| +1% | 别名冲突已定位（149/341 分支冲突）。改动小，但要**单独一次**做 |
   | 消除 load-use 停顿 | +5.8% | 风险高，有余力再说 |
   | 主频再提 | +4.2 MHz 空间 | 可达 54.0745 MHz，当前 49.8927 MHz |
-  | ~~2 路组相联 Cache~~ | **不做** | 单周期 32KB BRAM、工作集仅 16.4KB，**没有慢速后端可藏** → 命中 1 拍（零收益）、缺失 2 拍（纯亏）|
+  | ~~2 路组相联 Cache~~ | **（09-25 当时的判断）不做** | 单周期 32KB BRAM、工作集仅 16.4KB，**没有慢速后端可藏** → 命中 1 拍（零收益）、缺失 2 拍（纯亏）。**[!] 2026-10-11 已实现、10-12 已上板**，实测确认"收益为 0、周期 +0.95%、代价几乎全在主频" ⇒ 见约定 43。**这一行只代表 2026-09-25 那一刻的判断。** |
 
   > [!] **别把没把握的写成已完成**：MEIP 只有通路无测试、AI 完全不可行、
   > 未对齐访存不支持（`ma_data` FAIL 属架构取舍）。评委一验证就穿帮。
@@ -793,6 +809,7 @@ un_riscv_tests.ps1` 不带参数时会自动回退到随附的
 - **高阶任务的剩余项**：
   - [ ] **外部中断 MEIP**：通路已具备（`cpu_top` 接了 UART RX 非空），但**没有测试**，
     不得当作已验证能力
-  - [ ] BHT 表扩容 / 消除 load-use 停顿 / 主频再提 —— 见上面「性能已冻结」表
-  - [x] ~~2 路组相联 I/D Cache~~：**负收益，已决策不做**
+  - [ ] BHT 表扩容 / **剩余 load-use**（基址在 EX 1.81% / 紧前是 store 0.71%）/ 主频再提 —— 见上面「性能已冻结」表
+  - [x] **2 路组相联 I/D Cache：已实现并上板**（4 KB/侧，默认关；I+D @76.5052 MHz 实测 **313.63 分**）。
+    **不是"没做"，是"做了、代价几乎全在主频"** —— 唯一值钱的方向是**把 I+D 的主频拿回来**（约定 43 / `taskbook_v8` §5.A）
   - [x] ~~边缘 AI~~：**32KB BRAM 是硬墙，硬件条件不可行**

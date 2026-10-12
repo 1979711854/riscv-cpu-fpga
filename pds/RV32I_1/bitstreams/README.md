@@ -23,9 +23,9 @@
 **仿真（ITER=1）是过的**（四个 CRC 正确、265,408 拍/迭代）⇒ 属于"仿真过、板上不过"。
 **定位思路见 `doc/reports/2026-10-12_handoff_completeness_first.md` §2.3。**| `fa957dbd` |
 | **`coremark_dual_aext_ms_stage01_earlyld_dcache_2f7a4d0a.sbit`** | **带 D-Cache 的一版（2026-10-12）**：`2ddaf32f` + **`DCACHE_EN=1`（只开 D-Cache）**。CPU 域 slack **+0.151 ns / 失败端点 0**，DRM **105.5/415**；网表已验（`dcache` 653 处、`tag0` 100 处、`icache` 0 处）。ITER=4116，**[OK] 已上板（2026-10-12，日志 `doc/board/uart_20261012_002541.txt`）**：`Total ticks 994,386,960` → **11.69797 s** → **351.86 分**；`[cache] D hits=35,341,114 / miss=25,081`（**命中率 99.929%**）；**四个 CRC 与关 Cache 时逐位相同**；拍/迭代 241,590.6（关 Cache 版 +6.0 拍）| `2f7a4d0a` |
-| **`coremark_dual_aext_ms_stage01_earlyld_2ddaf32f.sbit`** | **跑分版（2026-10-11 晚）**：在 `03d8a7eb` 之上加**任务 C 的 `EARLY_LD`（load 地址提前到 ID + 专用读口）** —— 每迭代 **241,633** 拍（原 262,018，**−7.79%**），ITER=**4116**，CPU 域 slack **+0.045 ns**、失败端点 **0**（16,484 端点）。预期板上 11.70 s / **≈352 分**。**尚未上板**。四条基线全过（riscv-tests 49/1/0、自写 2/0、AMO T0 PASS、RT-Thread SoC PASS、CoreMark 四 CRC 逐位一致）| `2ddaf32f` |
+| **`coremark_dual_aext_ms_stage01_earlyld_2ddaf32f.sbit`** | **跑分版（2026-10-11 晚）**：在 `03d8a7eb` 之上加**任务 C 的 `EARLY_LD`（load 地址提前到 ID + 专用读口）** —— 每迭代 **241,633** 拍（原 262,018，**−7.79%**），ITER=**4116**，CPU 域 slack **+0.045 ns**、失败端点 **0**（16,484 端点）。预期板上 11.70 s / **≈352 分**。**[OK] 已上板（2026-10-11，日志 `doc/board/uart_20261011_225624.txt`）**：`Total ticks 994,362,145` → **11.6976 s** → **351.8 分**（日志里的 `Iterations/Sec 374` 是整数截断，别用）；拍/迭代 **241,584**（仿真 241,633，−0.02%），首行 `RTL=0x20261015`。四条基线全过（riscv-tests 49/1/0、自写 2/0、AMO T0 PASS、RT-Thread SoC PASS、CoreMark 四 CRC 逐位一致）| `2ddaf32f` |
 | `coremark_dual_aext_ms_stage01_a0cache_03d8a7eb.sbit` | **上一版（2026-10-11）**：`4f1b0977` + **A.0（`mem_ready`/访存停顿收尾）+ I/D Cache 骨架（默认关，等于没有）+ 外设 one-shot 门控**。slack **+0.578 ns**（89.40 MHz），失败端点 0，ITER=3796。**串口日志与 `4f1b0977` 逐位应一致**（Cache 关时功能逐位不变）| `03d8a7eb` |
-| `coremark_dual_aext_ms_stage01_4f1b0977.sbit` | **当前最新（2026-10-10）**：`imem_addr2` 修复 + 版本自证 + **阶段0（-O3 编译选项）+ 阶段1（到达级分支重定向）** —— CoreMark **ITER=3796** @85MHz，slack **+0.544 ns**（89.13 MHz），失败端点 0。预期板上 ~11.70 s / **324 分**。**尚未上板** | `4f1b0977` |
+| `coremark_dual_aext_ms_stage01_4f1b0977.sbit` | （2026-10-10，已被上一条 `2ddaf32f` 取代）：`imem_addr2` 修复 + 版本自证 + **阶段0（-O3 编译选项）+ 阶段1（到达级分支重定向）** —— CoreMark **ITER=3796** @85MHz，slack **+0.544 ns**（89.13 MHz），失败端点 0。**[OK] 已上板（2026-10-10，日志 `doc/board/uart_20261010_224932.txt`）**：`Total ticks 994,437,480` → 11.6976 s → **324.5 分**（261,969.8 拍/迭代）| `4f1b0977` |
 | `coremark_dual_aext_ms_85mhz_mimpid_492714a8.sbit` | `imem_addr2` 修复 + **版本自证**（`mimpid` 打出 `RTL=`，约定 42）—— CoreMark ITER=3170 @85MHz，slack +0.525 ns，失败端点 0。**已板上实测 270.82** | `492714a8` |
 | **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
@@ -33,11 +33,18 @@
 > [!] 旧的 `gomoku_dual_hud_85mhz_e5bc227a.sbit`（60.71Hz）保留作对照 ——
 > **它能复现"画面抖动/撕裂"那个症状**，是刷新率那条结论的证据。
 
-> [!] **2026-10-11 起"当前源码"对应的是 `03d8a7eb`**（A.0 + Cache 骨架，Cache 默认关）。
+> [!] **别用本文件判断"当前源码对应哪一版位流"** —— 位流是历史快照，而 RTL 一直在动。
+> 判据只有两条：① 串口首行 `RTL=0x…` 是否等于 `rtl/core/csr_file.v` 的 `DESIGN_REV`（约定 42）；
+> ② 重新跑 `scripts\build_bitstream.ps1 coremark`，看它打印的**配置与 md5**（约定 23）。
+> （本文件旧文写"2026-10-11 起当前源码 = `03d8a7eb`"，那只对那一刻成立。）
+>
+> 当前**跑分口径**（2026-10-11/12 板上实测）：**85.0051 MHz 双发射 + 任务C `EARLY_LD`**，
+> ITER=4116，每迭代 **241,633** 拍 → **351.86 分**（`2f7a4d0a` / `2ddaf32f`，两者分数相同）；
+> **I+D Cache 版**为 **76.5052 MHz / ITER=3668 → 313.63 分**（`c6b12d95`，`RTL=0x20261016`）。
 > `4f1b0977` 保留作它的对照。
 >
-> [!] **`4f1b0977` 才是"当前源码"对应的位流**（2026-10-10，阶段0+1）——
-> 串口第一行应为 `[build] FW=COREMARK RTL=0x2026_1011`（`DESIGN_REV` 已递增，
+> [!] **`4f1b0977` 是 2026-10-10 阶段0+1 那一代的位流，早已被取代**（当时它才是"当前源码"）——
+> 串口第一行是 `[build] FW=COREMARK RTL=0x2026_1011`（`DESIGN_REV` 当时递增到 `1011`，
 > **自证是阶段1 之后的网表**；`492714a8` / `7b6e5e05` 读出来的都是 `0x2026_1010`）。
 > **`7b6e5e05` 是复核阶段的中间产物（ITER=3518，板上只有 10.84 s），别烧它。**
 
@@ -50,8 +57,9 @@
 > 恒 0，固件也还没读它）。判分看 `Total ticks`（ITER=3170 约 994,9xx,xxx，
 > ÷85,005,100 ≈ 11.7 s）+ 四个 CRC。
 >
-> **`RTL=` 的值可以一眼分辨网表代次**：`0x2026_1011` = 含阶段1（当前）；
-> `0x2026_1010` = 阶段1 之前；无此行 = 更早。
+> **`RTL=` 的值可以一眼分辨网表代次**（`DESIGN_REV` 定义在 `rtl/core/csr_file.v`，约定 42）：
+> `0x2026_1016` = I+D Cache 那代（`c6b12d95`）；`0x2026_1015` = 任务C `EARLY_LD` 那代（`2ddaf32f` / `2f7a4d0a`）；
+> `0x2026_1011` = 含阶段1；`0x2026_1010` = 阶段1 之前；无此行 = 更早。
 >
 > [!] 因为加了这一行，CoreMark 镜像从 4208 字涨到 **4228 字**
 > （`build_bitstream.ps1` 的 `expectLines` 表已实测更新）。

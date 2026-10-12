@@ -139,7 +139,7 @@ stall / div_stall 时：pc_r 与 if_addr_d 都保持不动，
 
 ```powershell
 # 1) 生成固件（选一种）
-scripts\run_coremark.ps1 -Iter 3170 -SkipSim  # 跑分用：11.70s @85.0051MHz（双发射，当前设计），满足赛题 >=10s
+scripts\run_coremark.ps1 -Iter 4116 -SkipSim  # 跑分用：11.69797s @85.0051MHz（双发射 + EARLY_LD，当前设计），满足赛题 >=10s
 scripts\run_demo.ps1                          # 演示用：读按键→写 LED→串口打印
 
 # 2) 同步到本工程目录（会删掉过期的 imem.hex/dmem.hex）
@@ -215,16 +215,20 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 - rv32um 的 8 项（mul/mulh/mulhsu/mulhu/div/divu/rem/remu）**一次全过**，
   给 M 扩展补上了官方测试背书（此前只有手写单测）
 
-**CoreMark（85.0051 MHz 顺序双发射版板上实测 —— 当前口径，2026-10-06）**
+**CoreMark（85.0051 MHz 顺序双发射 + `EARLY_LD` 版板上实测 —— 当前口径，2026-10-11/12）**
 ```
-Total ticks      : 994988178     → 实际 11.7050 秒（÷ 85,005,100）→ 270.82 CoreMark
-Iterations       : 3170
+Total ticks      : 994386960     → 实际 11.69797 秒（÷ 85,005,100）→ 351.86 CoreMark
+Iterations       : 4116
 seedcrc/crclist/crcmatrix/crcstate 逐位一致（crcfinal 随 ITER 变，不比）
 Correct operation validated.
 ```
-原始日志：`doc/board/uart_20261006_162410.txt`；位流 md5 `5c4893de`。
-（每迭代 994,988,178 ÷ 3170 = **313,876** 拍，仿真 313,886，差 **−0.003%**。
-单发射 85 MHz 版：`996,015,474` → 11.7171 s / 233.85、363,509 拍/迭代，位流 md5 `ae4deea9`。）
+原始日志：`doc/board/uart_20261011_225624.txt` / `doc/board/uart_20261012_002541.txt`；
+位流 md5 `2ddaf32f`（无 Cache）/ `2f7a4d0a`（只开 D-Cache，分数完全相同）。
+I+D Cache 版（76.5052 MHz / ITER=3668）：`894,745,801` → 11.6952 s / 313.63，位流 `c6b12d95`。
+（每迭代 994,386,960 ÷ 4116 = **241,584** 拍，仿真 241,633，差 **−0.02%**。）
+**历史（纯双发射 85 MHz 版，2026-10-06）**：`Total ticks 994,988,178` → 11.7050 s / 270.82 CoreMark、
+ITER=3170、313,876 拍/迭代（仿真 313,886），位流 md5 `5c4893de`，日志 `doc/board/uart_20261006_162410.txt`。
+**历史（单发射 85 MHz 版）**：`996,015,474` → 11.7171 s / 233.85、363,509 拍/迭代，位流 md5 `ae4deea9`。
 
 **CoreMark（49.8927 MHz 版板上实测 —— 历史，2026-09-25）**
 ```
