@@ -164,6 +164,10 @@ module core #(
     //   在 a2 刚被前一条指令写过时会读到陈旧值。
     reg        id_ex_is_amo;
     reg  [4:0] id_ex_amo_funct5;
+    // [A1] mul 判据必须【声明在前】—— 下面 ID 段的 stall 要用它，而 stall 比
+    //   EX 段的乘法器例化早得多。iverilog 14 严格"先声明后使用"（约定 1）。
+    //   alu_op 10..13 → MUL/MULH/MULHSU/MULHU；与 14..17 的除法不重叠。
+    wire       id_ex_is_mul = (id_ex_alu_op >= 5'd10) && (id_ex_alu_op <= 5'd13);
     // EX/MEM
     reg        ex_mem_reg_write, ex_mem_mem_read, ex_mem_mem_write;
     reg [1:0]  ex_mem_wb_sel;
@@ -175,6 +179,8 @@ module core #(
     reg        ex_mem_is_amo;
     reg  [4:0] ex_mem_amo_funct5;
     reg  [31:0] ex_mem_amo_addr;
+    // [A1] 本条是 mul —— 结果 2 拍后才由流水线乘法器给出，WB 级据此选它（见 wb_data）
+    reg        ex_mem_is_mul;
     // MEM/WB
     reg        mem_wb_reg_write;
     reg [1:0]  mem_wb_wb_sel;
@@ -184,6 +190,8 @@ module core #(
     reg [1:0]  mem_wb_addr_low;
     // [A 扩展] 本条是 AMO —— WB 级据此选 amo_wb_data 作为写回值
     reg        mem_wb_is_amo;
+    // [A1] 本条是 mul —— WB 级据此选 mul_result 作为写回值（见 wb_data）
+    reg        mem_wb_is_mul;
 
     // ---- [任务 C] load 地址提前（EARLY_LD）：级间标志与提前读回的数据 ----
     // ID/EX：这条 load 是否走快通路 + 它在 ID 级算好的地址
@@ -531,6 +539,14 @@ module core #(
     //   （见下面 EX 段新增的 ld_fwd_* 一路），再停一拍就是纯浪费。
     //   快通路 load 的判据保证它"一定"能在 MEM 级给出数据，所以这里可以无条件免停。
     assign stall = (id_ex_mem_read && !id_ex_ld_fast && (id_ex_rd != 5'd0) &&
+                    ((id_ex_rd == rs1) || (id_ex_rd == rs2) ||
+                     (if_id_pair && ((id_ex_rd == rs1_b) || (id_ex_rd == rs2_b))))) ||
+                   // [A1] mul 的结果要到 WB 级才由流水线乘法器给出（latency 2），
+                   //   所以"紧邻下一条就消费"必须停 1 拍 —— 判据与上面 load-use 同构
+                   //   （含 lane B 的 if_id_pair 门控，理由见上）。
+                   //   实测 CoreMark 每迭代 9,396 条 mul 里只有 **108 条**落这一类，
+                   //   于是停顿从"每条 mul 都停 1 拍"收窄成"只有紧邻消费者停 1 拍"。
+                   (id_ex_is_mul && (id_ex_rd != 5'd0) &&
                     ((id_ex_rd == rs1) || (id_ex_rd == rs2) ||
                      (if_id_pair && ((id_ex_rd == rs1_b) || (id_ex_rd == rs2_b)))));
 
@@ -886,12 +902,15 @@ module core #(
     //   （+PROF 的 c_mul；注意不能用静态推算，会小 5.8 倍），
     //   即区间周期 354,119 → 363,515（+2.65%）。
     //   详见 rtl/core/multiplier.v 头注释。
-    wire id_ex_is_mul = (id_ex_alu_op >= 5'd10) && (id_ex_alu_op <= 5'd13);
-    wire mul_start    = id_ex_is_mul && !mul_busy;
+    //   [!] `id_ex_is_mul` 的声明已【提前】到 ID/EX 寄存器声明处 —— stall 要用它。
+    wire mul_start    = id_ex_is_mul;       // [A1] II=1 ⇒ 不再看 busy，每拍高就是收一条
     // alu_op 10/11/12/13 → op 0/1/2/3（MUL/MULH/MULHSU/MULHU）
     wire [1:0] mul_op = id_ex_alu_op[1:0] - 2'd2;
     multiplier u_multiplier (
         .clk(clk), .resetn(resetn),
+        // [A1] en 必须与 EX/MEM、MEM/WB 寄存器同源 —— 否则 mem_ready 停顿时
+        //   乘法器继续前进、*_is_mul 却保持，写回值会错位（+MEMWAIT=3 抓到的坑）。
+        .en(mem_ready_int),
         .start(mul_start),
         .a(alu_a), .b(alu_b),
         .op(mul_op),
@@ -922,12 +941,15 @@ module core #(
     // [!] 只用于未对齐判据与 mtval，不改变任何流水线语义（见 §关键路径）。
     wire [31:0] addr_result = alu_a + alu_b;
     assign      div_stall  = id_ex_is_div && !div_done;
-    assign      mul_stall  = id_ex_is_mul && !mul_done;
+    // [A1] 乘法器改成 II=1 流水线后【不再产生前端冻结】—— mul 只占 1 拍 EX，
+    //   结果 2 拍后由 WB 级取走（`mem_wb_is_mul ? mul_result`）。停顿已收窄成
+    //   "只有紧邻消费者停 1 拍"，那一条并进了上面的 `stall`（与 load-use 同一条路）。
+    //   [!] 所以这里不再有 mul_stall；`mul_busy` / `mul_done` 保留端口但已无人使用。
     // 前端冻结判据只有这一根 —— 理由见文件顶部声明处的 [!]。
     // [A 扩展] AMO 是唯一的例外：它是【MEM 级】多拍单元，不能并进 mc_stall ——
     //   mc_stall 把 EX/MEM 清成气泡，而跑状态机的正是 EX/MEM 里那条 AMO。
     //   它改走 amo_hold / mem_ready_int（保持语义），见 amo_unit 例化处。
-    assign      mc_stall   = div_stall || mul_stall;
+    assign      mc_stall   = div_stall;
 
     wire equal         = (rs1_val == rs2_val);
     wire less_signed   = ($signed(rs1_val) < $signed(rs2_val));
@@ -1193,7 +1215,8 @@ module core #(
 
     // [A 扩展] AMO 的写回值来自 amo_unit（AMO/LR = 读回旧值，SC = 成功标志）。
     //   它在 MEM 级多拍才产生，所以不进 MEM/WB 寄存器，直接在 WB 级取。
-    assign wb_data = mem_wb_is_amo      ? amo_wb_data :
+    assign wb_data = mem_wb_is_mul      ? mul_result :        // [A1] 流水线乘法器的结果
+                     mem_wb_is_amo      ? amo_wb_data :
                      (mem_wb_wb_sel == 2'b01) ? load_data :
                      (mem_wb_wb_sel == 2'b10) ? (mem_wb_pc + 32'd4) :
                      (mem_wb_wb_sel == 2'b11) ? mem_wb_imm :
@@ -1471,6 +1494,7 @@ module core #(
             ex_mem_sys_ebreak <= 1'b0;
             // [A 扩展] 清 AMO 标志
             ex_mem_is_amo     <= 1'b0;
+            ex_mem_is_mul     <= 1'b0;      // [A1]
             ex_mem_amo_funct5 <= 5'd0;
             ex_mem_amo_addr   <= 32'd0;
             // [任务 C]
@@ -1508,6 +1532,7 @@ module core #(
             // [!] 地址用【前递后的 rs1】。AMO 的地址语义就是 rs1（不是 rs1+imm），
             //   所以不能用 ex_mem_alu_result（那是 rs1+imm 的和）。
             ex_mem_is_amo     <= id_ex_is_amo;
+            ex_mem_is_mul     <= id_ex_is_mul;      // [A1]
             ex_mem_amo_funct5 <= id_ex_amo_funct5;
             ex_mem_amo_addr   <= rs1_val_amo;
             // [任务 C]
@@ -1541,6 +1566,7 @@ module core #(
             mem_wb_rd         <= 5'd0;
             mem_wb_funct3     <= 3'd0;
             mem_wb_is_amo     <= 1'b0;
+            mem_wb_is_mul     <= 1'b0;      // [A1]
             mem_wb_addr_low   <= 2'd0;
             mem_wb_b_reg_write  <= 1'b0;
             mem_wb_b_wb_sel     <= 2'b00;
@@ -1557,6 +1583,7 @@ module core #(
             mem_wb_rd         <= ex_mem_rd;
             mem_wb_funct3     <= ex_mem_funct3;
             mem_wb_is_amo     <= ex_mem_is_amo;
+            mem_wb_is_mul     <= ex_mem_is_mul;     // [A1]
             mem_wb_addr_low   <= ex_mem_alu_result[1:0];
             mem_wb_b_reg_write  <= ex_mem_b_reg_write;
             mem_wb_b_wb_sel     <= ex_mem_b_wb_sel;

@@ -140,11 +140,13 @@ CoreMark 周期数也一字不差。** 说明这次改动没有引入任何时�
 
 ## 附：CoreMark 与板上验证
 
-### 板上实测结果（本地盘古板，85.0051 MHz，ITER=3170）—— **[历史口径，2026-10-06]**（顺序双发射、无 `EARLY_LD`、无 Cache）
+> [!] **当前板上口径（2026-10-11/12 实测）**：**85.0051 MHz 顺序双发射 + 任务C `EARLY_LD`**，
+> ITER=**4116**、每迭代 **241,633** 拍（板上 241,584）→ **351.86 CoreMark**
+> （位流 `2ddaf32f` / `2f7a4d0a`，日志 `doc/board/uart_20261011_225624.txt` / `uart_20261012_002541.txt`）。
+> **I+D Cache 版**：76.5052 MHz / ITER=3668 → **313.63 分**（`c6b12d95`，`RTL=0x20261016`）。
+> 下面这一节是 **2026-10-06 那一代**的原始记录 —— 读的时候按【当时那一代】理解，别当当前值。
 
-> [!] **本节数字已过时**：当前口径 = 双发射 + `EARLY_LD` **241,633 拍/迭代 → 351.86 分**
-> （ITER=4116，`doc/board/uart_20261012_101152.txt`）；I+D Cache 版 **243,933 → 313.63**
-> （ITER=3668，`doc/board/uart_20261012_155934.txt`）。口径总表见 `README.md` §当前成绩。
+### 板上实测结果（本地盘古板，85.0051 MHz，ITER=3170）—— 2026-10-06 那一代（**已被任务C `EARLY_LD` 取代**）
 
 ```
 CoreMark Size    : 666
@@ -165,7 +167,8 @@ Correct operation validated. See README.md for run and reporting rules.
 - `seedcrc / crclist / crcmatrix / crcstate` 与仿真**逐位一致**
 - 位流 md5 `5c4893de`，原始日志：`doc/board/uart_20261006_162410.txt`
 
-> [!] **当前默认配置是顺序双发射**（`rtl/top/cpu_top.v` 的 `parameter DUAL_ISSUE = 1`，2026-10-06）。
+> [!] **那一代的默认配置是顺序双发射**（`rtl/top/cpu_top.v` 的 `parameter DUAL_ISSUE = 1`，2026-10-06；
+> 当前配置在这之上还多了任务C 的 **`EARLY_LD = 1`**）。
 > 上一代（**单发射**、85.0051 MHz、ITER=2740）是 **233.85 CoreMark**（363,509 拍/迭代，位流 md5 `ae4deea9`，
 > 日志 `doc/board/uart_20261004_114730.txt`），保留为**可回退版**（`build_bitstream.ps1 -Single`）。
 > 双发射改的是**效率**（2.751 → 3.186，+15.8%），**时钟没动**；代价是 Fmax 91.40 → 87.00、
