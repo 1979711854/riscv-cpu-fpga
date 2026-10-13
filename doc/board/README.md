@@ -22,6 +22,51 @@
 >
 > 更早的各代见下方各节与 `doc/reports/2026-10-04_coremark_score.md`。
 
+## 【[OK]+[!] RT-Thread T1/G3 双线程五子棋首次上板（2026-10-13 22:46）—— 串口侧全通，显示侧未测
+
+日志 `uart_20261013_224652.txt`（抓 60 s / 133 行）。位流
+`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1017_8894cdcb.sbit`（md5 `8894cdcb`）。
+**板上没接显示屏**，所以只有串口证据。
+
+**这是 T1/G3（render 高优 + AI 低优两条线程）第一次上板。**
+
+### [OK] 通了什么
+
+| 判据 | 实测 |
+|---|---|
+| 版本自证 | `[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261017` |
+| 两条线程都起来 | `[boot] gomoku render thread running` + `[boot] gomoku ai thread running` |
+| 调度器在跑 | `[hb] alive, uptime 5000 … 50000`（每 5 s 一条、单调递增、全程无断）|
+| **两线程之间的邮箱往返** | **[重点] `AI moved, nodes=10592 depth=6 t=5068ms` / `nodes=3894 depth=6 t=2040ms`** |
+| 人对局逻辑 | 光标移动、落子、`occupied -- move the cursor and try again` 都对；棋盘快照逐手正确（黑 I8/H8、白 H7/G8，轮次交替、`*` 标最后一手）|
+
+> **[重点] 上表最后一行才是这一版真正要验的。** RT-Thread 固件里链进去的是 `app/main.c` 的
+> **强定义** `gomoku_ai_pump`（异步），弱定义（同步）根本没进 ELF（已用 `nm` 确认 ELF 里只剩一份）。
+> **子既然落得下来，就说明"派单 → AI 线程算 → 邮箱送回 → render 落子"整条链在真板上走通了。**
+> 这正是仿真验不到的那一段（`tb_rtthread.v` 不驱动按键，跑不出一手棋）。
+
+### [!] 没通的：`[!] vblank timeout` —— 显示侧要单独定案
+
+串口第 26 行打出 `[!] vblank timeout -- video not running (check D18 video_locked)`。
+
+* 这句在**归档里是第一次**出现：`doc/board/` 里 **23 份裸机五子棋日志一份都没有**，而那些日志
+  晚于这句代码入库（`709446f`，2026-10-10 12:39；最新裸机日志 14:40）——**不是"当时还没这句话"**。
+* **机制**：T1 新加的 `video_vblank_yield()` 在 vblank 忙等里 `rt_thread_mdelay(1)`，
+  即**每 ~1 ms 才看一次状态位**；而 RTL 里这个位是 `V_SYNC = 2` 行的脉冲
+  （`H_TOTAL=810`、pixel clk 25.5 MHz ⇒ **≈63 µs**；`rtl/video/video_core.v:133` 的注释自己写着
+  "2 行 …… = 62.7us"）。**拿 1 ms 的采样去看 63 µs 的脉冲，粒度差 16 倍。**
+* `scripts/gomoku/video_port.c` 里那句注释假设的是"480p@60 的 **~1.4 ms** vblank 窗"——
+  那是**后肩 33 行**（≈1.04 ms），**不是状态位报的那个 vsync 脉冲**；RTL 注释专门区分了这两者。
+* **后果（日志无法定量 —— 这句按设计只打一次）**：`video_wait_vblank()` 很可能经常要等满
+  50 ms 超时才返回 ⇒ render 主循环从 ~60 fps 掉到 ~20 fps，且 `draw_frame()` 会落在**消隐期之外**写显存。
+* **怎么定案（一步）**：看板上 **led[1]（丝印 D18）= video_locked**。
+  - D18 **亮** ⇒ 视频在跑、脉冲存在 ⇒ 只可能是被 1 ms 采样漏掉 ⇒ **真问题**；
+  - D18 **不亮** ⇒ 视频真没起来（但那样裸机版也该报，却没报）。
+  **或者直接接上显示器看画面顺不顺。**
+
+> 这与 T1 的邮箱改动**无关** —— 那一块真通了（见上表）。这是同批改动里的另一处，
+> **且正落在 G3 最在意的那条路径上**，所以单列。
+
 ## 【[OK] I+D Cache 上板通过】完整 I/D Cache 首次在真板上跑通（2026-10-12 15:59）
 
 位流 `coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`（md5 `c6b12d95`；
