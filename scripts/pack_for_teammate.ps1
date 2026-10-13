@@ -16,6 +16,13 @@
 #   2. `Compress-Archive -Path "$stage\*"` may drop hidden entries -> .git lost.
 #   3. Even ZipFile::CreateFromDirectory is only trustworthy if the staging dir
 #      actually contains .git -- so we verify the resulting archive afterwards.
+param(
+    # Optional suffix to avoid a name clash when two hand-offs go out on the
+    # same day (2026-10-13: the teammate's own riscv-cpu-fpga_dualissue_20261013.zip
+    # already sits in the hand-off folder). Default '' keeps the old behaviour.
+    #   -Tag btbras  ->  riscv-cpu-fpga_dualissue_20261013_btbras.zip
+    [string]$Tag = ''
+)
 $repo  = 'D:\riscv-cpu-fpga_merged'
 $stage = 'D:\_stage_dualissue'
 # Output goes to Desktop\RV32I\交接文件 -- the hand-off folder, i.e. where the
@@ -24,8 +31,9 @@ $stage = 'D:\_stage_dualissue'
 # why this file gained a UTF-8 BOM -- the path is non-ASCII. See the note above.)
 # Dated name so successive hand-offs don't silently overwrite each other; that is
 # the folder's existing convention (riscv-cpu-fpga_dualissue_20261006.zip, ...).
+# -Tag appends "_<tag>" before .zip, for a second hand-off on the same day.
 $out   = 'C:\Users\zjn\Desktop\RV32I\交接文件\riscv-cpu-fpga_dualissue_' +
-         (Get-Date -Format 'yyyyMMdd') + '.zip'
+         (Get-Date -Format 'yyyyMMdd') + $(if ($Tag) { "_$Tag" } else { '' }) + '.zip'
 
 # Trap 4: console/pipe encoding. PowerShell decodes native-command output as GBK
 # on a zh-CN box, so non-ASCII file names from `git ls-files` arrive mangled
