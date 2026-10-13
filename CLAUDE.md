@@ -831,6 +831,32 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     **⇒ 规矩**：双发射下判"有多少拍没干活"用 **`cycles − commit`（`region noretire`）**，
     不要用四项相加。**新增 `+PROF` 的 5 个互斥桶之和必须等于 `tc_noret`**，用它自检。
 
+54. [!] **rtthread 线（以及一切非 coremark 固件）上板前必须补 Cache 开关仿真**（2026-10-14 实踩）：
+    `scripts\rtthread\run_sim.ps1` 编译 `tb_rtthread` 时**不带任何 `-D` 旗标**（连 `-DDUAL` 都没有，
+    而板上 `cpu_top` 默认 `DUAL_ISSUE=1`/`EARLY_LD=1`）⇒ **RT-Thread 线的仿真一直只覆盖"无 Cache"**
+    单配置，`EARLY_LD`/Cache 的板级行为在 rtthread 固件上从没被仿真过。本次 rtthread + I+D
+    @76.5 位流（`c10a2478`）就这么漏过去：构建全链路自证都过（网表 `dcache`1188/`icache`1208/
+    `tag0`205 ✓；CPU 域 **+0.904 ns / 0 失败端点**，76.5 MHz 连 CDC 都收敛 ⇒ 全设计 0 失败端点），
+    **上板却确定性挂死**——三次抓取逐字节相同，只有一行 `?? turn=WHITE`（原始字节 2 个高位字节
+    + BEL，见约定 55），程序在"AI 第一手后的第一张棋盘快照"处损坏并挂死（无 `[hb]`）。
+    **同一固件在无 Cache 位流 `8894cdcb` 上完全正常** ⇒ 疑 I+D + `EARLY_LD` + 中断/上下文切换
+    路径上的 RTL bug（约定 47 同族——那次的触发条件正是 `ICACHE_EN=1` 提供的大量停顿）。
+    * **⇒ 规矩**：`tb_rtthread` 要补 `-DDUAL/-DEARLYLD/-DDCACHE/-DICACHE` 开关（照 `tb_coremark`
+      的写法）并核对 vvp 首行 `SIM CONFIG:`；**修好前 `c10a2478` 只是"综合验证通过"的存档，
+      不是可交付版**，五子棋 + Cache 的组合也未经验证。
+    * 另：**rtthread + D-Cache only @85MHz 位流不存在** —— 10-13 23:40 那次构建在 `gen_bit_stream`
+      前被中断（`.sbit` 从未落盘，只剩 D-only 网表）；需要就重跑
+      `build_bitstream.ps1 rtthread -DCacheOnly`。
+    * [!] **被中断的构建会留下 `cpu_top.v` 的 `DCACHE_EN=1` 不还原**（`finally` 没跑到）——
+      下次构建前先 `git diff rtl\top\cpu_top.v` 看一眼，否则 `-Cache` 会把 `DCACHE_EN=1` 当"原值"。
+
+55. [!] **`serial_monitor` 日志里的 `?` 不一定是固件打的 `?`**（2026-10-14 实踩）：
+    `serial_monitor.ps1` 用 `$sp.ReadExisting()` 且**从未设置 `$sp.Encoding`** ⇒ .NET `SerialPort`
+    默认 **ASCII 解码，每个 ≥0x80 的字节在日志里一律变成 `?`（0x3F）**。本次挂死现场那行
+    `?? turn=WHITE` 的原始字节是 `3F 3F 07 20`（两个高位字节 + BEL +空格）——固件实际发出的是
+    **损坏的数据**，不是字符串里真有 `?`（`scripts/gomoku` 里根本没有 `?` 字面量，别去源码里找）。
+    **⇒ 规矩：串口日志里看到成片 `?`，先 `Format-Hex` 看原始字节再下结论。**
+
 ## 待办
 -  **[OK] 2026-10-12 I+D 板上失败的根因已定位并修复**（`core.v` 的 `wb_rdata_snap`
   停顿快照取错流水级，一行；见约定 47 与 `doc/reports/2026-10-12_icache_wb_snap_fix.md`）。
