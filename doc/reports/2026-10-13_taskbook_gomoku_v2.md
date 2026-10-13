@@ -45,6 +45,13 @@ scripts\build_bitstream.ps1 rtthread    # 上板唯一入口（约 6 分钟，�
 | `mtime` | **32 位，85 MHz 下 ≈50.5 s 回绕一次**（见 §6）|
 | T1 位流 | `8894cdcb` —— `pds/RV32I_1/bitstreams/rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1017_8894cdcb.sbit` |
 
+> [!] **别碰 Cache 开关，也别去查 Cache 问题** —— 2026-10-14 查明：**带 Cache 的
+> RT-Thread 五子棋固件会挂**（`-DCache` / `-ICache` / 两者**都能打挂它**，仿真 100 MHz
+> 复现 ⇒ 功能 bug）。**那是 `rtl/bus/cache_*.v` 的事，归 CPU 线（乙）**，已进
+> `2026-10-13_taskbook_v10_cpu.md` §3.1。
+> **你的提交档一律 Cache 全关**（= `8894cdcb` 那一套，也是唯一板上验证过的组合）。
+> 别在 Cache 上耗时间。
+
 ---
 
 ## 2. [P0 · 先做] T1 带下来的两件收尾

@@ -77,12 +77,52 @@ Setup Summary，**只看 `clk|u_pll/u_gpll/CLKOUT0_Inferred → 自己` 那一�
 
 | # | 任务 | 优先级 | 说明 |
 |---|---|---|---|
+| **Cache 挂死** | **I/D Cache 在 RT-Thread 五子棋固件上会挂** —— 已仿真复现，待定位 | **P0（缺陷）** | 见 §3.1，**这是"已交付功能里的正确性 bug"，排在最前** |
 | **覆盖 A** | `tb_amo_cpu.S` 转 tohost 判分 + 从 `$skipThese` 摘出 + "弄坏 `amo_unit` 能 FAIL" 验证 | **P0（热身）** | 低风险、验收明确，先做 |
 | **覆盖 B** | `sim/tests/hi_fetch.S`（代码 >32 KB 取指）+ "把 `imem_addr2` 截位改回去能 FAIL" 验证 | **P0（热身）** | 同上 |
 | **B1-RAS** | 返回地址栈（真正拿分的） | **P0** | 见 §5 |
 | **B1-BTB** | BTB（赛题点名的功能分） | **P1** | 见 §6，**排在 RAS 之后** |
 
 **顺序：覆盖 A/B → RAS → BTB。**
+
+### 3.1 [P0 · 缺陷] Cache 在 RT-Thread 固件上会挂（**先修这个**）
+
+2026-10-14 已用仿真**完整复现**（100 MHz，时序不参与，所以是纯功能 bug）：
+
+| 配置 | 结果 |
+|---|---|
+| 无 Cache | **PASS** |
+| **只开 D** | **崩**（走得较远：两条线程都起来了，之后寄存器转储）|
+| **只开 I** | **崩得早**（串口只有 13 字节，banner 都没出来）|
+| D + I | **崩得早**（同上 13 字节）|
+
+⇒ **两个 Cache 都能打挂 RT-Thread 五子棋固件**；CoreMark（裸机、不开定时器中断）从来
+没暴露过，所以以前一直以为"Cache 是好的"。
+
+**已经排除的**（别重复查）：trap 路径本身（`exceptions`/`timer_irq` 在 `-ICache` 下都 PASS）、
+地址截位（`imem_addr` 是 14 位字地址，覆盖完整 64 KB）、MMIO 被缓存（`ram_hit` 门控，
+显存在 `0x8003_xxxx`）。
+
+**最强怀疑（未证实）**：两个 Cache **没有任何流水线重定向输入**，而 `cache_i.v` 头注释把
+正确性建立在"**停顿期间地址被冻在 A**"上；可 `core.v:330` 的 `fetch_addr` 优先级里
+`trap` / `ex_flush` / `ex_mispred` / `p_redirect` **全排在停顿回退之上**。
+**证实方法**（很便宜，加到测试台或 RTL 里只报不改）：
+
+```verilog
+// 停顿期间 fetch_addr 若发生变化 → 打印告警
+if (stall_active && (fetch_addr !== fetch_addr_d1)) $display("REDIRECT-DURING-STALL @%0t", $time);
+```
+
+无 Cache 跑同一条固件应当**一次都不报**；带 Cache 跑应当**报**。
+
+* **复现**：`scripts\rtthread\run_sim.ps1 -DCache` / `-ICache` / `-DCache -ICache`
+  （各约 5~6 分钟；**每次核对 vvp 首行 `SIM CONFIG`**）。
+* **归因全文**：`doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`。
+* **验收**：种上断言 → 定位 → 修 → 上面四种配置**全部 PASS**，且 `run_riscv_tests.ps1`
+  保持 49/1/0、四条并列基线**逐位不变**。
+* **[!] 修好前**：`c10a2478`（I+D @76.5）与 10-14 00:57 那颗（D-only @85）**都标了"勿烧"**；
+  **提交档一律 Cache 全关**。顺带一提，那颗 D-only @85 还有个**独立**问题：
+  CPU 域 **−0.177 ns / 13 失败端点**（A1 之后"只开 D @85"也塞不进去了）。
 
 > [!] **覆盖 A/B 是 2026-10-12 就分给你的**（原文：`tb_amo_cpu.S`、`hi_fetch.S`），
 > 一直没人做。两项都动 `rtl/` 与 `sim/`，**归 CPU 线**（给五子棋线会踩 CPU 线）。
