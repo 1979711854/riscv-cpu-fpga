@@ -18,6 +18,7 @@
 | 资源（**双发射 + Cache**，全 SoC 含视频） | I+D 版：LUT **7,896**（4.94%）、DRM **106.5**、APM 4（2026-10-12 实测）；只开 D 版 DRM **105.5**<br>历史（**无 Cache** 的双发射）：LUT 6,909、FF 3,267、DRM 61.5 —— 双发射 + Cache + A 扩展 + 任务C 的累计增量 |
 | 实际得分 | **365.93 CoreMark** @85.0051 MHz（2026-10-13 板上实测，**A1 后**，ITER=4280；A1 前为 351.86 / ITER=4116）<br>**I+D Cache 版 313.63**（@76.5052 MHz，A1 前板上实测）；历史：270.82（双发射）→ 233.85（单发射）→ 170.64 → 140.89 → 125.40 → 75.24 → 64.3（改造前）—— 累计 **+368%**（相对改造前） |
 | ILA 硬件波形 | [OK] **已抓齐**（`doc/board/ila_hw_*.vcd`，86 探针调试版比特流 md5 `96ee7877`）—— 逐拍证据见 `doc/ila_analysis.md` |
+| **应用场景**（RT-Thread + 五子棋）| [OK] **已做成并上板**：RT-Thread Nano 跑在板上（`scripts/rtthread/`），五子棋走**板载 HDMI** 出棋盘、4 键操作、**串口棋盘镜像**（无显示器也能验）。<br>**T1/G3 双线程（render 高优 + AI 低优）2026-10-13 首次上板**（位流 `8894cdcb`）：两条线程都起、**两线程邮箱往返真通**（`AI moved, nodes=10592 depth=6 t=5068ms`）<br>[!] **"AI 思考期间画面不卡"（G3 正题）尚未验证** —— 那次上板没接显示屏；另有一处 `vblank timeout` 待定案，见 `doc/board/README.md` |
 
 > [当前口径] 板上时钟 **85.0051 MHz**（PLL `STATIC_RATIO0` = 13.5）；CPU 为**顺序双发射**
 > （`rtl/top/cpu_top.v` 的 `parameter DUAL_ISSUE = 1`）+ **任务 C 的 `EARLY_LD=1`** +
@@ -259,6 +260,9 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 | `doc/board/` | 板上实测证据：串口原始日志 + ILA 硬件波形（`ila_hw_*.vcd`） |
 | `doc/reports/` | 单次改动的验证记录（如取指重定向改造） |
 | `doc/plan.md` | 开发计划 |
+| `scripts/rtthread/README.md` | **RT-Thread 移植**（BSP / 中断栈切换 / 静态线程 / 内存账）|
+| `doc/reports/2026-10-13_T1_rtthread_g3_checklist.md` | 五子棋 RT-Thread 版 **T1/G3 拆线程**的阶段划分与验收判据 |
+| `doc/reports/2026-10-13_handoff_btbras.md` | **BTB/RAS 任务书**（分支目标预测；实测判定 BTB 低收益、正解是 RAS）|
 
 ---
 

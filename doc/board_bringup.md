@@ -123,7 +123,8 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 scripts\build_bitstream.ps1 coremark            # 跑分版（双发射+EARLY_LD，ITER=4280，板上约 11.7 s）
 scripts\build_bitstream.ps1 coremark -DCacheOnly # 同上 + 只开 D-Cache（**推荐提交档**：分数不变）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
-scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版（banner + 两个线程交替打印）
+scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版五子棋（T1/G3：render 高优 + AI 低优两条线程）
+scripts\build_bitstream.ps1 gomoku      # 裸机五子棋版（HDMI 出棋盘 + 4 键操作 + 串口棋盘镜像）
 scripts\build_bitstream.ps1 video       # HDMI 彩条版（填显存画 8 条竖条 + 串口读回自检）
 # 任一变体加 -Single 出【单发射】回退版位流（期望值按 DUAL_ISSUE 自动算）
 ```

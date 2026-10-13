@@ -31,7 +31,7 @@
 | `coremark_dual_aext_ms_stage01_a0cache_03d8a7eb.sbit` | **上一版（2026-10-11）**：`4f1b0977` + **A.0（`mem_ready`/访存停顿收尾）+ I/D Cache 骨架（默认关，等于没有）+ 外设 one-shot 门控**。slack **+0.578 ns**（89.40 MHz），失败端点 0，ITER=3796。**串口日志与 `4f1b0977` 逐位应一致**（Cache 关时功能逐位不变）| `03d8a7eb` |
 | `coremark_dual_aext_ms_stage01_4f1b0977.sbit` | （2026-10-10，已被上一条 `2ddaf32f` 取代）：`imem_addr2` 修复 + 版本自证 + **阶段0（-O3 编译选项）+ 阶段1（到达级分支重定向）** —— CoreMark **ITER=3796** @85MHz，slack **+0.544 ns**（89.13 MHz），失败端点 0。**[OK] 已上板（2026-10-10，日志 `doc/board/uart_20261010_224932.txt`）**：`Total ticks 994,437,480` → 11.6976 s → **324.5 分**（261,969.8 拍/迭代）| `4f1b0977` |
 | `coremark_dual_aext_ms_85mhz_mimpid_492714a8.sbit` | `imem_addr2` 修复 + **版本自证**（`mimpid` 打出 `RTL=`，约定 42）—— CoreMark ITER=3170 @85MHz，slack +0.525 ns，失败端点 0。**已板上实测 270.82** | `492714a8` |
-| **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
+| `gomoku_dual_hud_60hz_074a0e11.sbit` | 裸机五子棋：60Hz + HUD 残字修复。已板上可玩。<br>[!] **别把这条当"最新"** —— 更新的几代在表格上方（如 `f00c6659`，2026-10-10）。本行原写着"当前最新"，已过时更正 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
 
 > [!] **ITER=1 的仿真会【高估】Cache 的周期代价 —— 判 Cache 收益只认板上数**（2026-10-13 实测）：

@@ -2,7 +2,8 @@
 
 > 接 `2026-10-12_session_state.md`。**本会话的里程碑已收口**：A1 集成、板上实测通过、
 > Cache 两版上板、BTB/RAS 前置勘察全部完成并 push（`aaee550`，与 origin 一致）。
-> **未完成的是 BTB/RAS 任务书 + 交接压缩包** —— 见 §5。
+> ~~未完成的是 BTB/RAS 任务书 + 交接压缩包~~ —— **当晚会后已补完，且多做了一件计划外的
+> （队友 T1/G3 五子棋包的验证 + 整合 + 首次上板），见 §5**。
 
 ---
 
@@ -139,14 +140,37 @@ jalr 中 ret 形态（rd=x0 & rs1=ra）: 1374 条 = 100.0%   ← 全都是函数
 
 ---
 
-## 5. [ ] 未完成 —— 下次开工就做这两件
+## 5. [OK] 已完成（2026-10-13 会后续做，另加一件计划外的）
 
-1. **BTB/RAS 任务书 + 交接压缩包**（用户已确认要生成，内容见 §4.2 + §3）。
-   打包用 `scripts/pack_for_teammate.ps1`（输出到 `C:\Users\zjn\Desktop\RV32I\交接文件\`）。
-   > [!] **注意重名**：脚本用 `riscv-cpu-fpga_dualissue_<yyyyMMdd>.zip` 命名，
-   > 今天会和队友刚发来的 `riscv-cpu-fpga_dualissue_20261013.zip` **撞名** —— 改名或加后缀。
-2. **队友新发来的五子棋进展包**：`Desktop\RV32I\交接文件\riscv-cpu-fpga_dualissue_20261013（t1).rar`
-   （27.4 MB，2026-10-13 21:54）。**要验证 + 整合 RTL**。队友来包是 `.rar`，用 `7z x` 解。
+1. **[OK] BTB/RAS 任务书 + 交接压缩包** —— 任务书 `doc/reports/2026-10-13_handoff_btbras.md`
+   （**本文 §4.2 的勘察是它的依据；它取代 `handoff_pathB.md` 的 §5-B1**）。
+   出包走 `pack_for_teammate.ps1 -Tag btbras`（**脚本新增 `-Tag` 参数**，躲开与
+   `riscv-cpu-fpga_dualissue_20261013.zip` 同名）→ `..._20261013_btbras.zip`。
+2. **[OK] 队友 T1/G3 五子棋包：验证 + 整合 + 首次上板** ——
+   `riscv-cpu-fpga_dualissue_20261013（t1).rar`。**注意：`rtl/` 一行未动，是纯固件包**
+   （fork 自 `20ecd0e`，改动**未提交**）。
+   * 验证：队友 x86 单测 138 项 + 我另写的独立 API 复核 28 项 + RV32 交叉编译无警告
+     + `tb_rtthread` 仿真 PASS；**弱符号绑定**用 `nm` 确认 ELF 里只剩强定义（app/main.c）。
+   * 整合提交 `1644197`；补齐队友留的尾巴：`build_bitstream.ps1` 的
+     `expectLines['rtthread']` **19124 → 20270**（10135 字；**必须用非 `-Sim` 的构建量**，
+     `-Sim` 会让 `.text` 差 8 字节、行数差 4）+ `rtthread/README.md` 口径同步。
+   * **首次上板**（位流 `8894cdcb`，日志 `doc/board/uart_20261013_224652.txt`）：
+     **两线程邮箱往返真通**（`AI moved, nodes=10592 depth=6 t=5068ms`）—— 这正是仿真
+     验不到的那一段（tb 不驱动按键）。
+
+   > [!] **两处遗留，别当已验证**：
+   > 1. **`[!] vblank timeout`** —— `doc/board/` 23 份裸机五子棋日志一份都没有。
+   >    T1 新加的 `video_vblank_yield()` = `rt_thread_mdelay(1)`，即**每 ~1 ms 看一次状态位**；
+   >    而 RTL 里那是 `V_SYNC = 2` 行的脉冲（`H_TOTAL=810`、pix clk 25.5 MHz ⇒ **≈63 µs**，
+   >    `video_core.v:133` 注释自称 "62.7us"）。**1 ms 采样看 63 µs 脉冲，粒度差 16 倍。**
+   >    定案一步：看 led[1]（丝印 **D18**）=video_locked。详见 `doc/board/README.md`。
+   > 2. **G3 的正题"AI 思考期间画面不卡"没验** —— 那次上板**没接显示屏**。
+
+### 仍未做
+
+* **BTB / RAS 本身**（任务书已出，代码没写）。
+* G3 的显示侧验收（要接一块显示器）。
+* 录像/照片（`doc/board/` 只有串口文本与 ILA 波形）。
 
 ---
 
