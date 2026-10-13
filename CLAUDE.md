@@ -630,6 +630,16 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
       > ⇒ **"压 I-Cache 缺失通路 ≈ +6%"这条不再值钱**（上限只剩 ~0.9%）；
       > **I+D 唯一的值钱方向是"把主频拿回来"**（PCE 区域约束 / I-Cache 离开取指链）。
       ⇒ **默认仍关**，理由从"塞不进"改成**"塞得进 D、塞不进 I，而两者都不涨分"**。
+      > [!] **2026-10-14 修正（两处，都别再用旧结论）**：
+      > 1. **"塞得进 D" 那句是 A1 之前、且只看 CoreMark 的`+0.151 ns`。** A1 之后的
+      >    "只开 D @85" 实测 **−0.177 ns / 13 失败端点**（00:57 那颗，见
+      >    `doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`）——**85 MHz 也塞不进了**。
+      > 2. **更要紧的是功能**：同一条 RT-Thread 五子棋固件，在 `-DCache` / `-ICache`
+      >    / 两者下**都会挂**（仿真 100 MHz 复现，与板上 `c10a2478` 现象一致），
+      >    而**无 Cache 是 PASS** ⇒ **是功能 bug，不是时序**。CoreMark 不经过
+      >    gomoku/RT-Thread 的代码与中断路径，所以从没暴露过 ⇒
+      >    **"D-Cache 可以常规开着"这条【对非 CoreMark 负载不成立】，已从
+      >    `bitstreams/README.md` 的 `56374a08` 条目里改掉。**
       想让它真有用只有"让后端变慢"（片外存储），本项目已决策不做 —— 别再绕回来。
 
 44. **任务 C（消除 load-use 停顿）的时序评估已完成：可行，但余量只剩 1.3%**
@@ -831,7 +841,7 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     **⇒ 规矩**：双发射下判"有多少拍没干活"用 **`cycles − commit`（`region noretire`）**，
     不要用四项相加。**新增 `+PROF` 的 5 个互斥桶之和必须等于 `tc_noret`**，用它自检。
 
-54. [!] **rtthread 线（以及一切非 coremark 固件）上板前必须补 Cache 开关仿真**（2026-10-14 实踩）：
+55. [!] **rtthread 线（以及一切非 coremark 固件）上板前必须补 Cache 开关仿真**（2026-10-14 实踩）：
     `scripts\rtthread\run_sim.ps1` 编译 `tb_rtthread` 时**不带任何 `-D` 旗标**（连 `-DDUAL` 都没有，
     而板上 `cpu_top` 默认 `DUAL_ISSUE=1`/`EARLY_LD=1`）⇒ **RT-Thread 线的仿真一直只覆盖"无 Cache"**
     单配置，`EARLY_LD`/Cache 的板级行为在 rtthread 固件上从没被仿真过。本次 rtthread + I+D
@@ -843,14 +853,27 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     路径上的 RTL bug（约定 47 同族——那次的触发条件正是 `ICACHE_EN=1` 提供的大量停顿）。
     * **⇒ 规矩**：`tb_rtthread` 要补 `-DDUAL/-DEARLYLD/-DDCACHE/-DICACHE` 开关（照 `tb_coremark`
       的写法）并核对 vvp 首行 `SIM CONFIG:`；**修好前 `c10a2478` 只是"综合验证通过"的存档，
-      不是可交付版**，五子棋 + Cache 的组合也未经验证。
-    * 另：**rtthread + D-Cache only @85MHz 位流不存在** —— 10-13 23:40 那次构建在 `gen_bit_stream`
-      前被中断（`.sbit` 从未落盘，只剩 D-only 网表）；需要就重跑
-      `build_bitstream.ps1 rtthread -DCacheOnly`。
+      不是可交付版**。
+    * **[OK] 2026-10-14：开关已补（`-DCache/-ICache/-RxTrace`），归因做完了。**
+      仿真 100 MHz 下四种配置对拍：**无 Cache = PASS(168B)**；
+      **只开 D = 崩**（走得较远：两条线程都起来了，之后寄存器转储）；
+      **只开 I = 崩得早（13B）**；**D+I = 同样 13B**。
+      ⇒ **不是"有 Cache 就不行"，是"带 Cache 的 RT-Thread 固件不行"，且【两个 Cache 都能打挂它】；
+      是【功能 bug，与时序无关】。** 已排除：trap 路径本身（`exceptions`/`timer_irq`
+      在 `-ICache` 下都 PASS）、地址截位（`imem_addr` 是 14 位字地址，覆盖全 64 KB）、
+      MMIO 被缓存（`ram_hit = addr[31:16]==0` 门控，显存在 `0x8003_xxxx`）。
+      **最强怀疑（未证实）**：两个 Cache **没有任何流水线重定向输入**，而 `cache_i.v`
+      的正确性建立在"停顿期间地址冻在 A"上 —— 可 `fetch_addr`(core.v:330) 的优先级里
+      `trap/ex_flush/ex_mispred/p_redirect` **都排在停顿回退之上**；CoreMark 不开定时器
+      中断所以从没暴露。**全文见 `doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`。**
+    * 另：**rtthread + D-Cache only @85MHz 位流【已经存在】** —— 10-14 00:57 那颗
+      （合并日志 `DCACHE_EN=1/ICACHE_EN=0`），CPU 域 **−0.177 ns / 13 失败端点**（时序不过）
+      **且功能上也打挂 RT-Thread**，同样**勿烧**。10-13 23:40 那次是**更早的一次中断构建**
+      （`.sbit` 从未落盘）。
     * [!] **被中断的构建会留下 `cpu_top.v` 的 `DCACHE_EN=1` 不还原**（`finally` 没跑到）——
       下次构建前先 `git diff rtl\top\cpu_top.v` 看一眼，否则 `-Cache` 会把 `DCACHE_EN=1` 当"原值"。
 
-55. [!] **`serial_monitor` 日志里的 `?` 不一定是固件打的 `?`**（2026-10-14 实踩）：
+56. [!] **`serial_monitor` 日志里的 `?` 不一定是固件打的 `?`**（2026-10-14 实踩）：
     `serial_monitor.ps1` 用 `$sp.ReadExisting()` 且**从未设置 `$sp.Encoding`** ⇒ .NET `SerialPort`
     默认 **ASCII 解码，每个 ≥0x80 的字节在日志里一律变成 `?`（0x3F）**。本次挂死现场那行
     `?? turn=WHITE` 的原始字节是 `3F 3F 07 20`（两个高位字节 + BEL +空格）——固件实际发出的是

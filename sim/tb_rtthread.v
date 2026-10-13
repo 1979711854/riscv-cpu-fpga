@@ -71,7 +71,41 @@ module tb_rtthread;
 
     always #5 clk = ~clk;          // 100MHz 仿真时钟（与本目录其它测试台一致）
 
-    cpu_top u_soc (
+    // ---- 配置开关（照 tb_coremark.v 的写法：脚本必须【显式】传，默认关）----
+    // [!] 2026-10-14：本测试台原来一个 -D 都不吃，全靠 cpu_top 的参数默认值
+    //     （DUAL_ISSUE=1 / EARLY_LD=1 / Cache 关）⇒ rtthread 线的仿真从来没覆盖过
+    //     Cache 配置。rtthread + I+D @76.5 位流（c10a2478）上板确定性挂死
+    //     （AI 第一手后第一张棋盘快照处数据损坏）就是这么漏过去的（CLAUDE.md 约定 55）。
+    //     现在四个开关全部显式化：run_sim.ps1 默认传 -DDUAL -DEARLYLD（= 板上口径），
+    //     -DCache/-ICache 追加；vvp 首行 SIM CONFIG 自证，别再靠默认值。
+`ifdef DUAL
+    localparam DUAL_OUT = 1;
+`else
+    localparam DUAL_OUT = 0;
+`endif
+`ifdef DCACHE
+    localparam DCACHE_OUT = 1;
+`else
+    localparam DCACHE_OUT = 0;
+`endif
+`ifdef ICACHE
+    localparam ICACHE_OUT = 1;
+`else
+    localparam ICACHE_OUT = 0;
+`endif
+`ifdef EARLYLD
+    localparam EARLYLD_OUT = 1;
+`else
+    localparam EARLYLD_OUT = 0;
+`endif
+
+    // 自证配置：t=0 打印本测试台编译进去的四个开关，每份日志首行自带口径
+    //（与 tb_riscv/tb_coremark 同一格式，回归脚本靠它核对，见 CLAUDE.md 约定 37）。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+
+    cpu_top #(.DUAL_ISSUE(DUAL_OUT), .DCACHE_EN(DCACHE_OUT),
+              .ICACHE_EN(ICACHE_OUT), .EARLY_LD(EARLYLD_OUT)) u_soc (
         .clk        (clk),
         .resetn     (resetn),
         .pc         (pc),
@@ -140,6 +174,13 @@ module tb_rtthread;
             end
             rxtext  = {rxtext[8*RXBUF-9:0], rxb};
             rxcount = rxcount + 1;
+            // [调试 2026-10-14] 挂死现场用：逐字节打 pc —— 每个 UART 字节是哪个 pc
+            // 写出来的，配合"写之前 pc 停在哪"定位损坏点（与无 Cache 跑同一条固件对拍）。
+            // [!] 默认【关】：一次正常跑也有 168 行，会把日志淹掉。要开就
+            //     scripts\rtthread\run_sim.ps1 -RxTrace
+`ifdef RXTRACE
+            $display("[rx#%0d] pc=0x%h byte=0x%02x", rxcount, pc, rxb);
+`endif
         end
     end
 
@@ -218,6 +259,7 @@ module tb_rtthread;
         end
 
         $display("----------------------------------------");
+        $display("  收尾时 pc=0x%h（挂死调试用：与无 Cache 跑对拍）", pc);
         $display("  gomoku 标记 %0d 次 / AI 线程标记 %0d 次 / 心跳标记 %0d 次", seen_gomoku, seen_ai, seen_hb);
         $display("  串口共收到 %0d 字节", rxcount);
 

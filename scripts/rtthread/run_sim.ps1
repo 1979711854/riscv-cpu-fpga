@@ -15,11 +15,31 @@
 
  [!] 仿真口径与上板不同，别混（见 build.ps1 里的说明）：
      仿真时钟 100MHz（sim\ 下所有测试台都是 always #5）、短延时、出 hex
+
+[!] RTL 配置开关（2026-10-14 补，CLAUDE.md 约定 55）：
+     本脚本原来一个 -D 都不传，全靠 cpu_top 参数默认值 ⇒ rtthread 线的仿真
+     从没覆盖过 Cache 配置（rtthread + I+D 位流上板挂死就这么漏过去）。
+     现在默认【显式】传板上口径，并打印 SIM CONFIG 自证：
+       默认          = 双发射 + EARLY_LD + Cache 全关（= 8894cdcb 那颗 RTL）
+       -DCache       = 追加 -DDCACHE（DCACHE_EN=1）
+       -ICache       = 追加 -DICACHE（ICACHE_EN=1）
+       -Single       = 退回单发射（不传 -DDUAL）
+       -NoEarlyLd    = 退回 EARLY_LD=0（不传 -DEARLYLD）
+       -RxTrace      = 逐字节打 rx + pc（挂死定位用，默认关）
+     复现板上挂死：scripts\rtthread\run_sim.ps1 -DCache -ICache
+     归因结果（2026-10-14）：-DCache / -ICache / 两者 都能打挂这条固件，
+     无 Cache 是 PASS ⇒ 功能 bug、与时序无关。见
+     doc\reports\2026-10-14_cache_rtthread_sim_bisect.md
 ============================================================================
 #>
 param(
     [switch]$NoBuild,
-    [switch]$Atomic      # 透传给 build.ps1：rv32ima + atomic_riscv.c + RT_USING_STDC_ATOMIC
+    [switch]$Atomic,     # 透传给 build.ps1：rv32ima + atomic_riscv.c + RT_USING_STDC_ATOMIC
+    [switch]$DCache,     # DCACHE_EN=1（追加 -DDCACHE）
+    [switch]$ICache,     # ICACHE_EN=1（追加 -DICACHE）
+    [switch]$Single,     # 退回单发射（不传 -DDUAL）
+    [switch]$NoEarlyLd,  # 退回 EARLY_LD=0（不传 -DEARLYLD）
+    [switch]$RxTrace     # 逐字节打 rx + pc（挂死定位用；默认关，开了会刷 168 行）
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,14 +77,31 @@ $vidSrcs = @("video_core.v", "ppu.v", "sync_vg.v", "vram_b32.v", "vram_dp.v", "v
 $srcs = @(
     (Join-Path $Sim "tb_rtthread.v")
 ) + (Get-ChildItem (Join-Path $Repo "rtl\core") -Filter *.v -File | ForEach-Object { $_.FullName }) `
-  + @((Join-Path $Repo "rtl\bus\mem_bus.v")) `
+  + (Get-ChildItem (Join-Path $Repo "rtl\bus") -Filter *.v -File | ForEach-Object { $_.FullName }) `
   + (Get-ChildItem (Join-Path $Repo "rtl\periph") -Filter *.v -File | ForEach-Object { $_.FullName }) `
   + @((Join-Path $Repo "rtl\top\cpu_top.v")) `
   + $vidSrcs
 
 $inc = @("-I", (Join-Path $Repo "rtl\core"), "-I", (Join-Path $Repo "rtl\periph"),
          "-I", (Join-Path $Repo "rtl\bus"),  "-I", (Join-Path $Repo "rtl\video"), "-I", $Sim)
-$ivOut = & iverilog -g2012 @inc -s tb_rtthread -o $vvp @srcs 2>&1
+# ---- 2b) 组装 RTL 配置的 -D 旗标 —— 必须【显式】传，不靠 cpu_top 参数默认值 ----
+# [!] 2026-10-14（约定 55）：本脚本原来一个 -D 都不传，tb_rtthread 靠 cpu_top 默认值
+#     （双发射 + EARLY_LD + Cache 关）跑，于是 rtthread 固件 + Cache 的组合从没被仿真过。
+#     现在默认显式传板上口径（-DDUAL -DEARLYLD），-DCache/-ICache 追加；
+#     vvp 首行会打 SIM CONFIG 自证，与 tb_riscv/tb_coremark 同一格式。
+$defs = @()
+if (-not $Single)    { $defs += "-DDUAL" }
+if (-not $NoEarlyLd) { $defs += "-DEARLYLD" }
+if ($DCache)         { $defs += "-DDCACHE" }
+if ($ICache)         { $defs += "-DICACHE" }
+if ($RxTrace)        { $defs += "-DRXTRACE" }
+$cfgDual   = if ($Single)    { 0 } else { 1 }
+$cfgDCache = if ($DCache)    { 1 } else { 0 }
+$cfgICache = if ($ICache)    { 1 } else { 0 }
+$cfgEarly  = if ($NoEarlyLd) { 0 } else { 1 }
+Write-Host "    RTL 配置：SIM CONFIG: DUAL_ISSUE=$cfgDual DCACHE_EN=$cfgDCache ICACHE_EN=$cfgICache EARLY_LD=$cfgEarly" -ForegroundColor Cyan
+
+$ivOut = & iverilog -g2012 @defs @inc -s tb_rtthread -o $vvp @srcs 2>&1
 $ivOut | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) { throw "iverilog 编译失败" }
 # [!] **端口宽度不一致 = 静默截位，必须当错误处理**（2026-10-10 实踩，同 run_riscv_tests.ps1）。
