@@ -84,7 +84,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
   `CLKOUT0 = 1147.5 ÷ STATIC_RATIO0`：`16.0 → 71.72`、**`15.0 → 76.5052`（I+D Cache 用的档）**、
   `14.5 → 79.14`、**`13.5 → 85.0051`（当前跑分档）**。
   > [!] **I+D Cache 全开在 85 MHz 塞不进**（CPU 域 −1.143 ns / 343 失败端点）⇒ 必须降频；
-  > 76.5052 MHz 收敛（setup +0.589 / hold +0.147 / 0 端点），板上实测 313.63 分。
+  > 76.5052 MHz 收敛（setup +0.589 / hold +0.147 / 0 端点），板上实测 313.63 分（**A1 前口径**）。
   > **改完频率必须全部还原**（见 `CLAUDE.md` 约定 50）。
 
 | 信号 | 管脚 | 板上丝印 | 说明 |
@@ -120,7 +120,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 **队友 clone 下来必须自己生成一次**，不存在"现成可烧"的比特流。
 
 ```powershell
-scripts\build_bitstream.ps1 coremark            # 跑分版（双发射+EARLY_LD，ITER=4116，板上约 11.7 s）
+scripts\build_bitstream.ps1 coremark            # 跑分版（双发射+EARLY_LD，ITER=4280，板上约 11.7 s）
 scripts\build_bitstream.ps1 coremark -DCacheOnly # 同上 + 只开 D-Cache（**推荐提交档**：分数不变）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
 scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版（banner + 两个线程交替打印）
@@ -184,6 +184,24 @@ User Guide》第 4 章）：
 > （`-file <目录|*.tcl>`，`-args {参数}` 可做参数替换，手册 §4）。
 > 想做成 `scripts\flash.ps1` 一条命令烧板的话，先录一份 `.tcl` 出来做底子。
 
+** [OK] 已经写好了：`scripts\flash.tcl`**（2026-10-13，语法取自官方
+《Fabric Configuration User Guide》§4.5.1/§4.5.2/§4.6，不必再自己录一份）。
+
+```powershell
+# ① 先起 JTAG Server（不连的话 cdt_cfg_shell 报 "the connection is disconnected"）
+Start-Process "D:\pango\PDS_2022.2-SP6.4\bin\cdt_js.exe" -ArgumentList "-port","65420"
+
+# ② 再烧（把路径换成要烧的那份 .sbit，正斜杠）
+& "D:\pango\PDS_2022.2-SP6.4\bin\cdt_cfg_shell.exe" -file scripts\flash.tcl `
+    -args { D:/riscv-cpu-fpga_merged/pds/RV32I_1/generate_bitstream/cpu_top_board.sbit }
+```
+
+脚本干的事：`cfg_connect`（连 65420）→ `cfg_scan_chain` → `cfg_add_device -file <sbit>`
+→ **`cfg_assign_file -file <sbit>`** → `cfg_program` → `cfg_verify` → `cfg_disconnect`。
+
+> [!] **`cfg_program` 不带文件参数** —— 它烧的是 `cfg_assign_file` 刚分配的那份。
+> 所以那条 `cfg_assign_file` 就是 GUI 里的"重新 Browse"，**不能省**（省了就烧上一版）。
+
 还有一个更隐蔽的：**PDS 不检查 `mem.hex` 的时间戳**。固件没同步过去（或同步的是别的程序），
 它照样综合出一个"能烧、但板上跑的是旧程序"的比特流，全程零报错。
 `build_bitstream.ps1` 里那道 `mem.hex` 字数校验就是挡这个的。
@@ -192,12 +210,12 @@ User Guide》第 4 章）：
 
 ```powershell
 # ① 生成固件（二选一）
-scripts\run_coremark.ps1 -Iter 4116 -SkipSim     # 跑分版（双发射+EARLY_LD，85.0051 MHz 的取值）
+scripts\run_coremark.ps1 -Iter 4280 -SkipSim     # 跑分版（双发射+EARLY_LD，85.0051 MHz 的取值）
 scripts\run_demo.ps1 -SkipSim                    # 演示程序版
 
 # ② 同步进 PDS 工程目录（PDS 读的是 pds\RV32I_1\mem.hex，不是 sim\programs\mem.hex）
 scripts\sync_firmware.ps1
-# 校验：CoreMark = 8418 行（4209 字）；演示程序 = 326 行（163 字）
+# 校验：CoreMark = 17,104 行（8,552 字）；演示程序 = 326 行（163 字）
 
 # ③ 综合布线出比特流（约 5 分钟）
 cd pds\RV32I_1
@@ -283,7 +301,7 @@ KEY=0x00 LED=0x00
 
 **约 12 秒后**打印。
 
-**当前跑分档（85.0051 MHz，双发射 + 任务C `EARLY_LD`，ITER=4116）的板上实测原始输出**
+**A1 前跑分档（85.0051 MHz，双发射 + 任务C `EARLY_LD`，ITER=4116）的板上实测原始输出**（A1 后 ITER=4280、每迭代 232,345 拍 ⇒ [OK] 已板上实测 **365.93 分**，日志 `doc/board/uart_20261013_184111.txt`）
 （日志 `doc/board/uart_20261012_002541.txt`，2026-10-12；只开 D-Cache 的 `2f7a4d0a` 分数完全相同）：
 
 ```
@@ -296,9 +314,9 @@ seedcrc 0xe9f5 | crclist 0xe714 | crcmatrix 0x1fd7 | crcstate 0x8e3a
 Correct operation validated.
 ```
 
-实测：994,386,960 ÷ 85,005,100 = **11.69797 s** → **351.86 CoreMark**（满足赛题 ≥10 s）。
+实测：994,386,960 ÷ 85,005,100 = **11.69797 s** → **351.86 CoreMark**（满足赛题 ≥10 s；**A1 前板上值**，A1 后已板上实测 **365.93 分**，见 `uart_20261013_184111.txt`）。
 
-**I+D Cache 版（76.5052 MHz，ITER=3668）**（日志 `doc/board/uart_20261012_155934.txt`）：
+**I+D Cache 版（76.5052 MHz，ITER=3668；A1 前口径）**（日志 `doc/board/uart_20261012_155934.txt`）：
 首行 `[build] FW=COREMARK RTL=0x20261016`，`Total ticks 894,745,801` →
 **11.6952 s → 313.63 CoreMark**；`[cache] I` 98.985% / `[cache] D` 99.929%。
 
@@ -317,7 +335,7 @@ Correct operation validated.
 实测 538,285,445 ÷ 45,000,000 = **11.9619 s** → **125.40 CoreMark**。
 
 [!] **`Total time (secs)` 和 `Iterations/Sec` 是整数截断打印的**（`HAS_FLOAT=0`）：
-当前这版（跑分档 4116）显示 `11`（实际 11.69797）、`374`（= 4116 ÷ 11 的截断值，**真实 351.86**）；
+当前这版（A1 前跑分档 4116）显示 `11`（实际 11.69797）、`374`（= 4116 ÷ 11 的截断值，**真实 351.86**，A1 前板上值；A1 后用 ITER=4280 ⇒ 显示 `4280 ÷ 11 ≈ 389`、**真实 365.93**）；
 **历史**纯双发射 3170 那版显示 `11`（实际 11.7050）、`270`（**真实 270.82**）；
 历史单发射 85 MHz 那次显示 `11`（实际 11.7171）、`249`（**真实 233.85**）。
 **真实时长一定要自己算：**
@@ -347,7 +365,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[2:0]` 被 `pll_locked`/`video_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
-| **`Iterations/Sec` 显示 374 / 333** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的整数秒算的（4116 ÷ 11 ≈ 374；I+D 版 3668 ÷ 11 ≈ 333）。**真实得分要自己算**：85 MHz 跑分档 = `4116 ÷ 11.69797` = **351.86**；I+D 版 = `3668 ÷ 11.6952` = **313.63**。历史：双发射 3170 显示 `270` / 真实 270.82；单发射 85 MHz 显示 `249` / 真实 233.85。见 §4 的说明 |
+| **`Iterations/Sec` 显示 374 / 333** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的整数秒算的（4116 ÷ 11 ≈ 374；I+D 版 3668 ÷ 11 ≈ 333）。**真实得分要自己算**：85 MHz 跑分档 = `4116 ÷ 11.69797` = **351.86**（A1 前）；**A1 后**用 ITER=4280，显示值 ≈ `4280 ÷ 11` = 389、**真实 365.93**；I+D 版 = `3668 ÷ 11.6952` = **313.63**。历史：双发射 3170 显示 `270` / 真实 270.82；单发射 85 MHz 显示 `249` / 真实 233.85。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。

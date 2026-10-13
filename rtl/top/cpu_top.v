@@ -69,7 +69,7 @@ module cpu_top (
     // ---- [TASK-C 探针] 假 AGU 开关（透传给 core + mem_bus）。默认 0 ----
     parameter AGU_PROBE  = 0;
 
-    // ---- [任务 C] load 地址提前（EARLY_LD，透传给 core + mem_bus）。默认 0 ----
+    // ---- [任务 C] load 地址提前（EARLY_LD，透传给 core + mem_bus）。**默认 1** ----
     // 0 = 逐位回退旧行为（load 数据 WB 才到、紧跟其后停一拍）。
     // 1 = load 地址算在 ID 级、专用提前读口早一拍取回 ⇒ 消掉 90% 的 load-use 停顿。
     // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。

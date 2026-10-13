@@ -12,17 +12,21 @@
 | riscv-tests（rv32ui + rv32um，50 项） | **49 PASS / 1 FAIL / 0 TIMEOUT**（**带 Cache 的配置也是 49/1/0**，见 `doc/test_report_riscv-tests.md`）|
 | 动态分支预测 | [OK] **已实现**（256 项、2 位饱和计数器、带 tag 的 BHT，只预测条件分支方向，2026-09-25）—— 高阶任务②（动态分支预测 + 完整异常/中断）**已完整** |
 | **I/D Cache** | [OK] **已实现并上板**（4 KB/侧、2 路组相联；`DCACHE_EN`/`ICACHE_EN` 两个 parameter，默认关）<br>只开 D-Cache：**85.0051 MHz 下不吃余量**（+0.151 ns），分数与不开 Cache **完全相同**；<br>**I+D 全开：85 MHz 塞不进（−1.143 ns）→ 76.5052 MHz 收敛并上板实测通过**（2026-10-12）|
-| CoreMark 效率 | **4.139 CoreMark/MHz**（**顺序双发射 + 任务C `EARLY_LD`**，每迭代 **241,633** 周期，与时钟无关）<br>历史：**3.186**（双发射 313,886）→ 2.751（单发射 363,515）→ 2.824 → 2.787 → 2.611 → 2.380 |
-| CoreMark **板上实测** | [OK] **85.0051 MHz / ITER=4116 → 11.698 秒 / 351.86 CoreMark**（2026-10-11 起，**双发射 + `EARLY_LD`**；`2ddaf32f` 无 Cache 与 `2f7a4d0a` 只开 D-Cache **分数完全相同**）<br>[OK] **I+D Cache 版：76.5052 MHz / ITER=3668 → 11.6952 秒 / 313.63 CoreMark**（2026-10-12，位流 `c6b12d95`，`RTL=0x20261016`）<br>历史：270.82（双发射 ITER=3170）→ 233.85（单发射）→ 170.64 → 140.89 → 125.40 → 75.24 |
+| CoreMark 效率 | **4.304 CoreMark/MHz**（**顺序双发射 + 任务C `EARLY_LD` + A1 乘法器 II=1**，每迭代 **232,345** 周期，与时钟无关；A1 前为 4.139 / 241,633）<br>历史：**3.186**（双发射 313,886）→ 2.751（单发射 363,515）→ 2.824 → 2.787 → 2.611 → 2.380 |
+| CoreMark **板上实测** | [OK] **85.0051 MHz / ITER=4280 → 11.696 秒 / 365.93 CoreMark**（2026-10-13，**A1 乘法器 II=1 流水线**，双发射 + `EARLY_LD`；位流 `bcd8fdd2` / `RTL=0x20261017`；每迭代 232,296.6 拍，仿真 232,345，差 −0.021%）—— **当前最好成绩，较 A1 前的 351.86 +4.00%**<br>（A1 前：85.0051 MHz / ITER=4116 → 351.86 CoreMark，`2ddaf32f` 无 Cache 与 `2f7a4d0a` 只开 D-Cache **分数完全相同**）<br>[OK] **I+D Cache 版：76.5052 MHz / ITER=3668 → 11.6952 秒 / 313.63 CoreMark**（2026-10-12，位流 `c6b12d95`，`RTL=0x20261016`，**A1 前口径**）<br>历史：270.82（双发射 ITER=3170）→ 233.85（单发射）→ 170.64 → 140.89 → 125.40 → 75.24 |
 | 时序（CPU 域，`clk_sys`） | 85.0051 MHz：**不开 Cache +0.045 ns / 只开 D +0.151 ns**，失败端点都 0<br>**I+D 全开：85 MHz `−1.143 ns / 343 失败端点`（✗）→ 76.5052 MHz `+0.589 / 0`（✓）**（I-Cache 挂在取指关键链上，见 `doc/reports/2026-10-12_idcache_board_bitstream.md`）<br>归档位流索引：`pds/RV32I_1/bitstreams/README.md` |
 | 资源（**双发射 + Cache**，全 SoC 含视频） | I+D 版：LUT **7,896**（4.94%）、DRM **106.5**、APM 4（2026-10-12 实测）；只开 D 版 DRM **105.5**<br>历史（**无 Cache** 的双发射）：LUT 6,909、FF 3,267、DRM 61.5 —— 双发射 + Cache + A 扩展 + 任务C 的累计增量 |
-| 实际得分 | **351.86 CoreMark** @85.0051 MHz（**板上实测**，ITER=4116，= 每秒迭代 351.86 次）<br>**I+D Cache 版 313.63**（@76.5052 MHz）；历史：270.82（双发射）→ 233.85（单发射）→ 170.64 → 140.89 → 125.40 → 75.24 → 64.3（改造前）—— 累计 **+368%**（相对改造前） |
+| 实际得分 | **365.93 CoreMark** @85.0051 MHz（2026-10-13 板上实测，**A1 后**，ITER=4280；A1 前为 351.86 / ITER=4116）<br>**I+D Cache 版 313.63**（@76.5052 MHz，A1 前板上实测）；历史：270.82（双发射）→ 233.85（单发射）→ 170.64 → 140.89 → 125.40 → 75.24 → 64.3（改造前）—— 累计 **+368%**（相对改造前） |
 | ILA 硬件波形 | [OK] **已抓齐**（`doc/board/ila_hw_*.vcd`，86 探针调试版比特流 md5 `96ee7877`）—— 逐拍证据见 `doc/ila_analysis.md` |
 
 > [当前口径] 板上时钟 **85.0051 MHz**（PLL `STATIC_RATIO0` = 13.5）；CPU 为**顺序双发射**
 > （`rtl/top/cpu_top.v` 的 `parameter DUAL_ISSUE = 1`）+ **任务 C 的 `EARLY_LD=1`** +
-> **I/D Cache 两个 parameter 默认关**（`DCACHE_EN` / `ICACHE_EN`）。
-> **[OK] 当前跑分口径已板上实测**（2026-10-11/12，位流 `2ddaf32f` / `2f7a4d0a`）：
+> **A1 的乘法器 II=1 流水线**（2026-10-13）+ **I/D Cache 两个 parameter 默认关**（`DCACHE_EN` / `ICACHE_EN`）。
+> **[OK] A1 已上板实测通过**（2026-10-13，位流 `bcd8fdd2` / `RTL=0x20261017`，日志 `doc/board/uart_20261013_184111.txt`）：
+> 每迭代 **241,633 → 232,345 拍**、效率 **4.139 → 4.304**、ITER **4116 → 4280**，
+> `Total ticks 994,229,330` ÷ 85,005,100 = **11.6961 s / 365.93 CoreMark**（拍/迭代 232,296.6，
+> 仿真 232,345，差 **−0.021%**），四个 CRC 与仿真逐位相同 ⇒ 较 A1 前的 351.86 **+4.00%**。
+> **[历史] A1 之前最后一次板上实测**（2026-10-11/12，位流 `2ddaf32f` / `2f7a4d0a`）：
 > `Total ticks 994,386,960` ÷ 85,005,100 = **11.69797 s / 351.86 CoreMark**（ITER=4116，
 > **241,633 拍/迭代**）⇒ 比任务 C 之前的 324.5 **+8.4%**；只开 D-Cache 时分数与不开 Cache **完全相同**。
 > **[OK] I/D Cache 已上板跑通**（2026-10-12，位流 `c6b12d95`，时钟 76.5052 MHz，
@@ -48,7 +52,7 @@
 > 累计（单发射线）：75.24（27MHz）→ 125.40（45MHz）→ 140.89（49.89MHz）→ 170.64（62.03MHz）→ 233.85（85.01MHz）。
 >
 > [重点] **本工程 = CPU 优化线（两拍乘法器 + 提频 + 双发射）+ 视频线（PPU/HDMI）合并**。
-> 双发射 CPU 域每迭代 **241,633** 拍（含任务C `EARLY_LD`；`EARLY_LD=0` 时 262,018；单发射 312,428），
+> 双发射 CPU 域每迭代 **232,345** 拍（含任务C `EARLY_LD` + A1 乘法器 II=1；`EARLY_LD=0` 时 252,730；单发射 303,140），
 > 与视频无关、直接可用。
 >
 > [重点] 提频的依据是 PDS"满足约束即收敛"（`Estimated Frequency` **不是设计上限**，而是"这次被要求跑多快"）：
@@ -124,14 +128,14 @@ Python 3:    用于把 ELF 拆成 hex
 
 ```powershell
 # 上板唯一入口（一条命令：生成固件 → 同步并校验 → 综合出 .sbit，约 5 分钟）
-scripts\build_bitstream.ps1 coremark    # 跑分版（双发射 + EARLY_LD，ITER=4116，板上约 11.7 秒）
+scripts\build_bitstream.ps1 coremark    # 跑分版（双发射 + EARLY_LD，ITER=4280，板上约 11.7 秒）
 scripts\build_bitstream.ps1 demo        # 演示版（读按键 → 写 LED → 串口打印）
 ```
 
 想分步走也可以（**但别漏第 2 步**）：
 
 ```powershell
-scripts\run_coremark.ps1 -Iter 4116 -SkipSim  # 跑分用（双发射 + EARLY_LD）：85.0051MHz 下约 11.70 秒，满足 ≥10s
+scripts\run_coremark.ps1 -Iter 4280 -SkipSim  # 跑分用（双发射 + EARLY_LD）：85.0051MHz 下约 11.70 秒，满足 ≥10s
 scripts\run_demo.ps1 -SkipSim                 # 演示用
 scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目录
 ```
@@ -142,11 +146,11 @@ scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目
 > 从十几分钟降到几秒。想去掉它跑完整仿真（核实 CoreMark 数值）也可以，要跑十几分钟。
 >
 > **ITER 的分子是你往哪儿烧的那个时钟，改流水线或换平台都要重算。**
-> 当前设计（**双发射 + 任务C `EARLY_LD`**）每迭代 **241,633** 周期（与时钟无关；
-> `EARLY_LD=0` → 262,018；**单发射** → 312,428；**带 Cache** → 243,933）：
-> * **板上 85.0051 MHz：ITER=4116 → 11.70 秒**（余量 17%）
+> 当前设计（**双发射 + 任务C `EARLY_LD` + A1 乘法器 II=1**）每迭代 **232,345** 周期（与时钟无关；
+> A1 前 241,633；`EARLY_LD=0` → 252,730；**单发射** → 303,140；**带 Cache** → 235,628）：
+> * **板上 85.0051 MHz：ITER=4280 → 11.70 秒**（余量 17%；A1 前是 ITER=4116）
 > * **I+D Cache 版（76.5052 MHz）：ITER=3668 → 11.70 秒**
-> * 仿真 / 远程平台 27 MHz：`270,000,000 ÷ 241,633 ≈ 1117`；27 MHz 时代用的是 **ITER=820**
+> * 仿真 / 远程平台 27 MHz：`270,000,000 ÷ 232,345 ≈ 1162`；27 MHz 时代用的是 **ITER=820**
 >   （当时每迭代 358,857 → 实测 10.898 秒）
 >
 > **用错分子的后果**：ITER 算错会跑不满 10 秒 —— **CoreMark 要求 ≥10 秒，会判 invalid。**
@@ -161,7 +165,7 @@ scripts\sync_firmware.ps1                     # 必须！同步到 PDS 工程目
 > `run_riscv_tests.ps1` 之后再 sync，工程里就留下 demo / riscv-test 的镜像；
 > 此后无论怎么改 RTL、重新综合布线，**板上跑的还是那个旧程序**，PDS 全程零报错。
 > **纪律：每次上板前重新跑一遍 `sync_firmware.ps1`。**
-> 核对：`mem.hex` 字数应与 ELF 的 `.text` 规模相当 —— CoreMark 固件 = **4209 字**。
+> 核对：`mem.hex` 字数应与 ELF 的 `.text` 规模相当 —— CoreMark 固件 = **8,552 字**。
 
 ---
 
@@ -228,15 +232,15 @@ scripts\run_demo.ps1            # 演示程序端到端 7/7 PASS
 
 | 配置 | 怎么跑 | riscv-tests | CoreMark 每迭代 |
 |---|---|---|---|
-| **双发射 + `EARLY_LD`（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **241,633 拍** |
-| 双发射 + `EARLY_LD=0` | 上面不传 `-EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | 262,018 拍 |
-| **单发射（回退版口径）** | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | 312,428 拍 |
-| **带 Cache** | 加 `-DCache -ICache -EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | **243,933 拍** |
+| **双发射 + `EARLY_LD`（默认，= 板上口径）** | `scripts\run_riscv_tests.ps1` / `run_coremark.ps1` | 49 PASS / 1 FAIL / 0 TIMEOUT | **232,345 拍**（A1 前 241,633）|
+| 双发射 + `EARLY_LD=0` | 上面不传 `-EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | **252,730 拍**（原 262,018）|
+| **单发射（回退版口径）** | 上面加 `-Single` | 49 PASS / 1 FAIL / 0 TIMEOUT | **303,140 拍**（原 312,428）|
+| **带 Cache** | 加 `-DCache -ICache -EarlyLd` | 49 PASS / 1 FAIL / 0 TIMEOUT | **235,628 拍**（原 243,933）|
 
 > `tb_riscv` / `tb_coremark` 靠编译期 `-DDUAL` 选配置；测试台 t=0 打印 `SIM CONFIG: DUAL_ISSUE=?`
 > （也进 `sim/programs/results.txt` 首行）；`build_bitstream.ps1` 综合前打印它将综合的 `DUAL_ISSUE`
 > （与 md5 并列），并支持 `-Single` 出回退版位流。
-> 历史基线（均为**单发射**口径）：358,846 → 382,972 → 420,070 → 354,119 → 363,515。双发射 `313,886` 另起一条。
+> 历史基线（均为**单发射**口径）：358,846 → 382,972 → 420,070 → 354,119 → 363,515 → 312,428 → 303,140。双发射另起一条：`313,886` → `241,633` → `232,345`。
 
 工具链（scoop 安装）：`scoop install iverilog gtkwave`
 
@@ -300,5 +304,5 @@ A：PDS 里的 compile 是不是没重跑？另外确认 PDS 打开的是 `pds/R
 
 A：**`pds/RV32I_1/mem.hex` 过期了。** PDS 综合读的是工程目录里那一份，不看时间戳，
 也**不会**自动从 `sim/programs/` 取新固件。重跑 `scripts\sync_firmware.ps1` 再综合。
-排查方法：对 `mem.hex` 的字数 —— CoreMark 固件 **4209 字**，demo 只有 **101 字**，
+排查方法：对 `mem.hex` 的字数 —— CoreMark 固件 **8,552 字**，demo 只有 **163 字**，
 riscv-test 约 **431 字**；数字对不上就是拿错镜像了。

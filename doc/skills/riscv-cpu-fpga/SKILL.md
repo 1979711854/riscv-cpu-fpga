@@ -27,22 +27,25 @@ description: >-
 7. **iverilog 报“端口宽度不一致”是静默截位**（32KB 边界回绕、编译零报错、测试全过），脚本已把它当**硬错误**——报错别改脚本，去对齐宽度。
 8. **主线分支是 `dualissue`**；`main` 是无关历史的“原始 CPU 线”存档，**禁强推**。
 
-## 1. 当前口径速查（2026-10-12，唯一准入口径）
+## 1. 当前口径速查（2026-10-13，A1 之后；**唯一准入口径**）
 
 | 项 | 值 |
 |---|---|
 | 设计 | RV32IMA + Zicsr/Zifencei，5 级流水线，**顺序双发射**（`DUAL_ISSUE=1`）+ `EARLY_LD=1` |
 | 平台 | 紫光同创 Logos2 PG2L200H（-6）；PDS 2022.2-SP6.4；盘古板 27MHz 晶振 → PLL（`RATIO0=13.5`）→ **85.0051 MHz** |
-| **跑分档** | **351.86 CoreMark** @85.0051MHz，ITER=4116，ticks 994,386,960，241,633 拍/迭代（D-only 位流 `2f7a4d0a`；与无 Cache 分数相同） |
-| 功能完整档 | I+D Cache 全开 @76.5052MHz，ITER=3668，**313.63 分**，243,933 拍/迭代（位流 `c6b12d95`，`RTL=0x20261016`） |
-| 效率 | **4.139 CoreMark/MHz**（I+D 版 4.099）；Fmax 87.00MHz（双发射），真实上限 ≈90MHz |
+| **跑分档** | **[OK] 板上实测 365.93 CoreMark** @85.0051MHz，ITER=4280，ticks 994,229,330，232,296.6 拍/迭代（**A1 后当前最好成绩**；位流 `bcd8fdd2`、`RTL=0x20261017`，日志 `doc/board/uart_20261013_184111.txt`）。**A1 前**：351.86 分 / ITER=4116 / 241,633 拍 |
+| 功能完整档 | I+D Cache 全开 @76.5052MHz，ITER=3668，**313.63 分**，243,933 拍/迭代（`RTL=0x20261016`，**A1 前口径**） |
+| 效率 | **4.304 CoreMark/MHz**（每迭代 232,345 拍，**A1 后当前值**）；I+D 版 4.244/235,628。A1 前 4.139/241,633（I+D 4.099/243,933）。Fmax 87.00MHz（双发射），真实上限 ≈90MHz |
 | 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8） |
-| 四条基线（计时区间拍/迭代） | 双发射+`EARLY_LD` **241,633**（默认）/ `EARLY_LD=0` **262,018** / 单发射 **312,428** / 带 Cache **243,933** |
-| 资源 | LUT 6,909（无 Cache 双发射）/ 7,896（I+D，4.94%）；DRM ~106；APM 4 |
+| 四条基线（计时区间拍/迭代） | 双发射+`EARLY_LD` **232,345**（默认）/ `EARLY_LD=0` **252,730** / 单发射 **303,140** / 带 Cache **235,628** |
+| 资源 | LUT 7,482（A1 后双发射，A1 前 6,909 —— 乘法器流水化 +228）/ 7,896（I+D，4.94%）；DRM ~106；APM 4 |
 | RTL 规模 | 31 文件 6,106 行（CPU 侧 19 模块 + 视频 PPU 11 模块） |
 
 > 旧→新映射（文档里见到即换算）：270.82→**351.86**；3.186→**4.139**；313,886/313,876→**241,633/241,604**；
 > ITER=3170→**4116**；单发射 363,515→**312,428**；“Cache 未做”→“已实现、贡献 0、默认关”；“32KB”→“**64KB**”。
+> **A1 那一档（2026-10-13）**：241,633→**232,345**；4.139→**4.304**；ITER 4116→**4280**；
+> 262,018→**252,730**；312,428→**303,140**；243,933→**235,628**；351.86→**365.93**（已验证）；
+> `DESIGN_REV` 0x2026_1016→**0x2026_1017**。
 
 ## 2. RTL 开发纪律（改 `core.v` / `mem_bus.v` 前必读）
 
@@ -69,7 +72,7 @@ description: >-
 ```powershell
 scripts\run_riscv_tests.ps1                  # 49/1/0（默认双发射；-Single 出单发射）
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd   # Cache corner，也必须 49/1/0
-scripts\run_coremark.ps1 -Iter 1             # +PROF：region cycles 必须 = 241,633（ITER=1 默认口径）
+scripts\run_coremark.ps1 -Iter 1             # +PROF：region cycles 必须 = 232,345（ITER=1 默认口径，A1 后）
 scripts\run_own_tests.ps1                    # 自写汇编测试（异常/中断/AMO）
 ```
 
@@ -88,7 +91,7 @@ scripts\run_own_tests.ps1                    # 自写汇编测试（异常/中�
 
 ## 5. PDS 综合与上板
 
-- **`mem.hex` 两个坑**：① 缺失 → 只报一行 `Cannot open specified data file` 然后照常出空 BRAM 位流；② **过期更隐蔽**——文件在、大小正常，内容是上次的镜像，PDS 从不比时间戳。判据：`pds.log` 里 `Loading memory data from file ... mem.hex` + 核对字数（CoreMark ≈4209 字；demo 约 101 字）。**纪律：每次上板前重跑 `build_bitstream.ps1`，别凭“上次同步过了”。**
+- **`mem.hex` 两个坑**：① 缺失 → 只报一行 `Cannot open specified data file` 然后照常出空 BRAM 位流；② **过期更隐蔽**——文件在、大小正常，内容是上次的镜像，PDS 从不比时间戳。判据：`pds.log` 里 `Loading memory data from file ... mem.hex` + 核对字数（**CoreMark 8,552 字 / 17,104 行**；demo 163 字；rtthread 9,562 字；gomoku 5,634 字；video 379 字 —— 权威值在 `build_bitstream.ps1` 的 `$expectLines`/`$expectDesc`）。**纪律：每次上板前重跑 `build_bitstream.ps1`，别凭“上次同步过了”。**
 - **`.fdc` 里只有 27MHz 输入晶振的 `create_clock`**；85.0051MHz 是 PDS 从 **PLL IP 自动推导**的，别手动改那句约束，也别以为没生效。
 - **改频率 = 三处联动 + 事后全部还原**：`pll.idf` 的 `STATIC_RATIO0` → `ip_generate.exe -i pll.idf`（**不是**改 `CLKOUT0_REQ_FREQ`）→ `cpu_top_board.v` 的 `UART_DIV = f÷115200` → `core_portme.c` 的 `EE_TICKS_PER_SEC` → 重算 ITER。不还原 = 下次跑分位流时钟口径错且看不出来。
 - **`.sbit` / `.smsk` 大小和文件头一样，别点错**；Programmer 会记住上次文件，**每次重新 `Assign New Configuration File`**；**Jtag 与 USB-UART 是两块接口，两根 USB 线都要插**；**板子断电即丢配置**（两灯不亮先问是不是没重烧，别怀疑设计）。

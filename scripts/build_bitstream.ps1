@@ -30,21 +30,19 @@
          video    -> DEBUG_LED=1（led[1]=video_locked，HDMI 黑屏先看这一颗）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 4116。
+    仅 coremark 用，默认 4280。
 [!] **改了流水线/取指逻辑、主频或编译选项必须重算**：
         ITER = 时钟频率 × 10s ÷ 每迭代周期数
-    当前（双发射 + 阶段0 的 -O3 + 阶段1 的到达级重定向 + 任务C 的 EARLY_LD，**本机实测**）：
-        85,005,100 × 10 ÷ 241,633 = 3,518（恰好 10s），
-    默认取 4116 → **11.70s（余量 17%）**，与本项目一贯的余量政策一致。
+    当前（双发射 + -O3 + 到达级重定向 + 任务C 的 EARLY_LD + **A1 的 II=1 乘法器**，**本机实测**）：
+        85,005,100 × 10 ÷ 232,345 = 3,658（恰好 10s），
+    默认取 4280 → **11.70s（余量 17%）**，与本项目一贯的余量政策一致。
+    > [!] 2026-10-13 A1 之前是 ITER=4116（241,633 拍口径）—— **用它会跑成 11.24s，仍有效但余量掉到 12%**，
+    >     且与归档位流的对不上，别再用。
     > 历史：262,018 拍时代用 3796；282,777 用 3518（**别再用，那是阶段0 的账**）。
-[!] **别再用 3170 / 3518**：3170 是 -O2 口径（313,886）、3518 是**阶段0 的账**
-    （282,777，忘了算阶段1 的 −7.34%）。
-    用 3518：3518 × 262,018 ÷ 85,005,100 = **10.84s** —— 仍 >10s 有效，
-    但余量掉到 8.4%，低于本项目的 17% 政策。
-[!] 每迭代周期数**取决于配置与编译选项**（两个都是本机实测）：
-    双发射 **241,633**（任务C EARLY_LD 之后；EARLY_LD=0 时仍是 262,018）
-    / 单发射 **312,428**（-O2 时代分别是 313,886 / 363,515）。
-    **板上跑的是双发射 + EARLY_LD=1**，所以算 ITER 用 241,633。
+[!] 每迭代周期数**取决于配置与编译选项**（都是本机实测，**2026-10-13 已更新到 A1 之后**）：
+    双发射 + EARLY_LD **232,345**（A1 前 241,633）/ 双发射 EARLY_LD=0 **252,730**（A1 前 262,018）
+    / 单发射 **303,140**（A1 前 312,428）/ 双发射 + I+D Cache **235,628**（A1 前 243,933）。
+    **板上跑的是双发射 + EARLY_LD=1**，所以算 ITER 用 232,345。
     改完 RTL 或编译选项要量它，跑仿真加 `+PROF`（默认脚本不打印 region cycles 这一行），
     读 `region cycles`；板上的 `Total ticks` 要再 ÷ 当前时钟。别把两个口径混用。
     > [!] 判据：`+PROF` 的 **`region cycles` 必须等于 `Total ticks`**。
@@ -87,7 +85,7 @@ param(
     [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku")]
     [string]$Variant,
 
-    [int]$Iter = 4116,
+    [int]$Iter = 4280,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
     [switch]$Cache,
@@ -195,8 +193,9 @@ if ($Cache -or $DCacheOnly) {   # [!] -DCacheOnly 必须【单独可用】：只
 # 每迭代周期数（取决于配置与编译选项）—— 别再写死：算 ITER 和算得分都用它
 # [阶段0+1 本机实测] 双发射 262,018（-O3 282,777 → 阶段1 再 −7.34%）；
 # 单发射 312,428（-O3 + 阶段1；-O2 时代是 363,515）。
-# [任务C] EARLY_LD=1（cpu_top.v 默认）之后双发射是 241,633；关掉才是 262,018。
-$cpiCycles = if ($dualIssue -eq 1) { 241633 } else { 312428 }
+# [A1] 2026-10-13 更新到乘法器 II=1 之后：双发射 + EARLY_LD=1 是 232,345；单发射 303,140。
+#   （A1 前是 241,633 / 312,428 —— 别再拿旧值算期望 ticks。）
+$cpiCycles = if ($dualIssue -eq 1) { 232345 } else { 303140 }
 $dualNote  = if ($dualIssue -eq 1) { "双发射（与仿真默认一致）" } else { "单发射（-Single 回退版）" }
 
 Write-Host ""
@@ -346,7 +345,7 @@ if ($Variant -eq "coremark") {
     $expTicks = $Iter * $cpiCycles
     Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射 272.1，双发射 351.9）"
+    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射 280.4，双发射 365.9）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"

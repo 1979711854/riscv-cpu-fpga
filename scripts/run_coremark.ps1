@@ -17,7 +17,7 @@
 # CoreMark 一键：编译 ELF -> 拆 hex 到 sim/programs -> iverilog 编译 tb_coremark -> vvp 跑分
 #
 # [重点] 配置必须显式、且与板上比特流对齐：
-#   默认 = 双发射（传 -DDUAL，每迭代 **262,018** 拍）；-Single = 单发射 **312,428** 拍。
+#   默认 = 双发射（传 -DDUAL，每迭代 **252,730** 拍；A1 前 262,018）；-Single = 单发射 **303,140** 拍（A1 前 312,428）。
 #   两个都是本机实测（-O3 + 阶段1；-O2 时代分别是 313,886 / 363,515）。
 #   得分 = 时钟 ÷ 每迭代周期数 ⇒ 配置不同得分不同，混了会把分数算错。
 #   日志首行 "SIM CONFIG: DUAL_ISSUE=?" 会自证本次跑的是哪一种。
@@ -45,7 +45,7 @@ if (-not $SkipBuild) {
         #     读设计版本号（打在 CoreMark 报告之前，用来区分装同一份固件的
         #     两版位流）。只写 rv32im 的话汇编器报 "extension 'zicsr' required"。
         #     理论上不影响正确性（纯 C 不会自己用 CSR），但**改完要复核
-        #     `Total ticks` 双发射 = **262,018** 拍**（-O3 + 阶段1 的到达级重定向）。
+        #     `Total ticks` 双发射 = **252,730** 拍**（A1 前 262,018；-O3 + 阶段1 的到达级重定向）。
         "-march=rv32im_zicsr", "-mabi=ilp32", "-O3",
         "-funroll-loops", "-funroll-all-loops", "-fpeel-loops",
         "-falign-functions=4", "-falign-loops=4",

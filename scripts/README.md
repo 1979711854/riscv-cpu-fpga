@@ -21,25 +21,25 @@
 ```powershell
 # 例：完整回归（改完 RTL 后必跑，默认双发射）
 scripts\run_riscv_tests.ps1                 # 期望 49 PASS / 1 FAIL
-scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 241,633 拍（双发射 + EARLY_LD，当前默认）
-                                            #   EARLY_LD=0 → 262,018；单发射 -Single → 312,428
-                                            #   带 Cache：加 -DCache -ICache -EarlyLd → 243,933
+scripts\run_coremark.ps1 -Iter 1            # 期望计时区间 232,345 拍（双发射 + EARLY_LD = 板上口径，加 -EarlyLd；A1 前 241,633）
+                                            #   脚本默认（不带 -EarlyLd）→ 252,730；单发射 -Single → 303,140
+                                            #   带 Cache：加 -DCache -ICache -EarlyLd → 235,628
 scripts\run_demo.ps1
 scripts\run_sim.ps1 -NoWave
 ```
 
-> [!] **上板前记得换回 ITER=4116 并同步**：跑过 `-Iter 1` 之后
+> [!] **上板前记得换回 ITER=4280 并同步**：跑过 `-Iter 1` 之后
 > `sim\programs\mem.hex` 就是 1 次迭代的固件，直接上板只有几毫秒（85.0051 MHz 板上约 0.004 s）、
 > CoreMark 判 invalid。
 > ```powershell
-> scripts\run_coremark.ps1 -Iter 4116 -SkipSim
+> scripts\run_coremark.ps1 -Iter 4280 -SkipSim
 > scripts\sync_firmware.ps1
 > ```
-> **为什么是 4116**：ITER 要按**板上时钟**算 —— 本地盘古板用 PLL 把板载 27 MHz
+> **为什么是 4280**：ITER 要按**板上时钟**算 —— 本地盘古板用 PLL 把板载 27 MHz
 > 倍频到 **85.0051 MHz**（仿真与远程平台仍是 27 MHz），
-> 当前**双发射 + 任务C `EARLY_LD`** 每迭代 **241,633** 拍，
-> `4116 × 241,633 ÷ 85,005,100 = 11.70 s`（余量 17%，满足 ≥10 s）。
-> [!] **当前跑分档已板上实测**（2026-10-11/12）：`994,386,960` ÷ 85,005,100 =
+> 当前**双发射 + 任务C `EARLY_LD` + A1** 每迭代 **232,345** 拍（A1 前 241,633），
+> `4280 × 232,345 ÷ 85,005,100 = 11.70 s`（余量 17%，满足 ≥10 s）。
+> [!] **最后一次板上实测是 A1 前的**（2026-10-11/12）：`994,386,960` ÷ 85,005,100 =
 > **11.69797 s / 351.86 CoreMark**，位流 md5 `2ddaf32f`（无 Cache）/
 > **`2f7a4d0a`（只开 D-Cache，分数完全相同）**，日志 `doc/board/uart_20261011_225624.txt` /
 > `uart_20261012_002541.txt`。
@@ -49,7 +49,7 @@ scripts\run_sim.ps1 -NoWave
 > 双发射 ITER=3170 → `994,988,178` → 11.7050 s / 270.82（md5 `5c4893de`）；
 > 62.03 MHz `727,018,199` → 11.7203 s / 170.64；49.89 MHz `588,890,651` → 11.8031 s / 140.89。
 > 速算式：**`ITER = 目标时长 × 板上时钟 ÷ 每迭代周期数`**，**当前每迭代周期数
-> `241,633`**（`EARLY_LD=0` → 262,018；单发射 → 312,428；带 Cache → 243,933）—— 这个数与时钟无关。
+> `232,345`**（A1 前 241,633；`EARLY_LD=0` → 252,730；单发射 → 303,140；带 Cache → 235,628）—— 这个数与时钟无关。
 > 上板也可以直接走一条龙 `scripts\build_bitstream.ps1 coremark`（生成固件 → 同步 → 综合），
 > 加 `-Single` 出单发射回退版位流。
 
