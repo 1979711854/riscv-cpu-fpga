@@ -179,9 +179,23 @@ module coremark_tb;
     //   (b) 其余            ⇒ 真正无解释，才是 A4 要找的东西
     reg [63:0] tc_noret, tc_noret_refill, tc_noret_dark, tc_noret_nofetch;
     reg [63:0] tc_noret_mc, tc_noret_stall, tc_noret_flush;
-    reg [1:0]  fl_q, rd_q;      // {2拍前, 1拍前} 的冲刷 / 预测重定向事件
-    wire       a4_recent = u_core.ex_flush || u_core.ex_mispred ||
-                           u_core.p_redirect || fl_q[0] || fl_q[1] || rd_q[0] || rd_q[1];
+    reg [63:0] tc_noret_fl, tc_noret_rd;   // 分别归因于"真冲刷"与"预测重定向"
+    // [A4 第二层] dark 再拆：影子流水线【没有建模】`mem_ready_int` 这个冻结源，
+    //   所以先分清到底是"访存冻结"还是"ID/EX 真的是气泡"。后者才是真无解释。
+    reg [63:0] tc_dark_noready, tc_dark_noidex, tc_dark_idok;
+    // [A4 第三层] dark 的成因假说：load-use 停顿在 WB 级产生 1 拍气泡，但那拍已经
+    //   不在 `stall` 窗口里（影子流水线里气泡要 2~3 拍才流到 WB）。
+    //   证据：`冲刷后 3 拍内 5,382 ≈ ex_flush 3,826 + mispredict 1,543 = 5,369`
+    //   ——每次冲刷恰好 1 拍气泡。停顿也应当同理。
+    reg [3:0]  st_q;            // {4..1 拍前} 的 stall 事件
+    reg [63:0] tc_noret_st;     // dark 里"距上次 stall ≤4 拍"的那部分
+    // [!] 必须【拆开】（2026-10-12 实踩）：`p_redirect`（BHT 预测 taken）按设计是
+    //   【零代价】的（fetch_addr 同拍改向，fall-through 从没进过流水线），
+    //   实测 22,637 次/迭代。把它并进同一个窗口 ⇒ 窗口几乎恒热、什么都归因不进去。
+    //   上一版就是这么错的（dark 假高到 12,114）。
+    reg [2:0]  fl_q, rd_q;      // {3/2/1 拍前} 的冲刷 / 预测重定向事件
+    wire       a4_fl_rec = u_core.ex_flush || u_core.ex_mispred || (fl_q != 3'd0);
+    wire       a4_rd_rec = u_core.p_redirect || (rd_q != 3'd0);
 
     // ---- [TASK-C 分析] 消除 load-use 停顿的可达收益分类（+LDANAL，默认关）----
     // 纯被动观测：只读 core 的内部信号（层次引用），不驱动任何输入，不影响周期数。
@@ -389,8 +403,18 @@ module coremark_tb;
                     $display("  mc_stall 占    : %0d", tc_noret_mc);
                     $display("  load-use 占    : %0d", tc_noret_stall);
                     $display("  冲刷当拍占     : %0d", tc_noret_flush);
-                    $display("  重定向 3 拍内  : %0d  （= 前端重填）", tc_noret_refill);
+                    $display("  冲刷后 3 拍内  : %0d  (= 真分支代价的尾巴)", tc_noret_fl);
+                    $display("  预测重定向后   : %0d  (应为 0：BHT 预测 taken 零代价)", tc_noret_rd);
+                    $display("  停顿后 4 拍内  : %0d  (= load-use 气泡的尾巴)", tc_noret_st);
                     $display("  [!] 真正无解释  : %0d  ← A4 要找的就是这个", tc_noret_dark);
+                    $display("      ├ 访存冻结   : %0d  (mem_ready_int=0)", tc_dark_noready);
+                    $display("      ├ ID/EX 气泡 : %0d  (id_ex_valid=0)", tc_dark_noidex);
+                    $display("      └ 其余       : %0d  ← 最难解释的一格", tc_dark_idok);
+                    // 分桶自检：七桶之和必须 = tc_noret（口径错误的探针）
+                    $display("  --- 七桶之和    : %0d  （必须 = %0d）---",
+                             tc_noret_mc + tc_noret_stall + tc_noret_flush +
+                             tc_noret_fl + tc_noret_rd + tc_noret_st + tc_noret_dark,
+                             tc_noret);
                     $display("  其中 IF/ID 空  : %0d", tc_noret_nofetch);
                     $display("region fwd ex    : %0d", tc_fwdex);
                     $display("region fwd wb    : %0d", tc_fwdwb);
@@ -463,7 +487,10 @@ module coremark_tb;
             tc_noret <= 64'd0; tc_noret_refill <= 64'd0;
             tc_noret_dark <= 64'd0; tc_noret_nofetch <= 64'd0;
             tc_noret_mc <= 64'd0; tc_noret_stall <= 64'd0; tc_noret_flush <= 64'd0;
-            fl_q <= 2'd0; rd_q <= 2'd0;
+            tc_noret_fl <= 64'd0; tc_noret_rd <= 64'd0;
+            tc_dark_noready <= 64'd0; tc_dark_noidex <= 64'd0; tc_dark_idok <= 64'd0;
+            tc_noret_st <= 64'd0; st_q <= 4'd0;
+            fl_q <= 3'd0; rd_q <= 3'd0;
         end else if (prof_on || pairtr_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             // [!] 冻结判据一律用 core 的 mc_stall（多拍功能单元停顿的并集：
@@ -522,10 +549,10 @@ module coremark_tb;
             if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
             if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
                 c_jump <= c_jump + 64'd1;
-            // [A4] 重定向事件的 2 拍历史（非阻塞赋值 ⇒ 本拍读到的 fl_q[0]/[1]
-            //   正是 1 拍前 / 2 拍前的事件）
-            fl_q <= {fl_q[0], (u_core.ex_flush || u_core.ex_mispred)};
-            rd_q <= {rd_q[0], u_core.p_redirect};
+            // [A4] 重定向事件的 3 拍历史（两个窗口【分开】存，见声明处的 [!]）
+            fl_q <= {fl_q[1:0], (u_core.ex_flush || u_core.ex_mispred)};
+            rd_q <= {rd_q[1:0], u_core.p_redirect};
+            st_q <= {st_q[2:0], u_core.stall};
 
             // ---- CoreMark 计时区间（start_time→stop_time，即两次读 0xFFF4）----
             if (u_core.mem_re && u_core.mem_addr == 32'hFFF4) begin
@@ -553,17 +580,29 @@ module coremark_tb;
                 // ---- [A4] 未归类周期归因 ----
                 if (!v_wb) begin
                     tc_noret <= tc_noret + 64'd1;
-                    // 互斥优先链 —— 五个桶之和必须 = tc_noret（不再重叠）
+                    // 互斥优先链 —— 六个桶之和必须 = tc_noret（不再重叠）
                     if      (u_core.mc_stall)
                         tc_noret_mc    <= tc_noret_mc    + 64'd1;
                     else if (u_core.stall)
                         tc_noret_stall <= tc_noret_stall + 64'd1;
                     else if (u_core.ex_flush || u_core.ex_mispred)
                         tc_noret_flush <= tc_noret_flush + 64'd1;
-                    else if (a4_recent)
-                        tc_noret_refill <= tc_noret_refill + 64'd1;
-                    else
+                    else if (a4_fl_rec)
+                        tc_noret_fl <= tc_noret_fl + 64'd1;
+                    else if (a4_rd_rec)
+                        tc_noret_rd <= tc_noret_rd + 64'd1;
+                    else if (st_q != 4'd0)
+                        tc_noret_st <= tc_noret_st + 64'd1;   // 停顿气泡的尾巴
+                    else begin
                         tc_noret_dark   <= tc_noret_dark   + 64'd1;
+                        // dark 第二层拆分
+                        if (!u_core.mem_ready_int)
+                            tc_dark_noready <= tc_dark_noready + 64'd1;
+                        else if (!u_core.id_ex_valid)
+                            tc_dark_noidex  <= tc_dark_noidex  + 64'd1;
+                        else
+                            tc_dark_idok    <= tc_dark_idok    + 64'd1;
+                    end
                     if (!u_core.if_id_valid) tc_noret_nofetch <= tc_noret_nofetch + 64'd1;
                 end
                 if (u_core.id_ex_branch) begin
