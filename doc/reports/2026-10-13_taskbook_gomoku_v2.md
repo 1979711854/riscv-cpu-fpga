@@ -1,4 +1,4 @@
-# RISC-V 五子棋 + RT-Thread 任务书（v2 · 2026-10-13）
+# RISC-V 五子棋 + RT-Thread 任务书（v2 · 2026-10-13 立，**2026-10-14 补：Cache 禁开**）
 
 > **读者：甲（五子棋 / RT-Thread 线）。** 本文**自包含**，不需要先读旧文档。
 > 分支 `dualissue`（本地仓库 `D:\riscv-cpu-fpga_merged`）。开工前读工程根 `CLAUDE.md`
