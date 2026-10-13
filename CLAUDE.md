@@ -311,6 +311,14 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
                  **必须经 `.pds` 的 `wgt_my_ips_src` 引用**，不能当普通源文件加（见关键约定 24）
                  `bitstreams/` 归档的 `.sbit`（`.sbit` 被 gitignore，只入库 README）
                  `mem.hex` **固件快照（有意入库）** —— PDS 综合读的是**它**，不是 `sim/programs/mem.hex`（见约定 8）
+                 > [!] **入库内容定死为【生产固件】= CoreMark（双发射 + `EARLY_LD` + A1 @85 MHz，
+                 > ITER=4280，即 **17104 行** = 脚本里的 `expectLines['coremark']`）。**
+                 > 理由：**在 PDS GUI 里手工综合的人读的就是这份**，而 `build_bitstream.ps1`
+                 > 每次都会重新生成并覆盖它 —— 所以【入库值】唯一的作用就是"手工综合时的默认"，
+                 > 必须是最不容易误导的那个。
+                 > **每次跑完任何变体的构建，提交前 `git checkout -- pds/RV32I_1/mem.hex` 还原。**
+                 > （2026-10-14 曾把 RT-Thread 固件快照入过一次库，已还原；两种口径并存会让
+                 > 任务书里"提交前还原"这条自相矛盾。）
 - `third_party/coremark/`  官方 CoreMark 源码（含 LICENSE）
 - `third_party/riscv-tests-elf/`    50 个**预编译基线 ELF**（回归金标准）
 - `third_party/riscv-tests-env/`    上游 riscv-tests 的 **env 头文件**（encoding.h / riscv_test.h），
@@ -350,6 +358,10 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
 7. **PDS 工程源文件指向 `../../rtl/**`**：改了 rtl 只需在 PDS 里重新 compile，**不要再往 `pds/` 拷源码副本**。
 8. 综合前先把固件 hex 放到 PDS 工程目录（`scripts\sync_firmware.ps1`）。
    统一存储器只用**一份** `mem.hex`（指令+数据并集），旧的 `imem.hex`/`dmem.hex` 已废弃。
+   > [!] **`pds/RV32I_1/mem.hex` 是【有意入库】的，且入库内容定死为生产固件 = CoreMark**
+   > （17104 行 = `expectLines['coremark']`）。因为 **PDS GUI 手工综合读的就是这份**，
+   > 而脚本每次构建都会覆盖它 —— 入库值唯一的作用就是"手工综合时的默认"。
+   > **跑完任何变体的构建，提交前 `git checkout -- pds/RV32I_1/mem.hex` 还原。**
 9. 外部给的 GBK 文件用"以 GBK 重新打开"查看，**不要覆盖保存**；本项目源码统一 **UTF-8**。
 10. 交流与输出默认使用**简体中文**。
 11. 提交按里程碑拆分、信息写清改动；**不自动 push**。
