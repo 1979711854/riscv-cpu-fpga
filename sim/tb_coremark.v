@@ -129,6 +129,12 @@ module coremark_tb;
     integer      pairtr_on, pairtr_fd;
     reg [63:0]   pr_ex, pr_mem, pr_wb;   // {pc[31:0], instr[31:0]}
 
+    // +JALRTRACE：默认关。**纯被动观测**（同 +PROF 纪律，不影响周期数）。
+    // 在 CoreMark 计时区间内逐条流出【未预测 jalr】的 {pc, 目标} —— jalr 的目标
+    // 依赖 rs1、取指级没有前递通路，所以现在完全不预测（每条都冲 1,374 次/迭代）。
+    // 用途：离线统计"多大 BTB 能捕获多少 jalr 目标"，把 B1 的 BTB 尺寸从估算变成数据。
+    integer      jtr_on, jtr_fd;
+
     // 周期构成累计
     reg [63:0] c_stall, c_div, c_mul, c_flush;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
@@ -252,6 +258,8 @@ module coremark_tb;
         ldan_on         = 0;
         pairtr_on       = 0;
         pairtr_fd       = 0;
+        jtr_on          = 0;
+        jtr_fd          = 0;
         trace_start_cyc = -1;
         trace_len       = 64;
         trace_left      = 0;
@@ -262,6 +270,10 @@ module coremark_tb;
         if ($test$plusargs("PAIRTRACE")) begin
             pairtr_on = 1;
             pairtr_fd = $fopen("programs/pairtrace.txt", "w");
+        end
+        if ($test$plusargs("JALRTRACE")) begin
+            jtr_on = 1;
+            jtr_fd = $fopen("programs/jalrtrace.txt", "w");
         end
         $value$plusargs("TRACE_START=%d", trace_start_cyc);
         $value$plusargs("TRACE_LEN=%d",   trace_len);
@@ -446,6 +458,7 @@ module coremark_tb;
                              ph, h_stall[ph], h_flush[ph], h_mem[ph], h_cmt[ph]);
             end
             if (pairtr_on && pairtr_fd != 0) $fclose(pairtr_fd);
+            if (jtr_on    && jtr_fd    != 0) $fclose(jtr_fd);
             $finish;
         end
     end
@@ -491,7 +504,7 @@ module coremark_tb;
             tc_dark_noready <= 64'd0; tc_dark_noidex <= 64'd0; tc_dark_idok <= 64'd0;
             tc_noret_st <= 64'd0; st_q <= 4'd0;
             fl_q <= 3'd0; rd_q <= 3'd0;
-        end else if (prof_on || pairtr_on) begin
+        end else if (prof_on || pairtr_on || jtr_on) begin
             // ---- 影子流水线（镜像 core 各段寄存器的清零/暂停条件）----
             // [!] 冻结判据一律用 core 的 mc_stall（多拍功能单元停顿的并集：
             //     除法 or 乘法），不能只用 div_stall —— 那样乘法的 1 拍停顿
@@ -618,6 +631,16 @@ module coremark_tb;
                 if (u_core.ex_mispred)  tc_mispred <= tc_mispred + 64'd1;
                 if (u_core.id_ex_jump)     tc_jal  <= tc_jal  + 64'd1;
                 if (u_core.id_ex_jump_reg) tc_jalr <= tc_jalr + 64'd1;
+                // [+JALRTRACE] 逐条流出跳转的 {类型, pc, 目标, rd, rs1} —— 纯观测
+                //   同时记 jal（调用，rd=ra）才能离线模拟 RAS：jal 压栈、jalr popped 比对。
+                if (jtr_on && u_core.id_ex_jump)
+                    $fdisplay(jtr_fd, "J %08h %08h %0d %0d",
+                              u_core.id_ex_pc, u_core.branch_target,
+                              u_core.id_ex_rd, u_core.id_ex_rs1);
+                if (jtr_on && u_core.id_ex_jump_reg)
+                    $fdisplay(jtr_fd, "R %08h %08h %0d %0d",
+                              u_core.id_ex_pc, u_core.jalr_target,
+                              u_core.id_ex_rd, u_core.id_ex_rs1);
             end
 
             // ---- 直方图 ----
