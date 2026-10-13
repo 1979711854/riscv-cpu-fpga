@@ -369,6 +369,52 @@ region noretire  :  17,642   ← 正确口径 = cycles − commit（7.59%）
 +1.0%/+0.6% 上修；但两者都要动取指/重定向链，而 CPU 域余量只剩 +0.068 ns。**
 **⇒ 下一步该先做 A0（修 CDC 约束，不花时序），再谨慎评估 A3。**
 
+---
+
+# 15. [!] 勘误：A0（修 CDC 约束）是**死胡同**，已在 2026-09-27 试尽并记录
+
+> **我在第 2、3 轮把 A0 列为"白送的时序收敛，建议优先"—— 这是错的。**
+> 当时的判断只基于"那 22 条是跨域路径"，**没有读 `pds/RV32I_1/RV32I_1.fdc`
+> 第 96~132 行**。那里已经写着完整的否证记录。
+
+## 15.1 `.fdc` §97~132 的原文结论（四种写法逐一实测，全部不成立）
+
+| 写法 | 实测结果 |
+|---|---|
+| (A) `set_clock_groups -asynchronous -group {clk\|u_pll/u_gpll/CLKOUT0_Inferred} -group {...}` | `C: SDC-2017 Nothing implicitly matched` / `SDC-2027 ... is ignored` —— **时钟名还不存在** |
+| (B) `set_false_path -to [get_pins {u_video/u_core/sx_meta[*]:D ...}]` | `C: Timing-4003 Pin not found` 后 `E: CommandTiming-0057` ⇒ **E 级，整个综合当场中止**（**比不写还糟**）|
+| (B') 厂商例子的层次写法 / `get_pins -of_objects [get_cells ... -filter ...]` | Pin not found / `E: Flow-0073 Option '-filter' is not defined`（该阶段 RTL 的位选 FF 还没落成可寻址 pin）|
+| (C) `set_clock_groups -asynchronous -derive` | `E: Flow-0073 Option '-derive' is not defined`（`-derive` 只在 PDS 约束编辑器的语法表里，批处理 fdc 解析器不认）|
+
+**根因**：`.fdc` 的所有命令都在 PDS 的 **Constraint check 阶段**执行完，而三路 PLL 输出
+时钟是 PDS **读完本文件之后**才 `create_generated_clock` 出来的
+—— **写约束时那些时钟与那些 FF 都还不存在**。
+另外：PnR 阶段虽也打 "Constraint check start"，但**只重读 `.pcf`，不重读 `.fdc`**
+⇒ 也没法靠"推迟到 PnR 时时钟已存在"绕过。
+
+**⇒ 那 21 条 `clk_sys→pix_clk` + 1 条 `pix_clk→clk_sys` 违例是【建模假象】，不是真问题**
+（两条路径都只有 0 级逻辑、纯走线）。STA 只是按"一个 pix_clk 周期 39.215 ns 内必须建立"
+去算那 12+9 位同步器。
+
+## 15.2 后果与正确读法
+
+* **不要再去试"用 .fdc 声明跨域异步"** —— 四扇门都关死了，其中两扇还会让综合中止。
+* **读时序报告一律按 path group 分开看**（`report_timing/cpu_top_board.rtr` 的
+  Setup Summary 就是按 `launch → capture` 时钟对分行的）。
+  **CPU 域只认 `clk|u_pll/u_gpll/CLKOUT0_Inferred → 自己` 那一行**（约定 53），
+  别把那 22 条跨域当成 CPU 坏了 —— **`.fdc` 原文就是这么说的**，约定 53 与它一致。
+* **⇒ 路径 A 的候选里，A0 划掉。剩下的只有 A3（BHT 扩容）与 A2b。**
+  两项都要动取指/重定向链，而 CPU 域余量只有 +0.068 ns ⇒
+  **必须"先插假路径量时序，再决定动不动"（约定 44 的做法）。**
+
+## 15.3 教训（写给下次的自己）
+
+**"这个优化看起来是白送的"这种判断，必须先搜仓库里有没有人试过。**
+本次是 `grep -n "clock_groups\|false_path" pds/RV32I_1/RV32I_1.fdc` 一条命令就能避免的错。
+**⇒ 提任何"新增约束"类建议前，先读目标文件自己的注释** —— 这个项目的 `.fdc` / `.pds`
+头部注释里埋着大量"试过、不行、原因"的记录。
+
+
 
 
 
