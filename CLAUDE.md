@@ -234,7 +234,10 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   > jalr 1,374 条 **100% 是函数返回**，直接映射 BTB（16~16384 项、1/2/4 路）捕获率**恒为 6.40%**；
   > **正解是 RAS**（8 项就到 99.93%），性能账 BTB ≈ +0.04%、BTB+RAS ≈ +0.59%。
   > **BTB 的价值在赛题措辞/功能分，不在分数。** 两者都还没做，任务书见
-  > `doc/reports/2026-10-13_handoff_btbras.md`（**该文件取代 `2026-10-13_handoff_pathB.md` 的 §5-B1**）。
+  > **`doc/reports/2026-10-13_taskbook_v10_cpu.md`**（= 发出去的 `RISC-V_CPU优化任务书_v10_20261013.md`；
+  > 自包含，含覆盖 A/B 热身 + RAS + BTB + 与五子棋线的文件划分），
+  > 技术依据全文见 `doc/reports/2026-10-13_handoff_btbras.md`
+  > （**该文件取代 `2026-10-13_handoff_pathB.md` 的 §5-B1**）。
   > 外部中断 MEIP：通路具备但**无测试**，不得当成已验证能力。
   > 关键取舍见 `doc/spec.md` §6：只支持 M 模式（MPP 硬连线）；未实现的 CSR 读 0、写忽略、
   > 不抛非法（否则 50 个基线 ELF 的 init 段会全挂）。
@@ -869,7 +872,10 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   | [!] **"AI 思考期间画面不卡"（G3 的正题）** | [ ] **尚未验证** —— 那次上板**没接显示屏**；另有 `[!] vblank timeout` 待定案（机制 + 一步判据见 `doc/board/README.md`）|
   | 收尾（报告 + 录像）| [ ] 仍缺录像/照片（`doc/board/` 只有串口文本与 ILA 波形）|
 
-  **交给队友接着做的入口**：`doc/reports/2026-10-13_T1_rtthread_g3_checklist.md`（T1 的阶段划分、验收判据、体积守卫）。
+  **交给队友接着做的入口（2026-10-13 已出正式任务书）**：
+  **`doc/reports/2026-10-13_taskbook_gomoku_v2.md`**（= 发出去的 `RISC-V_五子棋任务书_v2_20261013.md`，
+  自包含：T1 的两件收尾 + T2~T5 + 与 CPU 线的文件划分）。
+  T1 的过程细节仍在 `doc/reports/2026-10-13_T1_rtthread_g3_checklist.md`。
   **历史存档**（2026-09-25 那版计划书与进度报告，**口径已过期**）：
   `doc/reports/2026-09-25_handoff_rtthread_gameconsole.md`、`doc/reports/2026-09-25_progress_report.md`。
 
