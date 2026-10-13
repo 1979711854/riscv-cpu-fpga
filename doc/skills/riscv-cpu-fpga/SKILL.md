@@ -97,7 +97,7 @@ scripts\run_own_tests.ps1                    # 自写汇编测试（异常/中�
 - **`.sbit` / `.smsk` 大小和文件头一样，别点错**；Programmer 会记住上次文件，**每次重新 `Assign New Configuration File`**；**Jtag 与 USB-UART 是两块接口，两根 USB 线都要插**；**板子断电即丢配置**（两灯不亮先问是不是没重烧，别怀疑设计）。
 - **`Estimated Frequency` 是“这次被要求跑多快”，不是设计上限**（真实上限 ≈90MHz；请求 99.79 失败过）。
 - **降频演示这条路对带 Cache 的设计是坏的**（请求 71.72 只做出 61.92，slack 比请求 85 还差）；同一 RTL 两次布局的“真实 Fmax”可差 0.42ns——**引用余量必须说明是哪一次跑的**。
-- **位流归档纪律**：文件名带 `_dual_`/`_single_`（两者字节数一样，烧错只表现为分数差 15.8%，比烧错固件更难发现）；**带 parameter 开关的位流必须验网表**（`grep -aic dcache ...pnr.netlist` + DRM 数 + slack），脚本打印和文件名都不可信；`.sbit` md5 **只在同一仓库内可比**（内嵌工程路径）。
+- **位流归档纪律**：**每块上板实测过的位流都要归档 + 登记** —— 复制 `generate_bitstream/cpu_top_board.sbit` 到 `pds/RV32I_1/bitstreams/`，**改名**为 `<变体>_<配置>_<时钟>_<rev|日期>_<md5前8>.sbit`，并在该目录 `README.md` 的表格**加一行**（写清：测到什么、`RTL=0x…`、`Total ticks`、CRC、拍/迭代、日志文件名）。**`generate_bitstream/` 每次综合都会被清空，不归档就等于没有。** 文件名带 `_dual_`/`_single_`（两者字节数一样，烧错只表现为分数差 15.8%，比烧错固件更难发现）；**带 parameter 开关的位流必须验网表**（`grep -aic dcache ...pnr.netlist` + DRM 数 + slack），脚本打印和文件名都不可信；`.sbit` md5 **只在同一仓库内可比**（内嵌工程路径）。
 - **PLL IP 必须以 IP 源文件形式（`wgt_my_ips_src`）加入**，当普通 `.v` 加会报黑盒；**别往 `pds/` 拷 RTL 副本**（工程指向 `../../rtl/**`）。
 - `DEBUG_LED` 参数决定 `led[2:0]` 是调试信号还是 GPIO；PDS 取默认值、命令行传不了 `-D`，`build_bitstream.ps1` 已按变体自动改并还原。
 
