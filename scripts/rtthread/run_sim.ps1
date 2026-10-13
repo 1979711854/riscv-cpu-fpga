@@ -7,10 +7,11 @@
    scripts\rtthread\run_sim.ps1 -NoBuild   跳过 RT-Thread 重编（只重跑仿真）
    scripts\rtthread\run_sim.ps1 -Atomic    用【硬件原子】编（rv32ima + lr/sc/AMO）
 
- 测试台 sim\tb_rtthread.v 会检查三个自检（对应 app\main.c 的设计）：
+ 测试台 sim\tb_rtthread.v 会检查四个自检（对应 app\main.c 的设计）：
    [1] 控制台通了        —— 出现 RT-Thread banner
-   [2] 系统 tick 在走     —— ping 的 tick 差值 == APP_DELAY_MS，且反复出现
-   [3] 上下文切换正确     —— ping / pong 靠信号量交替，次数成对
+   [2] gomoku 线程起来了 —— 出现 "[boot] gomoku render thread running"
+   [3] AI 线程起来了      —— 出现 "[boot] gomoku ai thread running"（G3 拆线程生效）
+   [4] 主线程心跳在跳     —— "[hb] alive"（调度器在跑，render 没独占 CPU）
 
  [!] 仿真口径与上板不同，别混（见 build.ps1 里的说明）：
      仿真时钟 100MHz（sim\ 下所有测试台都是 always #5）、短延时、出 hex

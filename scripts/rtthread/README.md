@@ -98,33 +98,42 @@ scripts\rtthread\build.ps1 -Sim         # 仿真口径（100MHz + 短延时 + �
 ```
  \ | /
 - RT -     Thread Operating System
- / | \     5.3.1 build Sep 27 2026
+ / | \     5.3.1 build Oct 13 2026
  2006 - 2026 Copyright by RT-Thread team
 
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261017
 ========================================
- RISC-V RV32IM @ 85.0051MHz  RT-Thread
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
 ========================================
 [boot] tick         = 0
 [boot] tick period  = 1000 Hz
-[boot] heap         = 3800 bytes
-[boot] both threads started -- watching ping/pong alternate
-[pong] got semaphore, total 1
-[ping] round 1  tick 20 (delta 20, expect 20)
-[pong] got semaphore, total 2
-[ping] round 2  tick 40 (delta 20, expect 20)
+[boot] heap         = 9368 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261017
+=== GOMOKU on RV32I ===
 ...
+[boot] gomoku ai thread running
+[hb] alive, uptime 20 ticks
 === PASS ===
 ```
 
 | 自检 | 判据 | 结果 |
 |---|---|---|
 | 控制台通了 | 出现 RT-Thread banner | **[OK]** |
-| **系统 tick 在走** | ping 的 tick 差值 == `APP_DELAY_MS`，且连续多轮 | **[OK]** `delta 20, expect 20` 精确相等 |
-| **上下文切换正确** | ping / pong 靠信号量交替，次数成对 | **[OK]** ping 6 次 / pong 7 次 |
+| **render 线程起来了** | `[boot] gomoku render thread running` | **[OK]** |
+| **AI 线程起来了**（T1/G3 拆线程）| `[boot] gomoku ai thread running` | **[OK]** |
+| **主线程心跳在跳** | `[hb] alive`（调度器在跑，render 没独占 CPU）| **[OK]** |
 
-**这三条一起通过，说明**：异常/中断入口（`mtvec` → `SW_handler` → `rt_rv32_system_irq_handler`）
-是对的、`mscratch` 中断栈切换是对的、`mstatus` 的保存恢复是对的、调度器能正常切线程。
+**这四条一起通过，说明**：异常/中断入口（`mtvec` → `SW_handler` → `rt_rv32_system_irq_handler`）
+是对的、`mscratch` 中断栈切换是对的、`mstatus` 的保存恢复是对的、调度器能正常切线程，
+而且**五子棋的 render + AI 两条线程都建起来了**。
 **RT-Thread 的内核在这颗 CPU 上真的跑起来了。**
+
+> [!] **这份测试台只验到"线程起来了"** —— 它不驱动按键，所以**没有跑出一手棋**，
+> 也就**没有验证过两线程之间那两个邮箱的往返**。要验 G3 的真正效果（AI 思考期间
+> 画面不卡），得按 `doc/reports/2026-10-13_T1_rtthread_g3_checklist.md` 的
+> Stage 3 上板实测。
 
 > [!] **仿真口径与上板不同**：仿真时钟 **100MHz**（`sim/` 下所有测试台都是 `always #5`），
 > 所以 tick 换算按 100MHz；上板是 85.0051MHz。`-Sim` 会自动传对。
@@ -204,27 +213,35 @@ PowerShell 5.1 读**无 BOM** 的 `.ps1` 时按 GBK 解析，中文注释会把�
 
 ## 验证程序做什么
 
-`app/main.c` 三件事，正好覆盖移植是否成功的三个必要条件：
+`app/main.c` 现在跑的是**五子棋的 T1/G3 形态**：三条线程 + 两个邮箱。
 
 | # | 验证什么 | 怎么看 |
 |---|---|---|
 | 1 | 控制台通了 | 开机能打出 banner |
-| 2 | **系统 tick 在走** | `rt_thread_mdelay(500)` 真的会等，且 `rt_tick_get()` 的差值 ≈ 500 |
-| 3 | **上下文切换正确** | ping / pong 两个静态线程用信号量你一下我一下地交替，顺序错乱或卡死都说明有问题 |
+| 2 | **调度器在跑** | 主线程（优先级 10）每 `HB_DELAY_MS` 打一条 `[hb] alive`，`rt_tick_get()` 单调递增 |
+| 3 | **render + AI 两条线程都起来了** | `[boot] gomoku render thread running` / `[boot] gomoku ai thread running` |
+| 4 | **render 没把 CPU 独占死** | `[hb]` 还能挤进来 —— 这正是 G3 的前提（render 优先 12，AI 优先 25）|
+
+> [!] **仿真测试台只验到第 3/4 条**（线程起来了、调度器在跑）。
+> 它**不驱动按键**，所以跑不出一手棋，**两线程之间那两个邮箱的往返没有被验证过**。
+> 要验 G3 的真正效果（AI 思考期间画面不卡），按
+> `doc/reports/2026-10-13_T1_rtthread_g3_checklist.md` 的 Stage 3 上板实测。
 
 用**静态线程**（`rt_thread_init` + 自己的栈数组）而不是 `rt_thread_create`：
 32KB 下更省，且栈不够时链接期就报错，不会运行期莫名崩。
 
-## 内存账（[!] 2026-10-10 起 RAM 为 64 KB；下表数字出自 32 KB 布局的构建 —— 拆线程/合入 CoreMark 前按 64 KB 重划并重测）
+## 内存账（**2026-10-13 实测，64 KB 布局 / T1+G3 拆线程之后**）
 
 | 项 | 字节 | 说明 |
 |---|---|---|
-| 内核代码 `.text` | 18,805 | 只链接真正用到的（`-Os` + `--gc-sections`）|
+| 内核 + 应用 `.text` | 40,349 | 只链接真正用到的（`-Os` + `--gc-sections`）|
 | `.data` | 188 | 已初始化全局量 |
-| `.bss` | 2,528 | 含两个静态线程栈 512×2 = 1KB |
-| **静态合计** | **21,521** | **65.7%** |
-| 堆 | 7,151 | `_end` .. `0xF000` |
+| `.bss` | 10,656 | 含 render 栈 4KB + AI 栈 4KB + 主线程栈 1KB |
+| **静态合计** | **51,193** | **83.3%** |
+| 堆 | 9,368 | `_end`(0xCB68) .. `__heap_end`(0xF000) |
 | 中断栈 / 引导栈 | 0xF000..0xFFF0 | 4KB，栈顶 0xFFF0（兼容区在 0xFFF0 以上，不能越）|
 
 > **余量不多但够用。** 代码一大堆就变小；不够时先裁 `rtconfig.h`（关组件），
 > 别去动栈 —— 栈顶 0xFFF0 那条线是硬的。
+> [!] 上面所有线程栈都是**静态数组进 `.bss`**，不占堆 —— 堆余只看静态占用。
+> **拆线程后再加东西，先看这里的"静态合计"能否 < 0xF000。**

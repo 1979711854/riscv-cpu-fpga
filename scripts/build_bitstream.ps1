@@ -20,7 +20,8 @@
 .PARAMETER Variant
     coremark = CoreMark ITER=2000 跑分版（板上约 11.72 s，赛题硬指标）
     demo     = 演示程序版（读按键 -> 写 LED -> 串口打印）
-    rtthread = RT-Thread Nano 版（开机能打 banner，ping/pong 两个线程交替打印）
+    rtthread = RT-Thread Nano 版五子棋（T1/G3：render 高优 + AI 低优两条线程，
+               AI 思考期间光标照闪；串口见 render/ai 两条 "thread running" + [hb] 心跳）
     video    = HDMI 彩条版（填显存画 8 条竖条 + 串口显存读回自检）
     gomoku   = 五子棋版（HDMI 出棋盘，4 个按键操作，串口打印 AI 节点数/耗时）
 [!] 各变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
@@ -125,8 +126,14 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     保持原值。
 # [!] coremark 2026-10-11 由 16846 改成 17104：portable_fini 里加了 Cache 命中/缺失
 #     计数器（0x8000_0018~0x24）的串口上报，+129 字。
-$expectLines = @{ coremark = 17104; demo = 326; rtthread = 19124; video = 758; gomoku = 11268 }
-$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "9562 字"; video = "379 字"; gomoku = "5634 字" }
+# [!] rtthread 2026-10-13 由 9562 改成 10135 字（19124 -> 20270 行）：任务 T1/G3
+#     把五子棋拆成 render + AI 两条线程，+AI 线程栈 4KB、+2 个邮箱、+game_t.ai_snap
+#     （232B），静态占用 44,021 -> 51,193 B（/61,440）。实测值，非估计。
+#     [!] 这个数必须用【非 -Sim】的 `rtthread\build.ps1 -Firmware` 量（本脚本正是这么调的）
+#     —— `-Sim` 会改 INPUT_*/GOMOKU_AI_LEVEL 等常量，.text 差 8 字节、行数差 4
+#     （20266 vs 20270）。拿仿真口径的数来填，守卫必挂。
+$expectLines = @{ coremark = 17104; demo = 326; rtthread = 20270; video = 758; gomoku = 11268 }
+$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "10135 字"; video = "379 字"; gomoku = "5634 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -347,9 +354,13 @@ if ($Variant -eq "coremark") {
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
     Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射 280.4，双发射 365.9）"
 } elseif ($Variant -eq "rtthread") {
-    Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + ping/pong 交替（乒乓 500ms）："
-    Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 30"
-    Write-Host " [重点] 三条判据：banner 出来 / [ping] 的 delta 精确等于 500 / [pong] total 递增"
+    Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + gomoku 的 render/AI 两条线程："
+    Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
+    Write-Host " [重点] 四条判据：banner 出来 / [boot] gomoku render thread running /"
+    Write-Host "       [boot] gomoku ai thread running / [hb] alive 且 rt_tick 单调递增"
+    Write-Host "       （[hb] 能挤进来 = render 没独占 CPU，这正是 G3 的前提）"
+    Write-Host "       G3 真效果（AI 思考期间画面/光标不卡）要按键实测，见"
+    Write-Host "       doc\reports\2026-10-13_T1_rtthread_g3_checklist.md 的 Stage 3"
     Write-Host "       板级：led[0]=pll_locked 常亮；led[2]=done 本变体【不会亮】，别误判"
 } elseif ($Variant -eq "gomoku") {
     Write-Host "  2) 先看板上的灯（DEBUG_LED=1）："

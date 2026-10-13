@@ -40,6 +40,10 @@ void video_set_scroll(int x, int y)
 /* vblank 等待的超时（毫秒）。一帧 16.7ms，取 50ms = 3 帧，足够宽又不会让人等太久。 */
 #define VIDEO_VBLANK_TIMEOUT_MS 50u
 
+/* 弱函数：vblank 忙等循环里每圈让一次。裸机是空实现（紧忙等）；
+ * RT-Thread 宿主覆盖成 rt_thread_mdelay(1)，让低优先级 AI 线程在帧间拿到 CPU。 */
+__attribute__((weak)) void video_vblank_yield(void) { }
+
 int video_wait_vblank(void)
 {
     /* VIDEO_STATUS bit0 = vblank。
@@ -58,6 +62,7 @@ int video_wait_vblank(void)
     while ((REG32(VIDEO_STATUS) & 1u) == 0u) {
         if ((uint32_t)(hw_mtime() - t0) > limit)
             return 1;                    /* 超时：视频没在跑 */
+        video_vblank_yield();
     }
     return 0;
 }

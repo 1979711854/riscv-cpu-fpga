@@ -66,7 +66,7 @@ static void uart_puts(const char *s) { hw_uart_puts(s); }
  * [!] mimpid 是规范里的**只读** ID 寄存器：写它会抛非法指令（csr_file.v 的
  *     `wr_illegal`），只读不写。
  * [!] 这一行必须用**大写** `FW=GOMOKU` —— tb_rtthread.v 用小写 "gomoku"
- *     专门匹配 `[boot] gomoku thread running`，这里写小写会让那条自检永远为真。 */
+ *     专门匹配 `[boot] gomoku render thread running`，这里写小写会让那条自检永远为真。 */
 static uint32_t design_rev(void)
 {
     uint32_t v;
@@ -221,6 +221,26 @@ static void draw_frame(void)
  *       · 裸机      -> main_entry.c 里的 main() 直接调它
  *       · RT-Thread -> app/main.c 建一个线程调它（见 scripts/rtthread/）
  *     本函数【不会返回】（for(;;)）。 */
+
+/* ---------------------------------------------------------------------------
+ * 宿主 AI 泵（弱函数）：每一帧 game_tick 之后调一次，负责「把该下的 AI 下掉」。
+ *   裸机默认：同步算完（阻塞在 ai_choose_move）。
+ *   RT-Thread 宿主：用强定义覆盖成「派单给低优先级 AI 线程 + 非阻塞收结果」。
+ *   返回 1 = 这一帧真的落了 AI 的子。
+ * ------------------------------------------------------------------------- */
+__attribute__((weak))
+int gomoku_ai_pump(game_t *gm, uint32_t now)
+{
+    ai_stats_t st;
+    uint32_t   t0 = hw_mtime();
+
+    if (game_ai_run_sync(gm, now, &st)) {
+        gm->ai_ms = hw_ticks_to_ms(hw_mtime() - t0);
+        return 1;
+    }
+    return 0;
+}
+
 void gomoku_run(void)
 {
     int i;
@@ -269,9 +289,7 @@ void gomoku_run(void)
     /* ---- 3) 主循环 -------------------------------------------------------- */
     for (;;) {
         uint32_t now;
-        uint32_t t0;
         uint8_t  smask = 0, lmask = 0;
-        int      moves_before;
 
         /* 与帧同步。这一句同时也是主循环的节拍器。 */
         /* [!] 非 0 = 视频没在跑（vblank 超时）。**注意区分"偶发超时"和"一直超时"**：
@@ -313,13 +331,11 @@ void gomoku_run(void)
                                                       "AI thinking (EASY)...\r\n");
             }
         }
-        /* 只有【这一拍真的走了 AI】才刷新 ai_ms —— 否则空闲帧会把"上次 AI 耗时"
-         * 覆盖成 0~1ms，HUD 那行 AI 统计看着像抽风。 */
-        moves_before = g_game.ai_moves;
-        t0 = hw_mtime();
         game_tick(&g_game, now, smask, lmask);
-        if (g_game.ai_moves != moves_before)
-            g_game.ai_ms = hw_ticks_to_ms(hw_mtime() - t0);
+        /* 宿主 AI 泵：裸机在这里同步算完并刷新 ai_ms；RT-Thread 宿主覆盖成
+         * 「派单给低优先级 AI 线程 + 非阻塞收结果」（见 app/main.c）。
+         * 只有真的落了 AI 子的那一帧才刷新 ai_ms —— 见 gomoku_ai_pump。 */
+        gomoku_ai_pump(&g_game, now);
 
         /* ---- 刷屏 ---- */
         draw_frame();

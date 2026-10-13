@@ -56,6 +56,13 @@ typedef struct {
     int      ai_depth;
     int      ai_moves;          /* AI 一共走了几步 */
     int      last_ai_r, last_ai_c;  /* AI 最近一手（-1 = 还没走过）*/
+
+    /* G3 异步 AI：派单时的棋盘副本 + 是否在等结果。
+     * game_tick 内部只调 game_ai_begin（快、不阻塞、只置 ai_pending 并拷盘）；
+     * 真正的搜索由宿主决定怎么跑 —— 裸机/x86 同步算完，RT-Thread 丢给低优先级 AI 线程。 */
+    gomoku_t ai_snap;           /* AI 只搜这个副本，绝不动真盘 board */
+    int      ai_pending;        /* 1 = 已派单、等 AI 结果 */
+    uint32_t ai_gen;            /* 派单序号：每次 game_ai_begin 自增，宿主据此丢弃过期结果 */
 } game_t;
 
 /* 初始化并进入标题屏。
@@ -81,5 +88,15 @@ int game_ai_turn(const game_t *gm);
  *     另一条路是给 9 种网格形状各加 黑/白 两个带光标的图块（+18 块 = +4.6KB），
  *     但 32KB 里那 4.6KB 更该留给后面加字库。 */
 int game_cursor_shown(const game_t *gm);
+
+/* ---- 异步 AI（G3）----------------------------------------------------------
+ * 「该不该下」和「下在哪」拆成两步：game_tick 内部只调 game_ai_begin
+ * （幂等派单，置 ai_pending 并拷盘，立即返回、绝不阻塞）；搜索由宿主跑 ——
+ * 裸机/x86 用 game_ai_run_sync 同步算完，RT-Thread 把 ai_snap 丢给低优先级
+ * AI 线程、算完再 game_ai_finish 落子。 */
+int game_ai_begin(game_t *gm);
+int game_ai_finish(game_t *gm, uint32_t now, int r, int c, const ai_stats_t *st);
+const gomoku_t *game_ai_snapshot(const game_t *gm);
+int game_ai_run_sync(game_t *gm, uint32_t now, ai_stats_t *out_st);
 
 #endif /* GOMOKU_GAME_H */

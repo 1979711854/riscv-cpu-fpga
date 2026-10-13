@@ -41,9 +41,14 @@ static void step(uint8_t smask, uint8_t lmask, uint32_t dur_us)
 {
     uint32_t end;
     game_tick(&g_gm, g_t, smask, lmask);
+    game_ai_run_sync(&g_gm, g_t, NULL);   /* x86 测试：同步泵，把派单的 AI 立即下掉 */
     g_t += 1000;
     end = g_t + dur_us;
-    while (g_t < end) { game_tick(&g_gm, g_t, 0, 0); g_t += 1000; }
+    while (g_t < end) {
+        game_tick(&g_gm, g_t, 0, 0);
+        game_ai_run_sync(&g_gm, g_t, NULL);
+        g_t += 1000;
+    }
 }
 
 static void press_short(int key) { step(S(key), 0, IDLE_US); }
@@ -271,6 +276,7 @@ static void test_blink(void)
         for (k = 0; k < (int)(BLINK_TICKS / 1000) + 2; k++) {
             if (game_cursor_shown(&g_gm)) seen_on = 1; else seen_off = 1;
             game_tick(&g_gm, g_t, 0, 0);
+            game_ai_run_sync(&g_gm, g_t, NULL);
             g_t += 1000;
         }
     }

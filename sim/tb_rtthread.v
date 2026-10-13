@@ -3,16 +3,18 @@
 // RT-Thread 移植验证测试台
 // ----------------------------------------------------------------------------
 // 跑整个 SoC（core + mem_bus + gpio + uart_tx + uart_rx），把 UART TX 按真实波特率
-// 解码成字节流，然后检查 scripts/rtthread/app/main.c 那三个自检是否成立：
+// 解码成字节流，然后检查 scripts/rtthread/app/main.c 那四个自检是否成立：
 //
 //   [1] 控制台通了        —— 出现 RT-Thread banner
-//   [2] 游戏线程起来了     —— 出现 "[boot] gomoku thread running"（任务 H）
-//   [3] 调度器在跑         —— 主线程心跳 "[hb] alive" 出现。
-//       这一条一举证明两件事：**调度器正常**，且**游戏线程没把 CPU 独占死**
+//   [2] render 线程起来了 —— 出现 "[boot] gomoku render thread running"
+//   [3] AI 线程起来了      —— 出现 "[boot] gomoku ai thread running"（任务 T1/G3 拆线程）
+//   [4] 调度器在跑         —— 主线程心跳 "[hb] alive" 出现。
+//       这一条一举证明两件事：**调度器正常**，且**render 线程没把 CPU 独占死**
 //       （心跳还挤得进来）。
 //
 // [任务 H 说明] 本测试台原来验的是 ping/pong 双线程移植（信号量 + 上下文切换）。
 // 那条已经完成使命，应用换成五子棋后判据跟着换。ping/pong 版本在 git 历史里。
+// 任务 T1/G3 又把单线程五子棋拆成 render + AI，于是多了 [3] 这条 AI 线程判据。
 //
 // [!] 跑之前要先按【仿真口径】编固件（时钟 100MHz、短延时、出 hex）：
 //       scripts\rtthread\build.ps1 -Sim
@@ -143,13 +145,17 @@ module tb_rtthread;
 
     // 需要看的字符串（用 CRLF 常量拼，不要写字面量 \r）
     localparam [16*9-1:0]  S_BANNER = "RT-Thread";
-    // [任务 H] 应用从"ping/pong 移植验证"换成了【五子棋】，判据跟着换：
-    //   [2] gomoku 线程真的起来了 —— app/main.c 打的 "[boot] gomoku thread running"
+    // [任务 T1/G3] 应用从"单线程五子棋"拆成了 render + AI 两条线程，判据跟着换：
+    //   [2] render 线程起来了 —— app/main.c 打的 "[boot] gomoku render thread running"
+    //       AI   线程起来了 —— "[boot] gomoku ai thread running"（S_AI 单独验这条，
+    //       证明"拆线程"真的生效，不只是有一个 gomoku 线程）。
     //   [3] 主线程心跳在跳 —— "[hb] alive"。它一举证明两件事：
-    //       **调度器在跑**，且**游戏线程没有独占 CPU**（心跳还能挤进来）。
+    //       **调度器在跑**，且**render 线程没有独占 CPU**（心跳还能挤进来）。
     // [!] S_GOMOKU 用小写：那行是 rt_kprintf 打的。五子棋自己的 banner 是
     //     "GOMOKU on RV32I"（大写），两者大小写不同，正好分开。
+    // [!] S_AI 取 "ai thr"（小写）：只匹配 AI 线程启动行，不碰 render 行/HUD 的 "AI"（大写）。
     localparam [16*6-1:0]  S_GOMOKU = "gomoku";
+    localparam [16*6-1:0]  S_AI     = "ai thr";
     localparam [16*6-1:0]  S_HB     = "[hb] a";
 
     // 等 UART 上再收到 n 个字节
@@ -165,6 +171,7 @@ module tb_rtthread;
     integer i;
     integer errors   = 0;
     integer seen_gomoku = 0;
+    integer seen_ai     = 0;
     integer seen_hb     = 0;
 
     // ------------------------------------------------------------------
@@ -202,14 +209,16 @@ module tb_rtthread;
         for (i = 0; i < 3000000; i = i + 1) @(negedge clk);
 
         seen_gomoku = 0;
+        seen_ai     = 0;
         seen_hb     = 0;
         for (i = 0; i < RXBUF - 6; i = i + 1) begin
             if (rxtext[i*8 +: 8*6] === S_GOMOKU) seen_gomoku = seen_gomoku + 1;
+            if (rxtext[i*8 +: 8*6] === S_AI)     seen_ai     = seen_ai + 1;
             if (rxtext[i*8 +: 8*6] === S_HB)     seen_hb     = seen_hb + 1;
         end
 
         $display("----------------------------------------");
-        $display("  gomoku 标记 %0d 次 / 心跳标记 %0d 次", seen_gomoku, seen_hb);
+        $display("  gomoku 标记 %0d 次 / AI 线程标记 %0d 次 / 心跳标记 %0d 次", seen_gomoku, seen_ai, seen_hb);
         $display("  串口共收到 %0d 字节", rxcount);
 
         if (seen_gomoku == 0) begin
@@ -217,6 +226,14 @@ module tb_rtthread;
             errors = errors + 1;
         end else begin
             $display("[OK]   gomoku 线程已启动（RT-Thread 上跑起了五子棋）");
+        end
+
+        // G3 拆线程的专属判据：AI 线程单独起了一条启动行
+        if (seen_ai == 0) begin
+            $display("[FAIL] 没看到 AI 线程启动 —— 拆线程没生效，还是单线程在跑");
+            errors = errors + 1;
+        end else begin
+            $display("[OK]   AI 线程已启动（render + AI 拆线程生效）");
         end
 
         // 心跳这一条一举证明两件事：**调度器在跑**，且**游戏线程没独占 CPU**
