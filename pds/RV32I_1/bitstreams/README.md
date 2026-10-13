@@ -4,6 +4,8 @@
 
 | 文件 | 内容 | md5 |
 |---|---|---|
+| **`coremark_dual_aext_ms_earlyld_a1_dcache_85mhz_rev1017_56374a08.sbit`** | **[OK] D-Cache only @85.0051 MHz（A1 之后）—— 高阶任务①的一半，且【几乎不要钱】**：`DCACHE_EN=1`/`ICACHE_EN=0`，`UART_DIV=738`、`EE_TICKS_PER_SEC=85,005,100`，ITER=**4280**。**[OK] 2026-10-13 19:52 已上板通过**（日志 `doc/board/uart_20261013_195230.txt` 第二段）：`RTL=0x20261017`、`Total ticks 994,255,126` → **11.6964 s** → **365.92 分**、`Correct operation validated`、四个 CRC 与仿真逐位相同、**`[cache] D` hits 36,749,229 / miss 26,063（99.929%）、`[cache] I` 全 0**；拍/迭代 **232,302.6**（比无 Cache 的 232,296.6 **只多 6.0 拍 = +0.003%** ⇒ **得分只掉 0.01**）。**结论：D-Cache 可以常规开着，不损失分数** | `56374a08` |
+| **`coremark_dual_aext_ms_earlyld_a1_idcache_76mhz_rev1017_da8ffd31.sbit`** | **[OK] I+D Cache 全开 @76.5052 MHz（A1 之后）—— 高阶任务①完整档**（`RATIO0=15.0`，`UART_DIV=664`、`EE_TICKS_PER_SEC=76,505,200`，ITER=**3800**）。网表自证：`dcache` 658 / `icache` 668 / `tag0` 205 ✓。**CPU 域 setup 余量仅 +0.015 ns**（8 seed 散布 −0.596…+0.015，PDS 取最优 seed）—— **但板上实测是稳的**。**[OK] 2026-10-13 19:52 已上板通过**（日志同上第一段）：`RTL=0x20261017`、`Total ticks 891,885,963` → **11.6578 s** → **325.96 分**、四个 CRC 与仿真逐位相同、**`[cache] D` hits 32,690,873 / miss 23,224（99.929%）、`[cache] I` hits 874,301,508 / miss 9,331,007（98.944%）**；拍/迭代 **234,706.8**（比无 Cache 多 2,410 拍 = **+1.038%**）。**比 85 MHz 无 Cache 低 10.9%（−10.0% 主频 + −1.0% 周期）** | `da8ffd31` |
 | **`coremark_dual_aext_ms_earlyld_a1_85mhz_rev1017_bcd8fdd2.sbit`** | **[OK] A1（乘法器 II=1 流水线）跑分版 —— 当前最好成绩**：双发射 + `EARLY_LD` @ 85.0051 MHz，`DESIGN_REV` = `0x2026_1017`，`UART_DIV`=738、`EE_TICKS_PER_SEC`=85,005,100。ITER=**4280**（`4280 × 232,345`）。**[OK] 2026-10-13 18:41 已上板通过**（日志 `doc/board/uart_20261013_184111.txt`）：首行 **`RTL=0x20261017`**、`Total ticks 994,229,330` → **11.6961 s** → **365.93 分**（日志里的 `389` 是整数截断，别用）、**四个 CRC（`seedcrc`/`crclist`/`crcmatrix`/`crcstate`）与仿真逐位相同**、`Correct operation validated`；拍/迭代 **232,296.6**（仿真 232,345，差 **−0.021%**，在 ±0.04% 模型抖动内）。较 A1 前的 351.86 **+4.00%**。缺陷/未做：**CPU 域时序余量仅 +0.068 ns**、LUT 6,909 → 7,482（乘法器流水化 +228）| `bcd8fdd2` |
 | **`coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_c6b12d95.sbit`** | **[OK] I+D 全开（完整 2 路组相联 I/D Cache）+ 降频 76.5052 MHz**（`RATIO0=15.0`），含 `wb_rdata_snap` 根因修复（`2026-10-12_icache_wb_snap_fix.md`）+ `DESIGN_REV` 递增到 `0x2026_1016`（约定 42）。CPU 域 **setup +0.589 ns / hold +0.147 ns / 0 失败端点**（19,021 端点）；网表自证 **`dcache` 655 / `icache` 670** ✓。ITER=3668（`3668 × 244,034`）、`UART_DIV=664`、`EE_TICKS_PER_SEC=76,505,200`。**[OK] 2026-10-12 15:59 已上板通过**（日志 `doc/board/uart_20261012_155934.txt`）：首行 **`RTL=0x20261016`**、`Total ticks 894,745,801` → **11.6952 s** → **313.63 分**（日志里的 `333` 是整数截断，别用）、**四个 CRC 逐位相同**、`Correct operation validated`、**`[cache] I` hits 878,103,971 / miss 9,006,928（98.985%）+ `[cache] D` 31,555,354 / 22,423（99.929%）**；拍/迭代 **243,932.9**（仿真 244,034，差 −0.041%）。全流程见 `doc/reports/2026-10-12_idcache_board_bitstream.md` | `c6b12d95` |
 | `coremark_dual_aext_ms_earlyld_idcache_76mhz_rev1016_d073366b.sbit` | 上面那条的**同设计孪生**（在 `idcache` 仓库副本综合）：**网表逐字节相同**（md5 `A4814916…`）、时序数字逐位相同。`.sbit` 里内嵌工程路径不同 ⇒ md5 不同。**归档只为留一手，烧哪个都一样** | `d073366b` |
@@ -30,6 +32,11 @@
 | `coremark_dual_aext_ms_85mhz_mimpid_492714a8.sbit` | `imem_addr2` 修复 + **版本自证**（`mimpid` 打出 `RTL=`，约定 42）—— CoreMark ITER=3170 @85MHz，slack +0.525 ns，失败端点 0。**已板上实测 270.82** | `492714a8` |
 | **`gomoku_dual_hud_60hz_074a0e11.sbit`** | **当前最新**：60Hz + **HUD 残字修复**。已板上可玩 | `074a0e11` |
 | **`coremark_dual_85mhz_5c4893de.sbit`** | **双发射** CoreMark @ 85 MHz —— **已板上实测 270.82 分**（ITER=3170，`Total ticks 994,988,178` / 11.7050 s）| `5c4893de` |
+
+> [!] **ITER=1 的仿真会【高估】Cache 的周期代价 —— 判 Cache 收益只认板上数**（2026-10-13 实测）：
+> 仿真（ITER=1）说 D-Cache +365 拍、I+D +3,283 拍；**板上（ITER=4280/3800）只有 +6.0 拍 / +2,410 拍**。
+> 差一个数量级。**根因：ITER=1 时 Cache 是冷的**，那一次迭代的缺失被完整计进周期；
+> 而板上跑几千次迭代，缺失被摊薄。⇒ **带 Cache 的配置，仿真必须跑多迭代才可比**，否则只能信板。
 
 > [!] 旧的 `gomoku_dual_hud_85mhz_e5bc227a.sbit`（60.71Hz）保留作对照 ——
 > **它能复现"画面抖动/撕裂"那个症状**，是刷新率那条结论的证据。
