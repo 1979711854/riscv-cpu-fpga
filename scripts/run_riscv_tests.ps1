@@ -6,6 +6,7 @@
     [switch]$DCache,            # 打开 D-Cache（-DDCACHE，DCACHE_EN=1）。默认关
     [switch]$ICache,            # 打开 I-Cache（-DICACHE，ICACHE_EN=1）。默认关
     [switch]$EarlyLd,           # [任务 C] load 地址提前（-DEARLYLD，EARLY_LD=1）。默认关
+    [switch]$NoBtb,             # [B1-BTB] 关分支目标缓冲（-DNOBTB，BTB_EN=0）。默认【开】，与板上一致
     [switch]$Single,            # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
     [string]$Toolchain = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
 )
@@ -24,6 +25,7 @@ $dualIssue = if ($Single) { 0 } else { 1 }
 $dcacheEn  = if ($DCache) { 1 } else { 0 }
 $icacheEn  = if ($ICache) { 1 } else { 0 }
 $earlyLdEn = if ($EarlyLd) { 1 } else { 0 }
+$btbEn     = if ($NoBtb)  { 0 } else { 1 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\")).Path
 $env:PATH = "$Toolchain;$env:PATH"
@@ -93,7 +95,8 @@ $vvpName = if ($dualIssue -eq 1) { "tb_riscv_dual.vvp" } else { "tb_riscv_single
 if ($dcacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_dcache.vvp" }
 if ($icacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_icache.vvp" }
 if ($earlyLdEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_earlyld.vvp" }
-Write-Host "[2/3] 编译 testbench ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn（$vvpName）"
+if ($btbEn     -eq 0) { $vvpName = $vvpName -replace "\.vvp$", "_nobtb.vvp" }
+Write-Host "[2/3] 编译 testbench ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn（$vvpName）"
 $sim = Join-Path $repo "sim"
 $vvp = Join-Path $sim $vvpName
 $rtl = @()
@@ -105,6 +108,7 @@ if ($dualIssue -eq 1) { $defs += "-DDUAL" }
 if ($dcacheEn  -eq 1) { $defs += "-DDCACHE" }
 if ($icacheEn  -eq 1) { $defs += "-DICACHE" }
 if ($earlyLdEn -eq 1) { $defs += "-DEARLYLD" }
+if ($btbEn     -eq 0) { $defs += "-DNOBTB" }
 $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,
@@ -125,7 +129,7 @@ if ($widthWarn.Count -gt 0) {
 }
 
 # ---- 3) 逐个跑 ----
-Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn MEMWAIT=$MemWait）"
+Write-Host "[3/3] 逐个仿真 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn MEMWAIT=$MemWait）"
 $pass = 0; $fail = 0; $timeout = 0; $other = 0
 $lines = @()
 foreach ($elf in $elfs) {
@@ -145,9 +149,9 @@ foreach ($elf in $elfs) {
     Write-Host ("  {0,-10} {1}" -f $name, $txt)
 }
 
-@("SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn MEMWAIT=$MemWait") + $lines | Set-Content (Join-Path $prog "results.txt")
+@("SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn MEMWAIT=$MemWait") + $lines | Set-Content (Join-Path $prog "results.txt")
 Write-Host ""
 Write-Host "======== 汇总 ========"
-Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn MEMWAIT=$MemWait" -ForegroundColor Cyan
+Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn MEMWAIT=$MemWait" -ForegroundColor Cyan
 Write-Host "PASS=$pass  FAIL=$fail  TIMEOUT=$timeout  OTHER=$other"
 Write-Host "明细: sim/programs/results.txt（首行即本次配置）"

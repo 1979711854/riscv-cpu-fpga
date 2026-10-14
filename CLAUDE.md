@@ -46,9 +46,12 @@
 **当前跑分口径 = 85.0051 MHz 顺序双发射 + `EARLY_LD`**（I+D Cache 版 @76.5052 MHz = 313.63，A1 前口径）。
 演进：2026-10-12 I/D Cache 上板跑通 + 任务C `EARLY_LD`（351.86）；2026-10-06 双发射（270.82）；2026-10-04 提频到 85.0051 MHz；2026-09-28 62.03 MHz + 两拍乘法器 + 动态 BHT
 
-> **[!] 2026-10-14 已推进（RTL 改动，位流待重出）**：B1-RAS 返回地址栈落地 ⇒ 双发射 + `EARLY_LD`
-> 仿真 **232,345 → 229,597 拍/迭代**（−1.18%，`region commit` 逐位不变 214,703）；`DESIGN_REV → 0x2026_1021`；
-> 时序 CPU 域 **+0.311 ns / 0 失败端点（18,122）**。下一条任务 = B1-BTB。详见「待办」小节。）
+> **[!] 2026-10-14 已推进（RTL 改动，位流待重出）**：**B1-RAS + B1-BTB 均已落地（v11 §3 任务表四项全完）**。
+> B1-RAS 返回地址栈 ⇒ 双发射 + `EARLY_LD` 仿真 **232,345 → 229,597 拍/迭代**（−1.18%，`region commit`
+> 逐位不变 214,703）。B1-BTB（256 项直接映射、只预测间接 `jalr`、优先级 RAS>BTB>PC+imm）⇒ **对基准逐位中性**
+> （`region commit`/`region cycles`/四 CRC 全不变；价值在赛题点名项/功能分），配套 §7 校验放宽到所有被预测 jalr。
+> `DESIGN_REV → 0x2026_1022`；时序 CPU 域 **B1-RAS 后 +0.311 → B1-BTB 后 +0.034 ns / 0 失败端点（20,507）**
+> —— 仍为正但**很薄**（后备：BTB 缩 64 项 → 再不行 `BTB_EN` 默认 0 / `-DNOBTB`）。详见「待办」小节。）
 
 **另一条腿 —— 应用线（RT-Thread + 五子棋）：[OK] 已做成并上板。**
 RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操作 + **串口棋盘镜像**。
@@ -972,6 +975,25 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
       但修它要绑到 `BOARD_SYSTEM_CLOCK_HZ`（会同时改裸机五子棋与仿真的去抖口径，需回归）。
 
 ## 待办
+-  **[OK] 2026-10-14 B1-BTB（分支目标缓冲，赛题点名项）已完成 —— v11 §3 任务表四项全完**：
+  256 项**直接映射** BTB（索引 `pc[9:2]`、tag `pc[31:8]`，与 BHT 同形），**只预测间接 `jalr` 目标**
+  （条件分支/`jal` 的 `PC+imm` 现算已对，不重复存）。到达级命中即折进**既有的** `p_target` 腿
+  （优先级 **RAS > BTB > PC+imm**），**绝不新增 `fetch_addr` 的腿**；EX 级提交那拍训练（门控同 RAS：
+  `mem_ready_int && !mc_stall && !trap && id_ex_jump_reg`）。v10 §7 校验**放宽到所有被预测的 jalr**
+  （`id_ex_pred_taken` 门控 ⇒ 没被预测的 jalr 逐位不变；`imm≠0` 强制冲刷 ⇒ 不比"不预测"差；`imm=0` 仍用
+  `rs1_val & ~1` 直比，**不碰 `ex_target` 加法器**）。`parameter BTB_EN=1`（默认开）+ `-DNOBTB` 配置自证。
+  **收益在功能分/赛题点名，不在跑分**：CoreMark 的 `jalr` 几乎全是 `ret`（已被 RAS 99.9%+ 捕获），
+  BTB 只触发 44 次且全在计时区外 ⇒ **`region commit` 214,703、`region cycles` 229,597、四 CRC 逐位不变**
+  （既证没算错，也说明"跑分不变"证明不了 BTB 有效）。**故新增测试 + 探针**：`sim/tests/btb_indirect.S`
+  （非 call/ret 间接跳转，只有 BTB 能预测；稳定目标省拍 + 交替目标逼 §7 纠正）+ `+BTBTRACE` 探针
+  （实测 `btb pred=15/train=15` 开 vs `0/0` 关，省 16 拍）。**"§7 承重"已证**：弄坏 §7（`ex_target_wrong` 置 0）
+  ⇒ `btb_indirect` **FAIL(testnum 2)**；精确 Edit 还原、`git diff` 核对。回归（双发射口径）：riscv-tests 默认与
+  Cache corner 均 **49/1/0**、`run_own_tests` **5/0**（含 `btb_indirect`）、CoreMark 逐位不变、rtthread 四配置 PASS。
+  **[坑·实测]** 交替目标测试**阶段 2 若用两段独立循环体**，错误路径会"自收敛"到同一结果（都 =34）⇒ 弄坏 §7
+  也 PASS、判不出来；改**共享循环控制块 + 差异大的加数(+1/+100) + 6 次**（期望 303）才成为承重判据。
+  **`DESIGN_REV → 0x2026_1022`；改过 RTL ⇒ 上板前必须重出位流。** 详见 `doc/reports/2026-10-14_session_state.md` §9。
+  **[!] 时序是唯一代价**：CPU 域 **+0.311 → +0.034 ns / 0 失败端点（20,507）** —— 仍为正（过红线，BTB 默认保持开），
+  但只剩 **0.29% 周期**、在 ~5.7% 综合噪声内。**后备**：BTB 缩到 **64 项**（读 mux 更浅）→ 仍负则 `BTB_EN` 默认改 **0**。
 -  **[OK] 2026-10-14 AMO 后紧跟分支走错路径的 RTL bug 已修（同族第三条：门控的是"源"）**：
   `tb_amo_cpu.S` 从旧协议转 tohost 判分后首次端到端跑即 **FAIL(testnum 9)** —— 根因是
   `core.v` 的 `ex_flush`/`ex_mispred` **源**没门控 `mem_ready_int`：AMO/LR/SC 占 MEM 的 4 拍里

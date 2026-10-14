@@ -65,11 +65,19 @@ module cpu_tb_riscv;
     localparam EARLYLD_OUT = 0;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+    // [B1-BTB] 分支目标缓冲：编译时加 -DNOBTB 即用 BTB_EN=0。默认【开】（与板上一致）。
+    // 与 DUAL/DCACHE 同理：脚本要跑"关掉"的对照必须【显式】传 -DNOBTB。
+`ifdef NOBTB
+    localparam BTB_OUT = 0;
+`else
+    localparam BTB_OUT = 1;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
@@ -116,6 +124,31 @@ module cpu_tb_riscv;
             $display("LD pc=%h rd=%0d snap_en=%b raw=%h out=%h",
                      u_core.mem_wb_pc, u_core.mem_wb_rd,
                      u_core.wb_rdata_snap_en, u_core.wb_rdata_snap, u_core.load_data);
+    end
+
+    // ------------------------------------------------------------------
+    // [B1-BTB] +BTBTRACE：统计 BTB 预测命中（到达级 u_core.p_btb_pred）与训练
+    //   （EX 级 u_core.btb_upd_en）次数。**纯被动观测**（同 +LDBUG/+JALRTRACE 纪律，
+    //   不改变周期数）。用途：CoreMark 的 jalr ≈ 100% 是 ret（被 RAS 捕获）⇒ BTB 一次
+    //   不触发，"跑分逐位不变"证明不了 BTB 生效/正确；本探针配合 btb_indirect.S 证明
+    //   BTB 真在预测（pred>0），并用 -DNOBTB 对照（pred=0）。
+    // ------------------------------------------------------------------
+    integer btbtrace_on, btbpred_cnt, btbtrain_cnt;
+    initial begin
+        btbtrace_on  = 0;
+        btbpred_cnt  = 0;
+        btbtrain_cnt = 0;
+        if ($test$plusargs("BTBTRACE")) btbtrace_on = 1;
+    end
+    always @(posedge clk) begin
+        if (resetn && btbtrace_on) begin
+            if (u_core.p_btb_pred) btbpred_cnt  = btbpred_cnt  + 1;
+            if (u_core.btb_upd_en) btbtrain_cnt = btbtrain_cnt + 1;
+        end
+    end
+    final begin
+        if (btbtrace_on)
+            $display("BTBTRACE: btb pred = %0d, btb train = %0d", btbpred_cnt, btbtrain_cnt);
     end
 
     initial clk = 1'b0;

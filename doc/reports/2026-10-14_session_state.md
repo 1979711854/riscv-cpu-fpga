@@ -1,9 +1,10 @@
-# 会话状态 —— 2026-10-14（覆盖 A：`tb_amo_cpu.S` 转 tohost + 抓到并修掉一族 RTL bug；覆盖 B：`hi_fetch.S`；**B1-RAS 返回地址栈**）
+# 会话状态 —— 2026-10-14（覆盖 A：`tb_amo_cpu.S` 转 tohost + 抓到并修掉一族 RTL bug；覆盖 B：`hi_fetch.S`；**B1-RAS 返回地址栈**；**B1-BTB 分支目标缓冲**）
 
 > 接 `2026-10-13_session_state.md` / 本日更早的 `2026-10-14_cache_fix_bug1.md`、`..._bug2.md`。
 > 本会话做了 v11 §3 任务表的 **覆盖 A**（抓到并修掉一族此前不可达的 RTL bug）、**覆盖 B**、
-> 以及 **B1-RAS**（返回地址栈，本轮真正拿分的一项）。**改动未提交**（按约定：里程碑 → 推分支
-> → 集成方合并；本机不自动 push）。**B1-RAS 见 §8。**
+> **B1-RAS**（返回地址栈，本轮真正拿分的一项）、以及 **B1-BTB**（分支目标缓冲，赛题点名项）。
+> **改动未提交**（按约定：里程碑 → 推分支 → 集成方合并；本机不自动 push）。
+> **B1-RAS 见 §8、B1-BTB 见 §9。**
 
 ---
 
@@ -276,3 +277,106 @@ assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken && mem_ready_int;
 ```
 
 > **上板前必须重出位流**（`DESIGN_REV=0x2026_1021`）。`pds/RV32I_1/mem.hex` 未动（本会话未跑 CoreMark 固件重生成）。
+
+---
+
+## 9. B1-BTB（同日续做）：分支目标缓冲 —— 赛题点名项
+
+**结论：v11 §3 任务表最后一项 B1-BTB 完成。256 项直接映射 BTB 预测【间接跳转 `jalr`】的目标，
+折进既有的 `p_target` 腿（**不新增 `fetch_addr` 的腿**，v10 §6.4/§6.5 硬约束）。
+`BTB_EN` **默认开**（用户定调"默认开，不行再关"）。收益：CoreMark 计时区间**逐位不变**（`229,597` + 四 CRC）；
+专用间接跳转测试证明 BTB 真在预测（`pred>0`）且 §7 纠错承重（关掉 §7 ⇒ 该测试 FAIL）。`DESIGN_REV → 0x2026_1022`。**
+
+### 9.1 为什么单做这一项（背景，v10 §6 / 交接书 `2026-10-13_handoff_btbras.md`）
+
+- **赛题原文点名的"动态分支预测器（如 BTB）"**，报告里必须有 ⇒ **价值在功能分，不在跑分**。
+- **实测：BTB 单独 ≈ +0.04%**（等于没做）：CoreMark 的 1,374 条 `jalr` **几乎全是 `ret`**，已被 RAS
+  以 99.9%+ 捕获；直接映射 BTB 对"同一点位多目标"的 `jalr` 捕获率恒低（组相联也无用）。
+- **第一约束是时序**：BTB 是"PC 索引的存储器读"，**新增一条进取指路径的表读** ⇒ 可能吃时序余量。
+
+### 9.2 设计（照批准方案 `harmonic-snacking-pike.md`，v10 §6 + §7）
+
+| 部件 | 位置 | 做法 |
+|---|---|---|
+| **参数** | `core.v` 顶部 | `parameter BTB_EN = 1`（与 `DUAL_ISSUE`/`EARLY_LD` 并列）|
+| **BTB 存储** | `core.v` RAS 块后 | `btb_tag[23:0][256]` / `btb_target[31:0][256]` / `btb_valid[256]`（**与 BHT 同形态**：索引 `pc[9:2]`、tag `pc[31:8]`）|
+| **到达级读** | `core.v` 到达级预解码 | `p_is_jalr = opcode==1100111`；`btb_hit_p`；`p_btb_pred = BTB_EN && p_is_jalr && !p_ras_hit && btb_hit_p` |
+| **目标折入** | `p_pred_taken`/`p_target` | 优先级 **RAS > BTB > PC+imm**：`p_target = p_ras_hit ? ras_top : p_btb_pred ? btb_target[idx] : (if_addr_d+p_imm)`；`p_btb_pred` 经既有 `p_redirect` 腿自动吃到（**门控一字不改**）；`p_pred_taken=1` ⇒ 独占（`pair_now=0`）|
+| **EX 训练** | `core.v` RAS 块后 | `btb_upd_en = BTB_EN && mem_ready_int && !mc_stall && !trap && id_ex_jump_reg`；写 `btb_target = jalr_target`（实际目标，含 ret；RAS 空时兜底）|
+| **§7 目标校验** | `core.v` `ex_flush` | **由"仅 ret"放宽到"所有被预测的 jalr"**：`ex_is_jalr_ex = id_ex_jump_reg`（原 `&& id_ex_rd==0`）|
+
+- **只存 `jalr` 的目标**：条件分支与 `jal` 的目标 `PC+imm` 由 `p_target` 现算已正确，不重复存（v10 §6.2）。
+- **不做组相联 / 多目标**：实测对 `ret` 无用（v10 §4 推论 1）。
+
+### 9.3 §7 放宽的**逐位等价性**论证（安全性）
+
+- `ex_target_wrong = id_ex_pred_taken && ex_tgt_mm`，**仍由 `id_ex_pred_taken` 门控** ⇒
+  **没被预测的 jalr 行为不变**（走 `ex_resolve_taken && !id_ex_pred_taken` 那条原有冲刷）。
+- `ex_tgt_mm` 仍**只用 `rs1_val` 直比**（`(rs1_val & ~1) != id_ex_pred_target`）、**不经 `ex_target` 加法器**
+  —— 保住 RAS 那次"绕开 ~2 ns 加法器"的时序修复（§8.2）。
+- **`imm≠0` 的 `jalr x0,off(rs1)` 一律判错、强制冲刷** ⇒ 与"不预测"同代价（**不会更差**）。
+- `branch`/`jal` 的 `id_ex_jump_reg=0` ⇒ **逐位不变**。
+- **交叉验证**：CoreMark 四 CRC + riscv-tests 全量都没变（§9.5）。
+
+### 9.4 为什么"CoreMark 逐位不变"**证明不了 BTB**（用户要求新增测试的理由）
+
+CoreMark 的 `jalr` 绝大多数是 `ret`（RAS 已捕获）⇒ **BTB 在计时区间内基本不触发**。
+实测（`+PROF` 新增 `btb pred/btb train`）：**`btb pred 44 / train 1450`** —— 44 次触发全在
+**计时区间之外**，计时区间 `Total ticks` 与四 CRC **逐位不变**。故必须新增**专用间接跳转测试**。
+
+### 9.5 新增测试 `sim/tests/btb_indirect.S`（进 `run_own_tests` glob，无需改脚本）
+
+构造**既非 call 也非 ret** 的 `jalr x0,0(tX)`（`tX ∉ {x1,x5}` ⇒ 只有 BTB 能预测）：
+- **阶段 1（稳定目标）**：同一 jalr 站点恒跳同一地址 ⇒ BTB 训练后稳定命中；结果自检（循环体须恰好 10 次）。
+- **阶段 2（交替目标）**：同一 jalr 站点在 2 个目标间交替（共享循环控制、落点累加值 **+1 / +100**）。
+  直接映射 BTB 每个 PC 只存 1 个目标 ⇒ 每轮用上一轮的目标去猜、除首轮外必猜错 ⇒ **只能靠 §7 纠正**；
+  一旦某轮走错路径，`s4` 必然偏离期望 `303` ⇒ FAIL。
+- 判据：两阶段结果全对 ⇒ `=== PASS ===`。
+
+**弄坏能 FAIL（已验证，§7 承重的直接证据）**：临时把 `ex_target_wrong` 强置 `1'b0`（§7 关）+ BTB 开
+⇒ `btb_indirect` **FAIL(testnum 2)**；**精确 Edit 还原**（`git diff rtl/core/core.v` 核对只剩 §7 放宽那两行，
+**没 `git checkout core.v`**）。**注意**：第一版阶段 2（两目标各 +1/+10）在 §7 关掉后**仍 PASS** ——
+错误路径会"自洽"地收敛到同一结果，**不能用作判据**；改成"共享循环控制 + 差异极大的累加值"后才真正承重。
+
+**探针 `+BTBTRACE`**（`tb_riscv.v`，纯被动）：
+- BTB **开**：`btb pred = 15, btb train = 15`，`btb_indirect` 总拍 **1666 ns**；
+- BTB **关**（`-DNOBTB`）：`btb pred = 0, btb train = 0`，**1826 ns** ⇒ **BTB 开省 16 拍（每次预测省 1 拍）**；
+- **两者都 `=== PASS ===`**（BTB 不破坏功能正确性）。
+
+### 9.6 回归（双发射口径；改 RTL 后 v11 §4.2 全跑）
+
+| 回归 | 命令 | 结果 |
+|---|---|---|
+| riscv-tests 默认 | `run_riscv_tests.ps1` | **49 PASS / 1 FAIL(ma_data) / 0 TIMEOUT**（= 基线）|
+| riscv-tests Cache corner | `... -DCache -ICache -EarlyLd` | **49 / 1 / 0**（= 基线）|
+| 自写测试全量 | `run_own_tests.ps1` | **5 PASS / 0 FAIL / 0 OTHER**（新增 `btb_indirect`）|
+| 自写测试 Cache corner | `run_own_tests.ps1 -DCache -ICache -EarlyLd` | **5 / 0 / 0** |
+| CoreMark | `run_coremark.ps1 -Iter 1 -EarlyLd` | **229,597 拍**（逐位不变）；四 CRC 全对；`RTL=0x20261022` |
+| RT-Thread ×4 | `rtthread\run_sim.ps1`（无 / `-DCache` / `-ICache` / `-DCache -ICache`）| **四配置全 PASS** |
+| **时序** | `report_timing\cpu_top_board.rtr` 的 `u_pll→u_pll` | **+0.034 ns / 0 失败端点（20,507）** |
+
+### 9.7 时序：**+0.311 → +0.034 ns**（正，但极薄）—— 红线的处理
+
+- CPU 域 `u_pll/CLKOUT0 → u_pll/CLKOUT0`：RAS 后 **+0.311 ns / 18,122** ⇒ BTB 后 **+0.034 ns / 20,507**。
+- **达标**（WNS 为正，**没变负**）⇒ 按批准方案红线，**不触发兜底**；用户定调"**默认开**"。
+- 但 **+0.034 ns 只占 11.764 ns 周期的 0.29%，远低于本项目的综合噪声（≈5.7%）** ⇒ 换 seed 很可能翻负。
+- **后备方案（用户要求记录，若换 seed 翻负时启用）**：
+  1. **先把 BTB 缩到 64 项**（索引 `pc[7:2]`、tag 不变，读 mux 更浅）→ 重跑 `report_timing` 看余量是否回升；
+  2. **仍为负** ⇒ **`BTB_EN` 默认改 0**，报告写"已实现、默认关闭"（赛题该项仍算完成），
+     并用 `-DNOBTB` 复跑时序确认回到 +0.311 附近。
+- 跨域 CDC 两行（−1.046/21、−0.189/1）**与基线逐位一致** ⇒ 未触碰 `fetch_addr` 新腿，符合设计约束。
+
+### 9.8 B1-BTB 改动文件（追加，未提交）
+
+```
+ M rtl/core/core.v                 ← parameter BTB_EN + BTB 存储 + 到达级 BTB 读/p_target 折入 + EX 训练 + §7 放宽
+ M rtl/core/csr_file.v             ← DESIGN_REV → 0x2026_1022 + 注释表一行
+ M sim/tb_riscv.v                  ← -DNOBTB→BTB_EN + SIM CONFIG 字段 + +BTBTRACE 探针
+ M sim/tb_coremark.v               ← -DNOBTB→BTB_EN + SIM CONFIG 字段 + +PROF 里 btb pred/train 计数
+ M scripts/run_own_tests.ps1       ← -NoBtb → -DNOBTB（+ vvp 名后缀 _nobtb + SIM CONFIG 回显）
+ M scripts/run_riscv_tests.ps1     ← 同上
+ M scripts/run_coremark.ps1        ← 同上
+?? sim/tests/btb_indirect.S        ← 新增（稳定目标 + 交替目标两阶段）
+```
+
+> **上板前必须重出位流**（`DESIGN_REV=0x2026_1022`；RAS 与 BTB 可一并重出）。本会话未跑 CoreMark 固件重生成。

@@ -64,11 +64,18 @@ module coremark_tb;
     localparam EARLYLD_OUT = 0;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+    // [B1-BTB] 分支目标缓冲：编译时加 -DNOBTB 即用 BTB_EN=0。默认【开】（与板上一致）。
+`ifdef NOBTB
+    localparam BTB_OUT = 0;
+`else
+    localparam BTB_OUT = 1;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
@@ -166,6 +173,9 @@ module coremark_tb;
     reg [63:0] c_jal, c_jalr;
     // 分支预测事件：ID 级重定向（预测生效）与 EX 级误判恢复
     reg [63:0] c_redir, c_mispred;
+    // [B1-BTB] BTB 事件：到达级预测命中 / EX 级训练。CoreMark 无间接 jalr ⇒ 应恒 0
+    //   （jalr ≈ 全 ret，被 RAS 捕获），这是"跑分逐位不变"的佐证。
+    reg [63:0] c_btbpred, c_btbtrain;
 
     // CoreMark 计时区间内的同类统计。
     // 依据：core_portme.c 里 start_time()/stop_time() 各是一次读 MMIO 0xFFF4
@@ -369,6 +379,7 @@ module coremark_tb;
                          c_br_tot, c_br_bwd, c_br_bwd_tk);
                 $display("  jal %0d  jalr %0d", c_jal, c_jalr);
                 $display("  arrival redirect %0d  mispredict %0d", c_redir, c_mispred);
+                $display("  btb pred %0d  btb train %0d", c_btbpred, c_btbtrain);
                 $display("fwd from ex/mem  : %0d", c_fwdex);
                 $display("fwd from mem/wb  : %0d", c_fwdwb);
                 $display("mem accesses     : %0d", c_mem);
@@ -482,6 +493,7 @@ module coremark_tb;
             c_br_tot <= 64'd0; c_br_bwd <= 64'd0; c_br_bwd_tk <= 64'd0;
             c_jal <= 64'd0; c_jalr <= 64'd0;
             c_redir <= 64'd0; c_mispred <= 64'd0;
+            c_btbpred <= 64'd0; c_btbtrain <= 64'd0;
             c_commit <= 64'd0; c_inst_in <= 64'd0;
             v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
             pr_ex <= 64'd0; pr_mem <= 64'd0; pr_wb <= 64'd0;
@@ -558,6 +570,8 @@ module coremark_tb;
             end
             if (u_core.p_redirect) c_redir   <= c_redir   + 64'd1;
             if (u_core.ex_mispred)  c_mispred <= c_mispred + 64'd1;
+            if (u_core.p_btb_pred)  c_btbpred  <= c_btbpred  + 64'd1;
+            if (u_core.btb_upd_en)  c_btbtrain <= c_btbtrain + 64'd1;
             if (u_core.id_ex_jump)     c_jal  <= c_jal  + 64'd1;
             if (u_core.id_ex_jump_reg) c_jalr <= c_jalr + 64'd1;
             if (u_core.id_ex_jump || u_core.id_ex_jump_reg)
