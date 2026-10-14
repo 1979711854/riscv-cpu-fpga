@@ -69,6 +69,17 @@ foreach ($f in @("imem.hex", "dmem.hex")) {
     if (-not (Test-Path (Join-Path $Bld $f))) { throw "缺少 $f —— 先不带 -NoBuild 跑一次" }
 }
 
+# ---- 1a) -NoBuild 守卫：build/ 里的固件必须是【-Sim 口径】编的 ----
+# [!] 2026-10-14 实踩：板级集成用【板载口径】编过一次（76.5MHz / HB_DELAY_MS=5000）后，
+#     build/ 的 hex 被覆盖；-NoBuild 拿它跑 100MHz 仿真 ⇒ 心跳 3.8 秒 wall time 才出现，
+#     30ms 扫描窗等不到 ⇒ [FAIL] 没看到主线程心跳（与 RTL 无关，纯口径错配，白查一轮）。
+#     build.ps1 在 -Sim 时写 .sim_build_ok 标记、板载构建时删它 —— 见到没标记就别跑。
+if ($NoBuild -and -not (Test-Path (Join-Path $Bld ".sim_build_ok"))) {
+    throw ("build/ 里的固件不是 -Sim 口径编的（缺 .sim_build_ok 标记，上次很可能是板级构建）。" +
+           "板载口径（76.5MHz / HB_DELAY_MS=5000）在 100MHz 仿真里会整体变慢、心跳永远超窗，" +
+           "判 FAIL 但与 RTL 无关。请去掉 -NoBuild 重跑（会按仿真口径重编固件）。")
+}
+
 # ---- 2) 编测试台 ----
 # [!] 不要编 rtl\mem\unified_mem.v —— 测试台用 sim\mem_model.vh 里的行为模型，
 #     重复定义会冲突（CLAUDE.md 关键约定 2）。

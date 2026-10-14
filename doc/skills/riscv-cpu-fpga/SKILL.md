@@ -35,19 +35,21 @@ description: >-
 | 项 | 值 |
 |---|---|
 | 设计 | RV32IMA + Zicsr/Zifencei，5 级流水线，**顺序双发射**（`DUAL_ISSUE=1`）+ `EARLY_LD=1` + **A1 乘法器 II=1** |
-| `DESIGN_REV` | **`0x2026_1019`**（`csr_file.v`；改 RTL 必须递增，约定 42）|
+| `DESIGN_REV` | **`0x2026_1022`**（`csr_file.v`；改 RTL 必须递增，约定 42）|
 | 平台 | 紫光同创 Logos2 PG2L200H（-6）；PDS 2022.2-SP6.4；盘古板 27MHz 晶振 → PLL：**85.0051 MHz**（`RATIO0=13.5`，生产档）／ **76.5052 MHz**（`RATIO0=15.0`，带 Cache 的降频档）|
 | **跑分档（交付）** | **365.93 CoreMark** @85.0051MHz，ITER=**4280**，**232,345** 拍/迭代；位流 **`bcd8fdd2`**（无 Cache）／ **`56374a08`**（D-only，365.92 同分）|
+| **跑分档候选（B1-RAS/BTB）** | 位流 **`f64b977`**（2026-10-14 23:04 综合，**CPU 域 +0.034ns / 0 端点，上板待验证**）：ITER=**4332**、**229,597** 拍/迭代 ⇒ 预期 11.7004s / **≈370.2 分**。**未烧板前交付仍是 `bcd8fdd2`**（`doc/reports/2026-10-14_integrate_b1_ras_btb.md`）|
 | 功能完整档（I+D） | I+D 全开 @76.5052MHz，ITER=**3800**，**325.96 分**，**234,706.8** 拍/迭代（**A1 后板上实测**，位流 `da8ffd31`，`RTL=0x20261017`）；**A1 前**：313.63 分 / ITER=3668 / 243,932.9 拍（位流 `c6b12d95`）|
 | **RT-Thread + Cache 档**（新增）| rtthread 五子棋 + I+D @76.5052 MHz，位流 **`53b81dfe`** / `90944754`（`RTL=0x20261019`）—— **2026-10-14 上板通过**（两条根因修完后的第一颗，见 §10）|
-| 效率 | **4.304 CoreMark/MHz**（A1 后；A1 前 4.139）；Fmax 87.00MHz（双发射），真实上限 ≈90MHz |
-| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8） |
-| **四条基线（计时区间拍/迭代）** | 双发射+`EARLY_LD` **232,345** / `EARLY_LD=0` **252,730** / 单发射 **303,140** / 双发射+I+D Cache **235,628**（仿真；**板上 234,706.8**）|
-| 资源 | LUT **7,482**（**A1 后**双发射无 Cache 口径 = 提交档 `bcd8fdd2` 综合实测；A1 前 6,909）/ **7,896 = 4.94%**（I+D 全 SoC 含视频）；DRM 106.5；APM 4 |
+| 效率 | **4.355 CoreMark/MHz**（B1-RAS 后，229,597 拍；A1 后 4.304，A1 前 4.139）；Fmax 87.00MHz（双发射），真实上限 ≈90MHz |
+| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8）；自写 **5 PASS**（`btb_indirect`/`hi_fetch`/`tb_amo_cpu`/`exceptions`/`timer_irq`）|
+| **四条基线（计时区间拍/迭代）** | 双发射+`EARLY_LD` **229,597**（B1-RAS 后；RAS 前 232,345）/ `EARLY_LD=0` **252,730** / 单发射 **303,140** / 双发射+I+D Cache **235,628**（仿真；后三个未含 RAS；**板上 234,706.8**）|
+| 资源 | LUT **8,104 = 5.07%**（**B1-RAS/BTB 后**双发射无 Cache 口径 = 候选档 `f64b977` 综合实测；A1 后 7,482，**+622 = RAS+BTB 代价**）；DRM 101.5；APM 4 |
 | RTL 规模 | 31 文件 6,106 行（CPU 侧 19 模块 + 视频 PPU 11 模块） |
 
 > 旧→新映射（文档里见到即换算）：351.86→**365.93**；4.139→**4.304**；241,633→**232,345**；
 > 262,018→**252,730**；312,428→**303,140**；243,933/235,628→**234,706.8**（板上；仿真值仍写 235,628）；ITER 4116→**4280**；ITER 3668→**3800**；313.63→**325.96**；`RTL=0x20261017`→**`0x20261019`**；
+> **232,345→229,597、4.304→4.355、ITER 4280→4332、`RTL=0x20261019`→`0x20261022`、LUT 7,482→8,104（B1-RAS/BTB，2026-10-14）**；
 > “Cache 未做”→“已实现、贡献 0、**默认关（但功能已修复并上板验证）**”；“Cache 会挂”→“两条根因已修”（§10）；“32KB”→“**64KB**”。
 > （更早：270.82→351.86；3.186→4.139；313,886/313,876→241,633/241,604；ITER=3170→4116；单发射 363,515→312,428。）
 
@@ -87,9 +89,9 @@ description: >-
 ```powershell
 scripts\run_riscv_tests.ps1                  # 49/1/0（默认双发射；-Single 出单发射）
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd   # Cache corner，也必须 49/1/0
-scripts\run_coremark.ps1 -Iter 1 -EarlyLd    # +PROF：region cycles 必须 = 232,345（A1 口径）
+scripts\run_coremark.ps1 -Iter 1 -EarlyLd    # +PROF：Total ticks 必须 = 229,597（B1-RAS 口径）
 scripts\run_coremark.ps1 -Iter 1             # EARLY_LD=0 口径 = 252,730
-scripts\run_own_tests.ps1 -DCache -ICache -EarlyLd     # 自写汇编测试（异常/中断/AMO）2 PASS
+scripts\run_own_tests.ps1                    # 自写汇编测试 5 PASS（btb_indirect/hi_fetch/tb_amo_cpu/exceptions/timer_irq）
 scripts\rtthread\run_sim.ps1 -NoBuild                 # RT-Thread 五子棋（无 Cache）
 scripts\rtthread\run_sim.ps1 -NoBuild -DCache -ICache # ← **Cache corner 的真回归**（四种配置都该 PASS）
 scripts\rtthread\run_sim.ps1 -NoBuild -ICache -LdChk  # load 数据自检 + 规范化事件流（见 §10）
@@ -98,6 +100,11 @@ scripts\rtthread\run_sim.ps1 -NoBuild -ICache -LdChk  # load 数据自检 + 规�
 - **[!] 默认回归盖不住"有停顿"的配置**：`run_riscv_tests` 默认 `EARLY_LD=0` 且无 Cache；
   RT-Thread 线的 `run_sim.ps1` 默认也没有 `-D` 旗标。**动流水线/停顿逻辑后，四份 RT-Thread 配置
   （无Cache / 只D / 只I / I+D）是唯一能抓到冻结相关 bug 的组合**（约定 55/56/57 都是这么漏过去的）。
+- **[!] `-NoBuild` 的固件口径守卫（2026-10-14 实踩）**：`scripts/rtthread/build/` 的 hex 会被
+  **板级构建覆盖**（76.5MHz / `HB_DELAY_MS=5000`），`-NoBuild` 拿它跑 100MHz 仿真 ⇒ 心跳 3.8 秒
+  wall time 才出现、30ms 扫描窗等不到 ⇒ `[FAIL] 没看到主线程心跳`（**与 RTL 无关**）。
+  `build.ps1 -Sim` 会写 `build/.sim_build_ok` 标记、板载构建删它；`run_sim.ps1 -NoBuild` 见到没标记
+  直接 throw。**判：RT-Thread 仿真 FAIL 先看固件是不是 `-Sim` 口径，再怀疑 RTL。**
 
 - **`ma_data` 必须是 FAIL（testnum 668）**——它是回归哨兵：若哪天 PASS 了，说明有人动了 load/store 字节抽取逻辑，属非预期改动。
 - **CoreMark 计时区间一字不差**是“没碰坏流水线”的最灵敏探针；只有“目的就是改变它”的改动才允许它动。

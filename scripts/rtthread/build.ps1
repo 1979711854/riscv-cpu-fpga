@@ -250,4 +250,18 @@ if ($Firmware) {
     Write-Host "  -> $Build\{imem,dmem,mem}.hex" -ForegroundColor Green
 }
 
+# ---- 构建口径标记（run_sim.ps1 -NoBuild 的守卫用）---------------------------
+# [!] 2026-10-14 实踩：板级集成跑过一次【板载口径】构建（BOARD_SYSTEM_CLOCK_HZ=76.5MHz、
+#     HB_DELAY_MS=5000）之后，build/ 里的 hex 被覆盖；随后 run_sim.ps1 -NoBuild 拿它跑
+#     100MHz 仿真 ⇒ 固件自觉 1.307× 慢、心跳（5000ms）要 3.8 秒 wall time 才出现，
+#     30ms 扫描窗内永远等不到 ⇒ [FAIL] 没看到主线程心跳。与 RTL 无关，纯固件口径错配。
+#     所以：-Sim 构建写标记，板载构建删标记；-NoBuild 见到没标记就报错，别静默跑错口径。
+$simMark = Join-Path $Build ".sim_build_ok"
+if ($Sim) {
+    Set-Content -Path $simMark -Value "built $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') with -Sim (100MHz, HB_DELAY_MS=20)"
+} elseif (Test-Path $simMark) {
+    Remove-Item $simMark -Force
+    Write-Host "  （已删除 .sim_build_ok 标记：本次是板载口径构建）" -ForegroundColor DarkGray
+}
+
 Write-Host "完成：$Elf" -ForegroundColor Green
