@@ -312,4 +312,89 @@ module tb_rtthread;
         $finish;
     end
 
+    // ------------------------------------------------------------------
+    // [调试 2026-10-14] PC 逐拍 trace（-DPCTRACE，配 run_sim.ps1 -PcTrace）
+    // 用途：Cache 挂死定位 —— 同一固件跑"无 Cache / 带 Cache"两份 trace，
+    // 折叠连续重复后 diff，第一条分叉的 pc 就是 Cache 开始出错的位置。
+    // [!] 只在 negedge 采样，避开 posedge 竞态；resetn 放开后才记。
+    // ------------------------------------------------------------------
+`ifdef PCTRACE
+    integer ptf;
+    initial ptf = $fopen("rtthread_pctrace.txt", "w");
+    always @(negedge clk) if (resetn) $fwrite(ptf, "%h\n", pc);
+`endif
+
+    // ------------------------------------------------------------------
+    // [调试 2026-10-14] IF/ID 逐拍 trace（-DITRACE）
+    // 列：if_id_pc if_id_instr if_id_pc_b if_id_instr_b valid pair
+    //     p_redirect ex_flush fetch_addr mem_ready
+    // 用途：看【到底哪条指令进了 ID、有没有配对、那一拍有没有重定向】——
+    // pc trace 只给地址流，看不出"指令被丢/被配对吃掉"这类问题。
+    // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // [调试 2026-10-14] trap 事件 trace（-DTRAPTRACE）
+    // 列：cycle trap_cause id_ex_pc（= 肇事指令 pc）
+    // 用途：Cache + RT-Thread 挂死定位 —— 找出第一条【非预期】异常
+    //   （预期：ecall=11 与定时器中断 0x8000_0007；其余都是 bug）。
+    // ------------------------------------------------------------------
+    integer dbg_cyc;
+    initial dbg_cyc = 0;
+    always @(negedge clk) dbg_cyc = dbg_cyc + 1;
+
+    // ------------------------------------------------------------------
+    // [调试 2026-10-14] 访存事件 trace（-DLTRACE）
+    // 列：cycle ex_mem_pc mem_re mem_we mem_addr mem_wdata mem_rdata mem_ready
+    // 用途：抓"某条 load 返回了错数据"——地址是谁、返回什么、当时 mem_ready 是几。
+    //   [!] mem_ready=0 时 MEM 级会【保持】多拍，同一个事件会重复出现 —— 这是
+    //       有意保留的信息（能看出停顿形状）。
+    // ------------------------------------------------------------------
+`ifdef LTRACE
+    integer ltf;
+    initial ltf = $fopen("rtthread_ltrace.txt", "w");
+    always @(negedge clk) if (resetn && (tb_rtthread.u_soc.u_core.mem_re ||
+                                         tb_rtthread.u_soc.u_core.mem_we))
+        $fwrite(ltf, "%0d %h %b %b %h %h %h %b\n", dbg_cyc,
+                tb_rtthread.u_soc.u_core.ex_mem_pc,
+                tb_rtthread.u_soc.u_core.mem_re,
+                tb_rtthread.u_soc.u_core.mem_we,
+                tb_rtthread.u_soc.u_core.mem_addr,
+                tb_rtthread.u_soc.u_core.mem_wdata,
+                tb_rtthread.u_soc.u_core.mem_rdata,
+                tb_rtthread.u_soc.u_core.mem_ready_int);
+`endif
+
+`ifdef TRAPTRACE
+    integer ttf;
+    initial ttf = $fopen("rtthread_traptrace.txt", "w");
+    always @(negedge clk) if (resetn && tb_rtthread.u_soc.u_core.trap)
+        $fwrite(ttf, "%0d %h %h %h\n", dbg_cyc,
+                tb_rtthread.u_soc.u_core.trap_cause,
+                tb_rtthread.u_soc.u_core.id_ex_pc,
+                tb_rtthread.u_soc.u_core.trap_tval);
+`endif
+
+`ifdef ITRACE
+    integer itf;
+    initial itf = $fopen("rtthread_itrace.txt", "w");
+    always @(negedge clk) if (resetn)
+        $fwrite(itf, "%h %h %h %b %b %b %h %b | %h %h %h | %b %0d %h | %b %0d %h\n",
+                tb_rtthread.u_soc.u_core.if_id_pc,
+                tb_rtthread.u_soc.u_core.if_id_instr,
+                tb_rtthread.u_soc.u_core.if_id_pc_b,
+                tb_rtthread.u_soc.u_core.if_id_pair,
+                tb_rtthread.u_soc.u_core.p_redirect,
+                tb_rtthread.u_soc.u_core.ex_flush,
+                tb_rtthread.u_soc.u_core.fetch_addr,
+                tb_rtthread.u_soc.u_core.mem_ready_int,
+                tb_rtthread.u_soc.u_core.id_ex_pc,
+                tb_rtthread.u_soc.u_core.ex_mem_pc,
+                tb_rtthread.u_soc.u_core.mem_wb_pc,
+                tb_rtthread.u_soc.u_core.mem_wb_reg_write,
+                tb_rtthread.u_soc.u_core.mem_wb_rd,
+                tb_rtthread.u_soc.u_core.wb_data,
+                tb_rtthread.u_soc.u_core.mem_wb_b_reg_write,
+                tb_rtthread.u_soc.u_core.mem_wb_b_rd,
+                tb_rtthread.u_soc.u_core.wb_data_b);
+`endif
+
 endmodule

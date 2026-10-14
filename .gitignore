@@ -137,3 +137,8 @@ $RECYCLE.BIN/
 # ---- 五子棋 x86 单测产物 ----
 /scripts/gomoku/*.exe
 /scripts/gomoku/*.o
+
+# ---- 调试 trace / 仿真日志（-PcTrace/-ITrace/-TrapTrace/-LTrace 产物，可重生成，别入库）----
+sim/*trace*.txt
+rtthread_*trace*.txt
+sim/*.log

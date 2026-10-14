@@ -1346,8 +1346,28 @@ module core #(
     endgenerate
 
     // ================= ID/EX 寄存器 =================
+    // [!] 2026-10-14 修复（Cache + RT-Thread 挂死的根因）—— 清 ID/EX 必须像
+    //     EX/MEM（见下面的 A.0 修复）一样【门控 mem_ready_int】，且 trap 保持无条件：
+    //
+    //   `ex_flush` / `ex_mispred` / `stall_int` 都是【EX 里那条指令自己】发出的
+    //   （jal/jalr/分支 / load-use）。流水线被访存停顿冻结（mem_ready_int=0）时，
+    //   整条流水线不能平移 —— ID/EX 里躺着的就是那条发冲刷的指令【本身】。
+    //   这时清 ID/EX = 把它自己杀掉 ⇒ 它进不了 EX/MEM ⇒ 它的寄存器写回（jal/jalr
+    //   的链接值 ra）【永久丢失】。EX/MEM 侧有同样的门控（A.0 修复），ID/EX 侧漏了。
+    //
+    //   实测（cmd：scripts\rtthread\run_sim.ps1 -ICache；冷启动取指几乎每拍缺失、
+    //   mem_ready 0/1 交替 ⇒ 撞上概率≈1）：`_start` 里 0x2ac 的 `jalr -1956(ra)`
+    //   在 EX 发 ex_flush 的那拍正好 mem_ready=0 ⇒ 它被清掉 ⇒ ra 只剩前一条
+    //   `auipc ra,0x7` 写的 0x72a8 ⇒ 0x6b08 的 `ret` 跳回 0x72a8 ⇒ 执行流跑飞、
+    //   55360 拍挂死（仿真与板上逐字节一致：只剩 13 字节 ` turn=WHITE`）。
+    //   无 Cache 时 mem_ready_int=0 只在真访存停顿出现，撞上跳转解析那拍的概率极低
+    //   ⇒ CoreMark（无 trap、冷启动命中率高）与 riscv-tests 一直看不出来。
+    //
+    //   为什么 trap 不门控：肇事指令【必须】死（约定 20：不得产生副作用）；冻结
+    //   期间清掉它、放开后 EX/MEM <= 气泡，与当场清等价（同 A.0 注释的推理）。
+    //   pair / ex_flush 那条 lane B 抑制（见 EX/MEM 段）不受影响。
     always @(posedge clk or negedge resetn) begin
-        if (!resetn || ex_flush || ex_mispred || stall_int || trap) begin
+        if (!resetn || trap || ((ex_flush || ex_mispred || stall_int) && mem_ready_int)) begin
             id_ex_reg_write <= 1'b0;
             id_ex_alu_a_sel <= 1'b0;
             id_ex_alu_b_sel <= 1'b0;

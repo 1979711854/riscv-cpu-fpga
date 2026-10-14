@@ -26,6 +26,8 @@
        -Single       = 退回单发射（不传 -DDUAL）
        -NoEarlyLd    = 退回 EARLY_LD=0（不传 -DEARLYLD）
        -RxTrace      = 逐字节打 rx + pc（挂死定位用，默认关）
+       -PcTrace      = PC 逐拍落盘 rtthread_pctrace.txt（对拍找第一条分叉，默认关）
+       -ITrace       = IF/ID 逐拍落盘 rtthread_itrace.txt（看指令/配对/重定向，默认关）
      复现板上挂死：scripts\rtthread\run_sim.ps1 -DCache -ICache
      归因结果（2026-10-14）：-DCache / -ICache / 两者 都能打挂这条固件，
      无 Cache 是 PASS ⇒ 功能 bug、与时序无关。见
@@ -39,7 +41,11 @@ param(
     [switch]$ICache,     # ICACHE_EN=1（追加 -DICACHE）
     [switch]$Single,     # 退回单发射（不传 -DDUAL）
     [switch]$NoEarlyLd,  # 退回 EARLY_LD=0（不传 -DEARLYLD）
-    [switch]$RxTrace     # 逐字节打 rx + pc（挂死定位用；默认关，开了会刷 168 行）
+    [switch]$RxTrace,    # 逐字节打 rx + pc（挂死定位用；默认关，开了会刷 168 行）
+    [switch]$PcTrace,    # PC 逐拍落盘（对拍定位用；默认关，一份约 40MB）
+    [switch]$ITrace,     # IF/ID 逐拍落盘（看指令进 ID / 配对 / 重定向；默认关）
+    [switch]$TrapTrace,  # trap 事件落盘（cause + 肇事 pc；默认关）
+    [switch]$LTrace      # 访存事件落盘（pc/addr/wdata/rdata/ready；默认关）
 )
 
 $ErrorActionPreference = "Stop"
@@ -95,6 +101,10 @@ if (-not $NoEarlyLd) { $defs += "-DEARLYLD" }
 if ($DCache)         { $defs += "-DDCACHE" }
 if ($ICache)         { $defs += "-DICACHE" }
 if ($RxTrace)        { $defs += "-DRXTRACE" }
+if ($PcTrace)        { $defs += "-DPCTRACE" }
+if ($ITrace)         { $defs += "-DITRACE" }
+if ($TrapTrace)      { $defs += "-DTRAPTRACE" }
+if ($LTrace)         { $defs += "-DLTRACE" }
 $cfgDual   = if ($Single)    { 0 } else { 1 }
 $cfgDCache = if ($DCache)    { 1 } else { 0 }
 $cfgICache = if ($ICache)    { 1 } else { 0 }

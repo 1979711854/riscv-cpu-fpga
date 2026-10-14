@@ -892,7 +892,43 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     **损坏的数据**，不是字符串里真有 `?`（`scripts/gomoku` 里根本没有 `?` 字面量，别去源码里找）。
     **⇒ 规矩：串口日志里看到成片 `?`，先 `Format-Hex` 看原始字节再下结论。**
 
+56. [!] **流水线级寄存器的"清零"必须门控 `mem_ready_int`；`trap` 例外**
+    （2026-10-14 实踩 —— **Cache + RT-Thread 挂死的根因 #1**）。
+    `core.v` 的 ID/EX 寄存器原来写作
+    `if (!resetn || ex_flush || ex_mispred || stall_int || trap)` 就清成气泡。
+    但 **`ex_flush`/`ex_mispred`/`stall_int` 都是【EX 里那条指令自己】发出的**
+    （jal/jalr/分支 / load-use）：流水线被访存停顿冻结（`mem_ready_int=0`）时整条流水线
+    不能平移，ID/EX 里躺着的就是**那条发冲刷的指令本身** ⇒ 清它 = **把它自己杀掉**
+    ⇒ 它进不了 EX/MEM ⇒ **`jal/jalr` 的链接值写回永久丢失**。
+    * 修法一行：`if (!resetn || trap || ((ex_flush||ex_mispred||stall_int) && mem_ready_int))`。
+      即**照抄 EX/MEM 的门控**（A.0 修复，`core.v:1474-1482` 的注释已经把道理讲透了，
+      ID/EX 侧漏了同一刀）。`trap` 保持无条件（肇事指令必须死，约定 20）。
+    * 复现：`scripts\rtthread\run_sim.ps1 -ICache`。修前**全程只 13 字节**挂死；
+      修后完整启动（banner + render/AI 两线程 + 心跳窗口内到位）。
+    * 为什么一直没被发现：`mem_ready_int=0` 原来只在真访存停顿（`+MEMWAIT`）出现，
+      撞上"跳转在 EX 解析"那一拍概率极低；**带 Cache 后取指链几乎每拍停顿**（冷启动
+      每次取指都缺失）⇒ 撞上概率≈1。CoreMark/riscv-tests 都盖不住。
+    * [!] **同类推广：任何"冻结拍更新"的级间寄存器都要问一句"它服务的是哪一级、
+      冻结时该保持还是该清"**（同理见约定 47 的快照同源、约定 51 的 mul 使能同源）。
+    * 全套证据链与工具见 `doc/reports/2026-10-14_cache_fix_bug1.md`。
+    * [!] **这只是 #1。第二处缺陷（load 返回错数据）仍未修** —— Cache 版位流
+      （`c10a2478` / `9feaa089`）**都是旧 RTL，勿烧**。
+
 ## 待办
+-  **[OK] 2026-10-14 Cache + RT-Thread 挂死的【根因 #1】已修**（约定 56）：
+  `core.v` ID/EX 清零漏门控 `mem_ready_int` 1 行。`DESIGN_REV` → **`0x2026_1018`**。
+  仿真验证：`-ICache` 13 字节挂死 → 完整启动（两线程+心跳）；riscv-tests 默认与
+  `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd` **232,345 一字不差**。
+  详见 `doc/reports/2026-10-14_cache_fix_bug1.md`。
+-  **[!] 但还有【第二处】缺陷未修 —— load 返回错数据**（`_timer_remove` 里 `sw 4(a3)` 未对齐
+  trap，cause=6，`tval` 是指令字/字符串而非指针；`-NoEarlyLd` 同样挂、I-only 就复现）。
+  已定位征兆但未定根因，嫌疑：`wb_rdata_snap` 抓拍时机 / 寄存器堆 write-first 旁路冻结多拍 /
+  I-Cache 停顿与 MEM/WB 交互。**⇒ 在此之前 Cache 版位流一律【勿烧】**
+  （`c10a2478` / `9feaa089` 都是旧 RTL）。下一步做法见那份报告 §5。
+-  **[!] 本轮新增的调试开关**（都在 `scripts/rtthread/run_sim.ps1`）：
+  `-RxTrace` / `-PcTrace` / `-ITrace` / `-TrapTrace` / `-LTrace`；
+  两个对拍脚本 `scripts/pctrace_diff.py`（PC 流）与 `scripts/itrace_stream_diff.py`
+  （指令流，**配对感知，推荐**——`pc` 流在双发射下会因配对差异假分叉）。
 -  **[OK] 2026-10-12 I+D 板上失败的根因已定位并修复**（`core.v` 的 `wb_rdata_snap`
   停顿快照取错流水级，一行；见约定 47 与 `doc/reports/2026-10-12_icache_wb_snap_fix.md`）。
   **[OK] 位流已出（2026-10-12 晚）**：85 MHz **仍不收敛**（−1.143 / 343 端点），
