@@ -1,0 +1,415 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-14 14:11:47
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 14 2026 13:33:07
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261019
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9368 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261019
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+level=1 NORMAL (4-ply)
+[hb] alive, uptime 5000 ticks
+level=0 EASY (greedy)
+level=1 NORMAL (4-ply)
+start, level=1
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+[hb] alive, uptime 10000 ticks
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . * . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=1287 depth=4 t=672ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . * . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+cursor=G8
+[hb] alive, uptime 15000 ticks
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . . * X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=G8 you=BLACK turn=WHITE
+AI moved, nodes=756 depth=4 t=434ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . * X X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=G8 you=BLACK turn=BLACK
+cursor=H8
+cursor=I8
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X * . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=I8 you=BLACK turn=WHITE
+AI moved, nodes=996 depth=4 t=653ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X * . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=I8 you=BLACK turn=BLACK
+cursor=J8
+[hb] alive, uptime 20000 ticks
+cursor=K8
+cursor=L8
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . * . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=L8 you=BLACK turn=WHITE
+AI moved, nodes=707 depth=4 t=573ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . * . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . X . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=L8 you=BLACK turn=BLACK
+cursor=M8
+cursor=N8
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . O . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . X . * . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=N8 you=BLACK turn=WHITE
+[hb] alive, uptime 25000 ticks
+AI moved, nodes=435 depth=4 t=398ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . * . . . . . . 
+ 6 . . . . . . . O . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . X . X . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=N8 you=BLACK turn=BLACK
+cursor=N9
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . O . . . . . . 
+ 6 . . . . . . . O . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . X . X . 
+ 9 . . . . . . . . . . . . . * . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=N9 you=BLACK turn=WHITE
+WHITE wins
+AI moved, nodes=14 depth=4 t=1ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . * . . . . . 
+ 5 . . . . . . . . O . . . . . . 
+ 6 . . . . . . . O . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . O X X X O . X . X . 
+ 9 . . . . . . . . . . . . . X . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . 
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 14 2026 13:33:07
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261019
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9368 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261019
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+level=1 NORMAL (4-ply)
+[!] vblank timeout -- video not running (check D18 video_locked)
+level=2 HARD (6-ply)
+[hb] alive, uptime 5000 ticks
+start, level=2
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . * . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+[hb] alive, uptime 10000 ticks
+AI moved, nodes=10592 depth=6 t=5737ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . * . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 14 2026 13:33:07
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261019
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9368 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261019
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+level=1 NORMAL (4-ply)
+[!] vblank timeout -- video not running (check D18 video_locked)
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 14 2026 13:33:07
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261019
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9368 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261019
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      tap = move cursor, hold 0.6s = place, hold on title = start
+      hold UP on title = AI self-play demo (NORMAL vs NORMAL)
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+level=1 NORMAL (4-ply)
+[!] vblank timeout -- video not running (check D18 video_locked)
+# 结束于 2026-10-14 14:12:47，共 413 行

@@ -132,8 +132,12 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     [!] 这个数必须用【非 -Sim】的 `rtthread\build.ps1 -Firmware` 量（本脚本正是这么调的）
 #     —— `-Sim` 会改 INPUT_*/GOMOKU_AI_LEVEL 等常量，.text 差 8 字节、行数差 4
 #     （20266 vs 20270）。拿仿真口径的数来填，守卫必挂。
-$expectLines = @{ coremark = 17104; demo = 326; rtthread = 20270; video = 758; gomoku = 11268 }
-$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "10135 字"; video = "379 字"; gomoku = "5634 字" }
+$expectLines = @{ coremark = 17104; demo = 326; rtthread = 20276; video = 758; gomoku = 11268 }
+$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "10138 字"; video = "379 字"; gomoku = "5634 字" }
+# [!] 2026-10-14 更新 rtthread 的期望值：20270（10135 字）→ 20276（10138 字）。
+#     原因 = 固件源码改了（横幅主频从写死的字面量改成从 BOARD_SYSTEM_CLOCK_HZ 算，
+#     app/main.c 多了几行 printf 参数 ⇒ .text 40355→40361 B，多 3 个字）。
+#     这个守卫拦住了一次"源码改了但没意识到固件变了"的构建 —— **别顺手把守卫放宽**。
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -247,7 +251,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "RT-Thread 固件编译失败" }
         Copy-Item (Join-Path $PSScriptRoot "rtthread\build\*.hex") `
                   (Join-Path $repo "sim\programs\") -Force
-        Write-Host "    RT-Thread 固件已放进 sim\programs\（上板口径 85.0051MHz）" -ForegroundColor Green
+        # [!] 别在这里写死频率（2026-10-14 踩过：76.5 档的构建也打"85.0051MHz"）。
+        #     固件的时钟口径真相在 scripts\rtthread\bsp\board.h 的 BOARD_SYSTEM_CLOCK_HZ，
+        #     而降频时它是被改过的 —— 直接读出来打印，别再写字面量（CLAUDE.md 约定 58）。
+        $rtClk = (Select-String -Path (Join-Path $PSScriptRoot "rtthread\bsp\board.h") `
+                                 -Pattern 'define\s+BOARD_SYSTEM_CLOCK_HZ\s+(\d+)u').Matches[0].Groups[1].Value
+        Write-Host ("    RT-Thread 固件已放进 sim\programs\（按 board.h 的 $rtClk Hz 口径编译）") -ForegroundColor Green
     } elseif ($Variant -eq "coremark") {
         & (Join-Path $PSScriptRoot "run_coremark.ps1") -Iter $Iter -SkipSim
     } elseif ($Variant -eq "video") {

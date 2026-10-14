@@ -977,7 +977,13 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   riscv-tests 默认与 `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd`
   **232,345 一字不差**；`run_own_tests -DCache -ICache -EarlyLd` 2/0。
   详见 `doc/reports/2026-10-14_cache_fix_bug1.md` 与 `..._bug2.md`。
--  **[OK] Cache 版位流已重出（2026-10-14 13:48，rev 1019）**：
+-  **[OK] 横幅自洽版位流已重出（2026-10-14 14:34，rev 1019）**：
+  `bitstreams/rtthread_..._idcache_76mhz_rev1019_53b81dfe.sbit` —— **RTL 与 `90944754` 逐位相同**
+  （网表 `dcache`1190/`icache`1216/`tag0`196、CPU 域 **+0.534 ns / 0 失败端点（18,997）**、
+  `All Constraints Met`），**只换固件**（横幅主频改成算的 ⇒ 打 `@76.5052MHz`）。**推荐烧这颗。**
+  顺带：`build_bitstream.ps1` 的 `expectLines` 因固件改动从 20270 → **20276**（守卫按设计拦下了一次），
+  构建日志也改成从 `board.h` 读频率打印（约定 58）。约定 50 的四件套**已全部还原并核对**。
+-  **[OK] 更早一颗（2026-10-14 13:48，rev 1019）**：
   `bitstreams/rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_idcache_76mhz_rev1019_90944754.sbit`
   （rtthread + I+D @76.5052 MHz；网表自证 `dcache`1190/`icache`1216/`tag0`196；
   `All Constraints Met`，CPU 域 **+0.534 ns / 0 失败端点（18,997）**，CDC 0 失败；
@@ -990,7 +996,9 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   AI 第一手后的棋盘快照、`9feaa089` 卡在 `heap = 9368 bytes` 循环重启）。
   **⇒ "Cache 可用"这句话现在成立**（限 rtthread + I+D @76.5052 MHz 这颗）；生产/交付档继续
   Cache 全关（`8894cdcb` / `bcd8fdd2` —— 那是**性能/评分**判断，不是功能问题）。
-  仍**未验**：落子/对局（需按键或标题页长按 UP 的 AI 自战）、显示侧（本板没接显示器）。
+  **14:11 追加验证**（`doc/board/uart_20261014_141147.txt`，413 行）：真按键**完整下完一局并判出
+  `WHITE wins`**、难度切换/复位全有响应、AI 线程真在算（HARD `nodes=10592 depth=6 t=5737ms`），
+  且**用户接 HDMI 显示器下棋正常** ⇒ 落子/对局 + 显示侧都已验。
 -  **[!] 横幅主频写死**（2026-10-14 实踩，**源码已修、位流未重出**）：`app/main.c` 把
   `@85.0051MHz` 写成字符串字面量 ⇒ 76.5052 那颗位流也照打 85.0051，**看着像烧错位流**。
   已改成从 `BOARD_SYSTEM_CLOCK_HZ` 算（`app/main.c:173`）。**⇒ 规矩：日志里出现的频率/版本数，
