@@ -973,6 +973,11 @@ module core #(
     // 不为它在 fetch_addr 上再加一条腿 —— 那条路径在 pc_r 的临界路径上，
     // 直接关系到 Fmax 与 CoreMark/LUTs 两项评分。
     assign      mret_commit   = id_ex_mret && !trap;
+    // [!] 2026-10-14（根因 #2 同族）：`mret` 的 CSR 副作用（mstatus.MIE ← MPIE）
+    //     也必须与"这条指令离开 EX"同拍（= mem_ready_int）。冻结期间会重复施加，
+    //     而第二次施加时 MPIE 已被写成 1，若原 MPIE=0 就会把 MIE 错误地置 1。
+    //     重定向仍走 mret_commit（冻结时 fetch_addr 本来就退回 if_addr_d，等价）。
+    wire        mret_commit_ex = mret_commit && mem_ready_int;
     assign      ex_target     = id_ex_mret   ? csr_mepc :
                                 id_ex_jump_reg ? jalr_target : branch_target;
 
@@ -1041,7 +1046,23 @@ module core #(
                          ((id_ex_csr_cmd == 2'b01) || (id_ex_rs1 != 5'd0));
     assign csr_wdata = csr_new;
     // 被 trap 杀掉的指令不得写 CSR
-    assign csr_wr_en = csr_wr_en_raw && !trap;
+    // [!] 2026-10-14 修复（Cache + RT-Thread 挂死【根因 #2】）—— 必须再与
+    //     `mem_ready_int` 相与，理由和 ID/EX、EX/MEM、乘法器（约定 51）同源：
+    //
+    //   CSR 写在【EX 级提交】（约定 21），而"这条指令离开 EX"这件事发生在
+    //   `mem_ready_int=1` 的那个沿（EX/MEM <= ID/EX 就是同一个条件）。
+    //   不门控时，访存冻结那一拍 CSR 就已经被写进去了，而 ID/EX【保持不动】
+    //   （约定 56 的修复正是让它在冻结期间保持）⇒ 同一沿 `alu_result` 里的
+    //   `csr_rdata` 已经是【写后】的值，下一拍冻结放开时 EX/MEM 收下的就是它
+    //   —— 于是 `csrrw rd, csr, rs1` 的 rd 读到【新值】而不是规范要求的旧值。
+    //
+    //   实测（根因 #2，`scripts\rtthread\run_sim.ps1 -ICache`）：RT-Thread 的
+    //   中断入口/出口各有一条 `csrrw sp, mscratch, sp`（interrupt_gcc.S:101/109），
+    //   rd 就是 sp —— 冻结撞上它时 sp【没被切到中断栈】，中断处理函数于是跑在
+    //   线程栈上；出口那条再把 mscratch 写坏 ⇒ 之后每次中断的 sp 都在漂移，
+    //   最终把内核链表（_timer_remove 的 next 指针）踩坏 → cause=6 死循环转储。
+    //   判据：无 Cache 时 mem_ready_int 恒 1 ⇒ 逐位不变（CoreMark/riscv-tests 全不受影响）。
+    assign csr_wr_en = csr_wr_en_raw && !trap && mem_ready_int;
 
     // ---- 同步异常 ----
     // 判据之间天然互斥（非法指令的 mem_read/mem_write 必为 0，ecall/ebreak 同理），
@@ -1106,7 +1127,7 @@ module core #(
         .trap_pc    (id_ex_pc),
         .trap_cause (trap_cause),
         .trap_tval  (trap_tval),
-        .mret       (mret_commit),
+        .mret       (mret_commit_ex),
         .irq_timer  (irq_timer),
         .irq_ext    (irq_ext),
         .mtvec_base (csr_mtvec_base),

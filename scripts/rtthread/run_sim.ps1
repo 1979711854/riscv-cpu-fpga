@@ -45,7 +45,8 @@ param(
     [switch]$PcTrace,    # PC 逐拍落盘（对拍定位用；默认关，一份约 40MB）
     [switch]$ITrace,     # IF/ID 逐拍落盘（看指令进 ID / 配对 / 重定向；默认关）
     [switch]$TrapTrace,  # trap 事件落盘（cause + 肇事 pc；默认关）
-    [switch]$LTrace      # 访存事件落盘（pc/addr/wdata/rdata/ready；默认关）
+    [switch]$LTrace,     # 访存事件落盘（pc/addr/wdata/rdata/ready；默认关）
+    [switch]$LdChk       # load 数据自检 + 规范化访存事件流落盘（默认关）
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,6 +106,7 @@ if ($PcTrace)        { $defs += "-DPCTRACE" }
 if ($ITrace)         { $defs += "-DITRACE" }
 if ($TrapTrace)      { $defs += "-DTRAPTRACE" }
 if ($LTrace)         { $defs += "-DLTRACE" }
+if ($LdChk)          { $defs += "-DLDCHK" }
 $cfgDual   = if ($Single)    { 0 } else { 1 }
 $cfgDCache = if ($DCache)    { 1 } else { 0 }
 $cfgICache = if ($ICache)    { 1 } else { 0 }

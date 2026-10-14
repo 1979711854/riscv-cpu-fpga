@@ -363,6 +363,109 @@ module tb_rtthread;
                 tb_rtthread.u_soc.u_core.mem_ready_int);
 `endif
 
+    // ------------------------------------------------------------------
+    // [调试 2026-10-14] load 数据【自检】+ 规范化访存事件流（-DLDCHK）
+    // ------------------------------------------------------------------
+    // 目的（Cache + RT-Thread 挂死根因 #2："某次 load 返回了隔壁的数据"）：
+    //   * 影子寄存器与 core 的 MEM/WB 级【同一门控 mem_ready_int】镜像，记下
+    //     WB 级这条 load 的 (pc / 地址 / funct3 / 地址低位)；
+    //   * 期望值取【存储器真值】mem0[addr] —— 与 mem_bus 的 B 口读在【同一个沿】
+    //     采样，再按 funct3 解包，所以 RAM load 必须逐位相等；
+    //   * 不等即落盘（前 40 条）—— 这就是"第一次返回错数据的 load"。
+    // [!] 只在 DCACHE_EN=0 时做比较（开了 D-Cache 后 mem_rdata 来自 Cache 阵列，
+    //     真存储器不再是期望值）；事件流两种配置都照记。
+    // [!] 事件流是【规范化】的：load 记在它的 WB 沿、store 记在 MEM 沿，停顿期间
+    //     的重复自动折叠 ⇒ 无 Cache 与带 Cache 两份可直接逐行 diff，第一条不同
+    //     即"首次分叉"。列：`L <idx> <pc> <addr> <f3> <got> <exp> <bad>` /
+    //     `S <idx> <pc> <addr> <wdata> <byte_en>`。
+    // ------------------------------------------------------------------
+`ifdef LDCHK
+    integer ecf;
+    integer n_ld, n_st, n_bad;
+    reg        ck_vld;          // WB 级是不是一条 lane A load（与 mem_wb_* 同门控）
+    reg [31:0] ck_pc, ck_addr, ck_word;
+    reg [2:0]  ck_f3;
+    reg [1:0]  ck_low;
+    reg        ck_ram;
+    reg        ck_vld_r;
+    reg [31:0] ck_pc_r;
+    reg        ck_we_r;         // store 事件去重（停顿期间不重复记）
+    reg [31:0] ck_sta_r, ck_std_r;
+
+    initial begin
+        ecf = $fopen("rtthread_ldtrace.txt", "w");
+        n_ld = 0; n_st = 0; n_bad = 0;
+        ck_vld = 1'b0; ck_pc = 32'd0; ck_addr = 32'd0; ck_word = 32'd0;
+        ck_f3 = 3'd0; ck_low = 2'd0; ck_ram = 1'b0;
+        ck_vld_r = 1'b0; ck_pc_r = 32'd0;
+        ck_we_r = 1'b0; ck_sta_r = 32'd0; ck_std_r = 32'd0;
+    end
+
+    always @(posedge clk) begin
+        if (resetn && tb_rtthread.u_soc.u_core.mem_ready_int) begin
+            ck_vld  <= tb_rtthread.u_soc.u_core.ex_mem_mem_read &&
+                       !tb_rtthread.u_soc.u_core.ex_mem_is_amo;
+            ck_pc   <= tb_rtthread.u_soc.u_core.ex_mem_pc;
+            ck_addr <= tb_rtthread.u_soc.u_core.mem_addr;
+            ck_f3   <= tb_rtthread.u_soc.u_core.ex_mem_funct3;
+            ck_low  <= tb_rtthread.u_soc.u_core.mem_addr[1:0];
+            ck_word <= tb_rtthread.u_soc.u_bus.u_mem.mem0[tb_rtthread.u_soc.u_core.mem_addr[15:2]];
+            ck_ram  <= (tb_rtthread.u_soc.u_core.mem_addr[31:16] == 16'd0) &&
+                       (tb_rtthread.u_soc.u_core.mem_addr[15:4] != 12'hFFF);
+        end
+        ck_vld_r <= ck_vld;
+        ck_pc_r  <= ck_pc;
+    end
+
+    wire [7:0]  ck_b = (ck_low == 2'd0) ? ck_word[7:0]   :
+                       (ck_low == 2'd1) ? ck_word[15:8]  :
+                       (ck_low == 2'd2) ? ck_word[23:16] : ck_word[31:24];
+    wire [15:0] ck_h = ck_low[1] ? ck_word[31:16] : ck_word[15:0];
+    wire [31:0] ck_exp = (ck_f3 == 3'b000) ? {{24{ck_b[7]}}, ck_b} :   // LB
+                         (ck_f3 == 3'b001) ? {{16{ck_h[15]}}, ck_h} :  // LH
+                         (ck_f3 == 3'b100) ? {24'd0, ck_b} :           // LBU
+                         (ck_f3 == 3'b101) ? {16'd0, ck_h} :           // LHU
+                         ck_word;                                      // LW
+    wire        ck_bad = (DCACHE_OUT == 0) && (ck_exp !== tb_rtthread.u_soc.u_core.wb_data);
+
+    always @(negedge clk) begin
+        if (resetn) begin
+            // load 事件：在它的 WB 沿记一次（冻结在 WB 多拍时不重复）
+            if (ck_vld && ck_ram && (!ck_vld_r || (ck_pc_r !== ck_pc))) begin
+                n_ld = n_ld + 1;
+                $fwrite(ecf, "L %0d %h %h %b %h %h %b\n", n_ld, ck_pc, ck_addr,
+                        ck_f3, tb_rtthread.u_soc.u_core.wb_data, ck_exp,
+                        (DCACHE_OUT == 0) ? ck_bad : 1'b0);
+                if (ck_bad) begin
+                    n_bad = n_bad + 1;
+                    if (n_bad <= 40)
+                        $display("LDCHK-BAD #%0d (ld#%0d) pc=%h addr=%h f3=%b exp=%h got=%h snap_en=%b snap=%h ex_mem_ld_fast=%b mready=%b cyc=%0d",
+                                 n_bad, n_ld, ck_pc, ck_addr, ck_f3, ck_exp,
+                                 tb_rtthread.u_soc.u_core.wb_data,
+                                 tb_rtthread.u_soc.u_core.wb_rdata_snap_en,
+                                 tb_rtthread.u_soc.u_core.wb_rdata_snap,
+                                 tb_rtthread.u_soc.u_core.ex_mem_ld_fast,
+                                 tb_rtthread.u_soc.u_core.mem_ready_int, dbg_cyc);
+                end
+            end
+            // store 事件：MEM 沿；停顿期间保持不算新事件
+            if (tb_rtthread.u_soc.u_core.mem_we &&
+                (!ck_we_r || (ck_sta_r !== tb_rtthread.u_soc.u_core.mem_addr) ||
+                 (ck_std_r !== tb_rtthread.u_soc.u_core.mem_wdata))) begin
+                n_st = n_st + 1;
+                $fwrite(ecf, "S %0d %h %h %h %b\n", n_st,
+                        tb_rtthread.u_soc.u_core.ex_mem_pc,
+                        tb_rtthread.u_soc.u_core.mem_addr,
+                        tb_rtthread.u_soc.u_core.mem_wdata,
+                        tb_rtthread.u_soc.u_core.mem_byte_en);
+            end
+        end
+        ck_we_r  <= tb_rtthread.u_soc.u_core.mem_we;
+        ck_sta_r <= tb_rtthread.u_soc.u_core.mem_addr;
+        ck_std_r <= tb_rtthread.u_soc.u_core.mem_wdata;
+    end
+`endif
+
 `ifdef TRAPTRACE
     integer ttf;
     initial ttf = $fopen("rtthread_traptrace.txt", "w");
