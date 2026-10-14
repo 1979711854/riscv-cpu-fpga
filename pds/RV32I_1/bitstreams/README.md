@@ -2,6 +2,19 @@
 
 > `.sbit` 被 `.gitignore` 排除（9 MB/个）。**别人 clone 下来一个都没有，必须自己综合。**
 
+> **[!] rev1017 的老位流还要不要重出？（2026-10-14 定论）**
+> `rev1017 → rev1019` 的 RTL 差异只有两处**门控**（约定 56 的 ID/EX 清零、约定 57 的 CSR 写/mret，
+> 都在 `rtl/core/core.v`；`rtl/mem` / `rtl/bus` / `rtl/video` **一行未动**）。
+> 而 **Cache 全关时 `ram_ready = b_ready = 1'b1`（`rtl/mem/unified_mem.v:80` 硬连线）**
+> ⇒ `mem_ready_int ≡ !amo_hold`；**两个交付固件都不含任何 AMO/lr/sc**
+> （跑分档 `-march=rv32im_zicsr`，编译器根本发不出；rtthread 档实测 ELF 里 0 条，原子走软实现）
+> ⇒ `amo_hold` 永不成立 ⇒ **`mem_ready_int ≡ 1` ⇒ 两处修复的 `&& mem_ready_int` 因子恒真
+> ⇒ 逐位等价**。所以：
+> * **`bcd8fdd2` / `8894cdcb`（Cache 全关交付档）不必为功能重出**，仍是有效交付件；
+> * **[!] 但它们的 `mimpid` 读出 `0x20261017`** —— 报告/答辩若写"当前 RTL = rev1019"，口径会对不上。
+>   要统一就重出一遍（各约 10 分钟，85 MHz 不用降频）；**重出后分数/CRC 应逐位相同**（本身就是无副作用的证据）。
+> * 带 Cache 的档（`c10a2478`/`9feaa089`）**必须重出**，已重出见下表 rev1019 两颗。
+
 | 文件 | 内容 | md5 |
 |---|---|---|
 | **`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1017_8894cdcb.sbit`** | **[[OK]+[!]] 已上板（2026-10-13 22:46，未接显示屏）—— RT-Thread 版五子棋（任务 T1/G3：render 高优 + AI 低优两条线程）**：双发射 + `EARLY_LD` + A1 @ **85.0051 MHz**，`DEBUG_LED=1` ⇒ **led[0]=pll_locked / led[1]=video_locked（HDMI 黑屏先看这颗）/ led[2]=done 本变体不会亮，别误判**。固件来自 `scripts/rtthread/`（**非 coremark**，别被 `generate_bitstream\cpu_top_board.sbit` 这个固定名骗了）：静态 **51,193 / 61,440 B（83.3%）**、堆余 9,368 B，串口 banner `[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261017`。**RTL 与跑分版 `bcd8fdd2` 逐位相同**（只换 BRAM 初始化）⇒ CPU 域 **WNS +0.068 ns / 失败端点 0 / 17,216**，与已板级验证过的 `bcd8fdd2` **完全一致**；`clk→video −1.137`(21)、`video→clk −0.081`(1) 仍是跨域建模假象。**已验**：x86 单测 138 项 / 独立复核 28 项 / RV32 交叉编译无警告 / `tb_rtthread` 仿真 `=== PASS ===`；**板上（2026-10-13 22:46，日志 `doc/board/uart_20261013_224652.txt`）**：两条线程都起来、`[hb]` 全程无断、**两线程邮箱往返真通**（`AI moved, nodes=10592 depth=6 t=5068ms` —— RT-Thread 固件链的是异步 pump，子落得下来即该链走通），对局/按键/轮次均正确。**[!] 遗留**：串口有 `[!] vblank timeout`（23 份裸机日志都没有）—— 新加的 `video_vblank_yield()` 用 1 ms 采样去看 RTL 里 **63 µs** 的 vsync 脉冲，粒度差 16 倍；显示侧未测，判据与机制见 `doc/board/README.md` 该节 | `8894cdcb` |
