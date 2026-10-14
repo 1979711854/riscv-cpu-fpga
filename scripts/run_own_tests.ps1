@@ -49,8 +49,7 @@ New-Item -ItemType Directory -Force -Path $prog  | Out-Null
 #     tohost 判分，由各自的测试台驱动 —— 别放进回归 glob（否则会误报 OTHER/FAIL）：
 #       amo_int     T0 逐拍 trace 的输入程序（配 sim/tb_amo_int.v）
 #       dep_probe   双发射相邻依赖对的诊断探针（非回归）
-#       tb_amo_cpu  整颗 CPU 的 AMO 端到端测试（旧 UART 判定，暂未转 tohost）
-$skipThese = @('amo_int', 'dep_probe', 'tb_amo_cpu')
+$skipThese = @('amo_int', 'dep_probe')
 $srcs = @(Get-ChildItem $testDir -Filter "*.S" |
           Where-Object { $skipThese -notcontains $_.BaseName } |
           Sort-Object Name)

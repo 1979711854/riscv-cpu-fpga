@@ -351,7 +351,7 @@ scripts\run_coremark.ps1 -Iter 1 -EarlyLd        # 232,345（板上口径）
 scripts\run_coremark.ps1 -Iter 1                 # 252,730
 scripts\run_coremark.ps1 -Iter 1 -Single         # 303,140
 scripts\run_coremark.ps1 -Iter 1 -DCache -ICache -EarlyLd   # 235,628
-scripts\run_own_tests.ps1                        # 异常/中断（2/0）
+scripts\run_own_tests.ps1                        # 异常/中断/AMO/取指（4/0）
 scripts\run_sim.ps1 -NoWave                      # 单元台
 
 # ---- 剖析（脚本不收 +PROF，要自己调 vvp）----

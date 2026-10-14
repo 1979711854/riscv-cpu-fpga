@@ -985,10 +985,20 @@ module core #(
     // 实际是否跳转。注意这与"是否冲刷"是两回事：预测正确时这里为 1 但不冲刷。
     wire ex_resolve_taken = (id_ex_branch && branch_taken) ||
                             id_ex_jump || id_ex_jump_reg || mret_commit;
+    // [!] 2026-10-14（根因 #2 同族）：EX 的分支/跳转解析结果必须与"这条指令离开
+    //     EX"同拍（= mem_ready_int）。AMO/LR/SC 占住 MEM 的 4 拍里，前递的
+    //     amo_wb_data 还是【上一条】AMO 的陈旧值，紧跟其后的分支会据此解析出错误
+    //     方向并拉高 ex_flush。而 ex_flush 在 fetch_addr 里的优先级【高于】冻结兜底，
+    //     IF/ID 冲刷清空又没被门控 ⇒ 错误路径被取出并提交（tb_amo_cpu testnum 9 实测：
+    //     连续第二条 sc.w 本应失败 a0=0，bnez a0 却用上一条 SC 的 1 解析成 taken，
+    //     把取指拽到 fail_sc_noq 的 li gp,9 并提交）。
+    //     门控后：冻结期 fetch_addr 退回 if_addr_d、IF/ID 保持；放开那拍再用【正确】
+    //     的前递值重解析，方向因此总是对的。与 ID/EX 清、MEM/WB 捕获、mret CSR
+    //     副作用（见各段）同一个门控，属同一族修复。
     // 预测 not-taken 但实际 taken  → 原有冲刷路径（含 jalr，它从不被预测）
-    assign ex_flush   = ex_resolve_taken && !id_ex_pred_taken;
+    assign ex_flush   = ex_resolve_taken && !id_ex_pred_taken && mem_ready_int;
     // 预测 taken 但实际 not-taken  → 误判恢复：回到 fall-through
-    assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken;
+    assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken && mem_ready_int;
     assign ex_mispred_target = id_ex_pc + 32'd4;
 
     // ---- BHT 训练（EX 级，用解析结果，与是否冲刷无关）----

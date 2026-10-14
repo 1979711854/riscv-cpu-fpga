@@ -968,6 +968,25 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
       但修它要绑到 `BOARD_SYSTEM_CLOCK_HZ`（会同时改裸机五子棋与仿真的去抖口径，需回归）。
 
 ## 待办
+-  **[OK] 2026-10-14 AMO 后紧跟分支走错路径的 RTL bug 已修（同族第三条：门控的是"源"）**：
+  `tb_amo_cpu.S` 从旧协议转 tohost 判分后首次端到端跑即 **FAIL(testnum 9)** —— 根因是
+  `core.v` 的 `ex_flush`/`ex_mispred` **源**没门控 `mem_ready_int`：AMO/LR/SC 占 MEM 的 4 拍里
+  前递的 `amo_wb_data` 是**上一条** AMO 的陈旧值，紧跟其后的分支据此解析错方向，而
+  `ex_flush` 在 `fetch_addr` 里高于冻结兜底、IF/ID 冲刷又没门控 ⇒ 错误路径被提交。
+  修法 = `ex_flush`/`ex_mispred` 各加 `&& mem_ready_int`（只影响冻结拍；`p_redirect`/ID/EX 清/
+  EX/MEM 本就已门控，行为不变）。`DESIGN_REV` → **`0x2026_1020`**（**RTL 动过 ⇒ 上板前必须重出位流**）。
+  回归（双发射口径）：riscv-tests 默认 **49/1/0**、CoreMark `-Iter 1 -EarlyLd` **232,345 + 四 CRC 全对**、
+  rtthread 四配置（无/D/I/I+D）**全 PASS**、`run_own_tests` **3/0**（新增 `tb_amo_cpu`）；
+  "弄坏 `amo_unit`（`F5_AMOMAX` 改无符号）能 **FAIL(testnum 5)**"已验证并还原。
+  四条基线**一条 AMO 都没有** ⇒ 该 bug 此前完全不可达。详见 `doc/reports/2026-10-14_session_state.md`。
+-  **[OK] 2026-10-14 覆盖 B（`hi_fetch.S`，取指越过 0x8000）已完成**：
+  64 KB 扩容后无任何程序取指越过 `0x8000` ⇒ `imem_addr2` 截位 bug（`f72ef25` 修）通路零覆盖。
+  新增 `sim/tests/hi_fetch.S`：运行时把一段 `addi t2,t2,1`×2048 的代码【拷到 0x9FFC】再跳过去执行，
+  低地址 0x2000 放 `addi s0,s0,1`×2048 毒丸；判据 `s0==0 && t2==2048`。`run_own_tests` **4/0**
+  （新增 `hi_fetch`）。**"弄坏能 FAIL"已验证**：临时把 `core.v` 的 `imem_addr2` 掩成 `[12:0]`（只掩码、
+  不改宽度 ⇒ 不触发宽度守卫）→ `hi_fetch` **FAIL(testnum 1)**、同一条弄坏下低地址 `tb_amo_cpu` 仍 PASS；
+  **精确 Edit 还原**（**没 `git checkout core.v`**，它含上一条未提交的 AMO 修复），`git diff` 核对只剩那两行。
+  **本任务未动 RTL**（无需重出位流）。详见 `doc/reports/2026-10-14_session_state.md`。
 -  **[OK] 2026-10-14 Cache + RT-Thread 挂死的两条根因都【已修】**：
   * **#1**（约定 56）：`core.v` ID/EX 清零漏门控 `mem_ready_int`，1 行；
   * **#2**（约定 57）：CSR 写（+`mret`）漏门控 `mem_ready_int`，1 行 ——
@@ -975,7 +994,7 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   `DESIGN_REV` → **`0x2026_1019`**。
   仿真验证（`-NoBuild`，同一份固件）：**rtthread 四种配置（无 Cache/只D/只I/I+D）全部 PASS**；
   riscv-tests 默认与 `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd`
-  **232,345 一字不差**；`run_own_tests -DCache -ICache -EarlyLd` 2/0。
+  **232,345 一字不差**；`run_own_tests -DCache -ICache -EarlyLd` 3/0。
   详见 `doc/reports/2026-10-14_cache_fix_bug1.md` 与 `..._bug2.md`。
 -  **[OK] 横幅自洽版位流已重出（2026-10-14 14:34，rev 1019）**：
   `bitstreams/rtthread_..._idcache_76mhz_rev1019_53b81dfe.sbit` —— **RTL 与 `90944754` 逐位相同**

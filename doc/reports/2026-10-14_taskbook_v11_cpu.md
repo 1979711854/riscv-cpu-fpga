@@ -85,13 +85,35 @@
 
 | # | 任务 | 优先级 | 验收（一句话） |
 |---|---|---|---|
-| **覆盖 A** | `tb_amo_cpu.S` 转 tohost 判分 + 从 `$skipThese` 摘出 + **"弄坏 `amo_unit` 能 FAIL"** 验证 | **P0（热身）** | 加进回归、能 FAIL、且弄坏能抓到 |
-| **覆盖 B** | `sim/tests/hi_fetch.S`（代码 > 32 KB 取指）+ **"把 `imem_addr2` 截位改回去能 FAIL"** 验证 | **P0（热身）** | 同上 |
+| **覆盖 A ✅已完成** | `tb_amo_cpu.S` 转 tohost 判分 + 从 `$skipThese` 摘出 + **"弄坏 `amo_unit` 能 FAIL"** 验证 | **P0（热身）** | 加进回归、能 FAIL、且弄坏能抓到 |
+| **覆盖 B ✅已完成** | `sim/tests/hi_fetch.S`（代码 > 32 KB 取指）+ **"把 `imem_addr2` 截位改回去能 FAIL"** 验证 | **P0（热身）** | 加进回归、能 FAIL、且弄坏能抓到 |
 | **B1-RAS** | 返回地址栈（**真正拿分的**） | **P0** | 见 v10 §5；`+PROF` 看 `region cycles` 下降 |
 | **B1-BTB** | BTB（赛题点名） | **P1** | 见 v10 §6，**排在 RAS 之后**；必须配"预测目标校验"（v10 §7）|
 
 **顺序：覆盖 A/B → RAS → BTB**（覆盖 A/B 是 2026-10-12 就分给你的，一直没人做；
-它们也是建立"**弄坏了能 FAIL**"这套纪律的最好热身）。
+它们也是建立"**弄坏了能 FAIL**"这套纪律的最好热身）。**覆盖 A/B 均已完成（2026-10-14）**。
+
+> **覆盖 A（2026-10-14 完成）顺手抓到一个真 bug（含在约定 56/57 那一族）**：
+> `tb_amo_cpu.S` 首次端到端跑就 **FAIL(testnum 9)**。根因不在测试，在 RTL：`ex_flush`/`ex_mispred`
+> 的**源**没门控 `mem_ready_int` —— AMO/LR/SC 占住 MEM 的 4 拍里，前递的 `amo_wb_data` 还是
+> **上一条** AMO 的陈旧值，紧跟其后的分支据此解析出错误方向；而 `ex_flush` 在 `fetch_addr` 里
+> 优先级高于冻结兜底、IF/ID 冲刷又没门控 ⇒ **错误路径被提交**（`bnez` 后跟的 `li gp,9` 落了地）。
+> 修法：`core.v` 的 `ex_flush`/`ex_mispred` 各加一个 `&& mem_ready_int`（与 #1/#2 同族，但这次
+> 门控的是**源**而非某个消费者）。数据面消费者（ALU）不受影响（它被冻在 ID/EX、放开那拍重算），
+> 只有**控制面**（分支/跳转）会踩。四条基线**一条 AMO 都没有** ⇒ 此前完全不可达。
+> `DESIGN_REV → 0x2026_1020`（**改过 RTL，上板前必须重出位流**）。
+> 详见 `doc/reports/2026-10-14_session_state.md`。
+
+> **覆盖 B（2026-10-14 完成）没能抓到新 bug（符合预期——`imem_addr2` 早已修，只是通路零覆盖）**：
+> `sim/tests/hi_fetch.S` 运行时把一段 `addi t2,t2,1`×2048 的代码【拷到 0x9FFC】(≥0x8000) 再跳过去执行，
+> 低地址 0x2000 放 `addi s0,s0,1`×2048 毒丸；判据 `s0==0 && t2==2048`。修好后 lane B 取到真正的下一条
+> `addi t2,t2,1` ⇒ `rd_a==rs1_b` ⇒ **不配对** ⇒ 单发射执行、`s0` 恒 0。**弄坏能 FAIL 已验证**：把
+> `core.v` 的 `imem_addr2` 临时掩成 `[12:0]`（**只掩码、不改宽度**，故不触发 `run_own_tests.ps1` 的
+> 宽度守卫）→ `hi_fetch` 立刻 **FAIL(testnum 1)**（截位的 lane B 取到毒丸并配对执行 ⇒ `s0!=0`）；
+> **同一条弄坏**下低地址测试 `tb_amo_cpu` 仍 PASS（证明是"≥0x8000 取指"专属）。**本任务未动 RTL**：
+> 弄坏是临时改 `core.v` 再**精确 Edit 还原**（**没敢 `git checkout core.v`**——它含覆盖 A 未提交的修复），
+> `git diff rtl/core/core.v` 核对只剩覆盖 A 那两行。文档里 §7 给的 `N=8191` 放不下 64 KB（需 `N≤6142`），
+> 实取 **2048**。详见 `doc/reports/2026-10-14_session_state.md`。
 
 **明确不做**（见 v10 §2）：A3 BHT 加大（实测 +0.10%，已回退）、A0 修 CDC（死胡同）、
 A2 剩余 load-use（要 ≈0.43 ns，余量只有 0.068）。**Cache 相关的事一件都不用做。**
@@ -120,7 +142,7 @@ A2 剩余 load-use（要 ≈0.43 ns，余量只有 0.068）。**Cache 相关的�
 scripts\run_riscv_tests.ps1                              # 49/1/0
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd     # Cache corner，也必须 49/1/0
 scripts\run_coremark.ps1 -Iter 1 -EarlyLd                # region cycles 必须 = 232,345
-scripts\run_own_tests.ps1 -DCache -ICache -EarlyLd       # 2 PASS
+scripts\run_own_tests.ps1 -DCache -ICache -EarlyLd       # 4 PASS
 scripts\rtthread\run_sim.ps1 -ICache                     # RT-Thread：**停顿相关 bug 的唯一探针**
 ```
 

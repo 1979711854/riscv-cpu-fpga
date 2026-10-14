@@ -73,6 +73,8 @@ module csr_file (
     //   加它**不用动地址映射、不用动 mem_bus、不用改固件的板级头文件**，
     //   固件一条 `csrr` 就能读到。
     //   覆盖的值（从新到旧）：
+    //     2026_1020  ex_flush/ex_mispred 补 mem_ready_int 门控（AMO 后紧跟分支用
+    //                陈旧前递值解析方向并提交错误路径，tb_amo_cpu testnum 9 实测）
     //     2026_1019  CSR 写与 mret 副作用补 mem_ready 门控（Cache + RT-Thread 挂死根因 #2）
     //     2026_1016  I+D Cache 板级失败的根因修复（core.v 的 wb_rdata_snap
     //                停顿快照取错流水级，见 doc/reports/2026-10-12_icache_wb_snap_fix.md）
@@ -81,7 +83,7 @@ module csr_file (
     //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
     //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1019;   // 2026-10-14 修 CSR 写/mret 副作用缺 mem_ready 门控（Cache+RT-Thread 挂死根因 #2）
+    localparam [31:0] DESIGN_REV = 32'h2026_1020;   // 2026-10-14 ex_flush/ex_mispred 补 mem_ready_int 门控（AMO 后紧跟分支走错路径）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
