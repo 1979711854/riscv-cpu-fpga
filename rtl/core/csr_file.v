@@ -73,6 +73,8 @@ module csr_file (
     //   加它**不用动地址映射、不用动 mem_bus、不用改固件的板级头文件**，
     //   固件一条 `csrr` 就能读到。
     //   覆盖的值（从新到旧）：
+    //     2026_1021  B1-RAS：返回地址栈（ret 在到达级预测目标）+ §7 预测目标校验
+    //                （ex_target_wrong 并入 ex_flush 纠正错目标）
     //     2026_1020  ex_flush/ex_mispred 补 mem_ready_int 门控（AMO 后紧跟分支用
     //                陈旧前递值解析方向并提交错误路径，tb_amo_cpu testnum 9 实测）
     //     2026_1019  CSR 写与 mret 副作用补 mem_ready 门控（Cache + RT-Thread 挂死根因 #2）
@@ -83,7 +85,7 @@ module csr_file (
     //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
     //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1020;   // 2026-10-14 ex_flush/ex_mispred 补 mem_ready_int 门控（AMO 后紧跟分支走错路径）
+    localparam [31:0] DESIGN_REV = 32'h2026_1021;   // 2026-10-14 B1-RAS 返回地址栈 + 预测目标校验
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,

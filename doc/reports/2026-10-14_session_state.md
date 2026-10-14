@@ -1,8 +1,9 @@
-# 会话状态 —— 2026-10-14（覆盖 A：`tb_amo_cpu.S` 转 tohost + 抓到并修掉一族 RTL bug；覆盖 B：`hi_fetch.S`）
+# 会话状态 —— 2026-10-14（覆盖 A：`tb_amo_cpu.S` 转 tohost + 抓到并修掉一族 RTL bug；覆盖 B：`hi_fetch.S`；**B1-RAS 返回地址栈**）
 
 > 接 `2026-10-13_session_state.md` / 本日更早的 `2026-10-14_cache_fix_bug1.md`、`..._bug2.md`。
-> 本会话做了 v11 §3 任务表的 **覆盖 A**，并在**首次端到端跑**时抓到一个此前不可达的 RTL bug、
-> 已修并跑完全回归。**改动未提交**（按约定：里程碑 → 推分支 → 集成方合并；本机不自动 push）。
+> 本会话做了 v11 §3 任务表的 **覆盖 A**（抓到并修掉一族此前不可达的 RTL bug）、**覆盖 B**、
+> 以及 **B1-RAS**（返回地址栈，本轮真正拿分的一项）。**改动未提交**（按约定：里程碑 → 推分支
+> → 集成方合并；本机不自动 push）。**B1-RAS 见 §8。**
 
 ---
 
@@ -189,3 +190,89 @@ assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken && mem_ready_int;
  M doc/reports/2026-10-13_taskbook_v10_cpu.md   ← 速查 3/0 → 4/0
  M CLAUDE.md                       ← 待办新增覆盖B；口径 → 4/0
 ```
+
+---
+
+## 8. B1-RAS（同日续做）：返回地址栈 —— 本轮真正拿分的一项
+
+**结论：v11 §3 的 B1-RAS 完成。双发射 + `EARLY_LD` 每迭代 232,345 → 229,597 拍（−2,748 / −1.18%），
+而 `region commit` 逐位不变 ⇒ 省下的全是返回跳转的冲刷气泡。功能靠 v10 §7 目标校验兜底，四 CRC 全对。**
+
+### 8.1 设计（照批准方案 `harmonic-snacking-pike.md`，v10 §5 + §7）
+
+| 部件 | 位置 | 做法 |
+|---|---|---|
+| **RAS 存储** | `core.v` BHT 数组后（`RAS_DEPTH=16`）| `ras_mem[0:15]` + `ras_sp`（0..16）；`ras_empty = (ras_sp==0)`；`ras_top = ras_mem[ras_sp[3:0]-4'd1]`（sp=0 时回绕，被 `ras_empty` 挡掉）|
+| **到达级读** | `core.v` 到达级预解码 | 新增 `p_rs1_a`/`p_f3_a`；`p_is_ret = opcode==1100111 && f3==000 && rd==x0 && rs1∈{x1,x5}`；`p_ras_hit = p_is_ret && !ras_empty` |
+| **目标折入** | `p_pred_taken`/`p_target` | `p_ras_hit` ⇒ `p_target = ras_top`、`p_pred_taken=1` ⇒ 经**既有** `p_redirect` 腿同拍重定向，**不新增 `fetch_addr` 的腿**；`p_pred_taken=1` ⇒ 独占（`pair_now=0`）|
+| **EX push/pop** | `core.v` BHT 训练块后 | `ras_upd_en = mem_ready_int && !mc_stall && !trap`（= "这条指令提交进 EX/MEM"那拍）；`call`（`id_ex_jump/id_ex_jump_reg` 且 `id_ex_rd∈{x1,x5}`）push `id_ex_pc+4`；`ret`（`id_ex_jump_reg` 且 `id_ex_rd==x0` 且 `id_ex_rs1∈{x1,x5}`）pop（`!ras_empty`）|
+| **§7 目标校验** | `core.v` `ex_flush` | `ret` 的预测目标与真实链接值不符即并入 `ex_flush` 纠正（**功能正确性靠它兜底**）|
+
+- **为什么 push/pop 只由 lane A 驱动**：`p_opcode_b_ok` 只放 OP/OP-IMM/LUI/AUIPC ⇒ lane B 永不是控制指令，
+  无"两条控制指令同处 EX"。
+- **为什么不需要影子栈**：EX 是顺序的，唯一能冲刷某条指令的是比它更老、已在 EX 的分支/跳转 ⇒ **到达 EX
+  = 已在正确路径** ⇒ push/pop 无需回滚。
+- **为什么 EX 更新必须门控 `mem_ready_int`**：`!mem_ready_int` 时 ID/EX 保持 ⇒ 不门控会**每拍重复 push/pop**
+  （根因 #2 那一族）。`!mc_stall` 同理（div 停顿 ID/EX 保持、EX/MEM 被清，不算提交）。
+- **[固有] call 紧邻 ret（相隔 1 条）**：ret 在到达级读栈时 call 还没进 EX ⇒ 读到上一层返回地址 ⇒ 预测错 ⇒
+  §7 冲刷纠正（正确、只是没省下气泡）。相隔 ≥2 条即命中。**不是 bug。**
+
+### 8.2 §7 的坑（**关键：时序**）—— 第一次实现把时序打负了
+
+- **第一版**：`wire ex_target_wrong = id_ex_pred_taken && (ex_target != id_ex_pred_target);`。
+  跑 PDS 时序 → CPU 域 `u_pll→u_pll` = **−0.271 ns / 66 失败端点**（基线 +0.068/0）。
+- **根因**（读 `.rtr` 路径链）：该比较器把 **~2 ns 的 `ex_target` 加法器**（`rs1_val → jalr_target`）
+  拽进了**取指临界路径** —— `ex_target` → 比较器 → `ex_flush` → `fetch_addr` mux → `if_addr_d` →
+  `imem_addr` → `imem_addr2` → BRAM。最差两条路径（−0.271 / −0.265）全是这条链。
+- **改法**（**只对 `ret` 比对、绕开 `ex_target` 加法器**）：
+  ```verilog
+  wire ex_is_ret_ex   = id_ex_jump_reg && (id_ex_rd == 5'd0);
+  wire ex_tgt_mm      = ex_is_ret_ex && ((id_ex_imm != 32'd0) ||
+                                         ((rs1_val & 32'hFFFF_FFFE) != id_ex_pred_target));
+  wire ex_target_wrong = id_ex_pred_taken && ex_tgt_mm;
+  assign ex_flush   = (ex_resolve_taken && !id_ex_pred_taken && mem_ready_int) ||
+                      (ex_target_wrong && mem_ready_int);
+  ```
+  原理：ABI `ret` 的 `imm==0` ⇒ 真实 `ex_target = (rs1_val+0)&~1`，可直接用 `rs1_val`（到达级读到的
+  `jalr_target` 等效式）比对，**不经过那个加法器**；`imm≠0` 的 `jalr x0,off(ra)` 极少见，直接**强制冲刷**。
+- **结果**：时序 **−0.271/66 → +0.311 ns / 0 失败端点（18,122）**（**优于**基线 +0.068），功能复跑不变
+  （own_tests 4/0、CoreMark 229,597 一字不差、四 CRC 全对）。
+
+### 8.3 收益证据（`+PROF` 计时区间）
+
+| 指标 | RAS 前 | RAS 后 | 说明 |
+|---|---|---|---|
+| `region cycles` | 232,345 | **229,597** | **−2,748 / −1.18%** |
+| `region commit` | 214,703 | **214,703** | **逐位不变**（最灵敏探针：提交指令数一条不差 ⇒ 省的全是气泡）|
+| `region flush` | 5,645 | **2,452** | 返回跳转不再付 EX 级冲刷气泡 |
+| `region cycles/commit`（CPI）| — | 1.069370 | —— |
+| 四 CRC | 全对 | **全对** | `seedcrc/crclist/crcmatrix/crcstate` 与基线逐位一致 |
+
+### 8.4 回归（双发射口径；改 RTL 后 v11 §4.2 全跑）
+
+| 回归 | 命令 | 结果 |
+|---|---|---|
+| riscv-tests 默认 | `run_riscv_tests.ps1` | **49 PASS / 1 FAIL(ma_data) / 0 TIMEOUT**（= 基线）|
+| riscv-tests Cache corner | `... -DCache -ICache -EarlyLd` | **49 / 1 / 0**（= 基线）|
+| 自写测试全量 | `run_own_tests.ps1` | **4 PASS / 0 FAIL / 0 OTHER** |
+| CoreMark | `run_coremark.ps1 -Iter 1 -EarlyLd` | **229,597 拍**；四 CRC 全对；`RTL=0x20261021` |
+| RT-Thread ×4 | `rtthread\run_sim.ps1`（无 / `-DCache` / `-ICache` / `-DCache -ICache`）| **四配置全 PASS** |
+| **时序** | `report_timing\cpu_top_board.rtr` 的 `u_pll→u_pll` | **+0.311 ns / 0 失败端点（18,122）** |
+
+> **RAS"弄坏能 FAIL"的特别说明**：RAS 预测错会被 §7 **静默纠正** ⇒ **功能测试抓不到"预测错但被纠正"**。
+> 故功能正确性靠 **CoreMark 四 CRC + riscv-tests** 兜底（§7 或 push/pop 有错 ⇒ CRC 立刻错）；
+> 收益正确性靠 §8.3 的 `commit` 不变 + `cycles` 下降。
+
+### 8.5 B1-RAS 改动文件（追加，未提交）
+
+```
+ M rtl/core/core.v                 ← RAS 存储 + 到达级 ret 检测/p_target 折入 + EX push/pop + §7 目标校验
+ M rtl/core/csr_file.v             ← DESIGN_REV → 0x2026_1021 + 注释表一行
+ M doc/reports/2026-10-14_taskbook_v11_cpu.md   ← §0/§1/§3/§4.2 口径更新 + B1-RAS 说明块
+ M CLAUDE.md                       ← 顶部横幅 + 四条并列基线 + 待办 B1-RAS 条目
+ M doc/reports/2026-10-14_session_state.md      ← 本文件（标题 + 本 §8）
+ M doc/paper/论文框架_v1_20261012.md            ← §0 效率口径 4.304→4.355 + RAS 横幅 + 优化闭环 + 两处自评
+ M pds/RV32I_1/RV32I_1.pds         ← PDS 流程态时间戳 churn（提交前 `git checkout` 还原）
+```
+
+> **上板前必须重出位流**（`DESIGN_REV=0x2026_1021`）。`pds/RV32I_1/mem.hex` 未动（本会话未跑 CoreMark 固件重生成）。

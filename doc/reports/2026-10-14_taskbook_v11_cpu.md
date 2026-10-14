@@ -14,30 +14,34 @@
 1. **[已完成·别重做]** v10 §3.1 的"Cache 在 RT-Thread 上会挂"**已定位到两条根因并修复**，
    上板验证通过（位流 `90944754` / 横幅修正版 `53b81dfe`，`RTL=0x20261019`）。**结论与教训必须记住**（§2），因为它是
    一条**通用纪律**：改 `core.v` 时你会再遇到它。
-2. **你的任务表（不变）**：`覆盖 A` → `覆盖 B` → `B1-RAS` → `B1-BTB`。**Cache 不再占你时间。**
+2. **你的任务表**：`覆盖 A` → `覆盖 B` → `B1-RAS` → `B1-BTB`。**前四项只剩 B1-BTB。**
+   （覆盖 A/B、B1-RAS 均已完成 2026-10-14。）**Cache 不再占你时间。**
 3. **新增义务（很重要）**：改完 RTL 的回归里，**RT-Thread 四种配置也要跑**（`-DCache -ICache` 等）
    —— 它是**唯一**能抓到"停顿相关"缺陷的组合（v10 §3.1 就是这么漏过去的）。
-4. **基线数字没变**（A1 口径）：双发射+`EARLY_LD` **232,345** 拍/迭代、板上 **365.93 分**；
-   `DESIGN_REV` 从 `0x20261018` 走到 **`0x2026_1019`**。
-5. **第一约束仍是时序**：CPU 域余量 **+0.068 ns / 0 失败端点（17,216）**。
+4. **基线已推进（B1-RAS）**：双发射+`EARLY_LD` **232,345 → 229,597** 拍/迭代（−2,748 / −1.18%），
+   `region commit` 逐位不变 214,703；板上预计 **≈370.2 分**（旧 365.93 分，**需重出位流**）；
+   `DESIGN_REV` 从 `0x2026_1019` 走到 **`0x2026_1021`**（覆盖 A = `_1020`、B1-RAS = `_1021`）。
+5. **第一约束仍是时序**：B1-RAS 后 CPU 域余量 **+0.311 ns / 0 失败端点（18,122）**（RAS 前 +0.068/17,216）。
 
 ---
 
-## 1. 当前基线（同 v10 §1，唯一更新 = `DESIGN_REV`）
+## 1. 当前基线（B1-RAS 落地后；旧数（RAS 前）保留标注）
 
 | 配置 | 怎么跑 | 每迭代周期 | CoreMark/MHz |
 |---|---|---|---|
-| **双发射 + `EARLY_LD`（板上口径）** | `run_coremark.ps1 -Iter 1 -EarlyLd` | **232,345** | **4.304** |
+| **双发射 + `EARLY_LD` + `B1-RAS`（当前，板上口径）** | `run_coremark.ps1 -Iter 1 -EarlyLd` | **229,597** | **4.355** |
+| 双发射 + `EARLY_LD`（RAS 前，历史） | 同上（回退 RAS） | 232,345 | 4.304 |
 | 双发射 + `EARLY_LD=0` | 去掉 `-EarlyLd` | 252,730 | 3.957 |
 | 单发射 | 加 `-Single` | 303,140 | 3.299 |
 | 双发射 + I+D Cache | 加 `-DCache -ICache -EarlyLd` | 235,628 | 4.244 |
 
-* `DESIGN_REV` = **`0x2026_1019`**（`rtl/core/csr_file.v`）。**你改 RTL 必须再递增**（约定 42）。
+* `DESIGN_REV` = **`0x2026_1021`**（`rtl/core/csr_file.v`）。**你改 RTL 必须再递增**（约定 42）。
 * riscv-tests 判据不变：**49 PASS / 1 FAIL / 0 TIMEOUT**，唯一 FAIL = `ma_data`（**别修**）。
-* 板上实测：365.93 分 @85.0051 MHz（ITER=4280，位流 `bcd8fdd2` / `RTL=0x20261017`）。
+* 板上实测（RAS 前）：365.93 分 @85.0051 MHz（ITER=4280，位流 `bcd8fdd2` / `RTL=0x20261017`）。
+  B1-RAS 省 2,748 拍/迭代 ⇒ 预计 **≈370.2 分**（上一版位流未含 RAS，**上板前必须重出位流**）。
 * 时序唯一口径：`report_timing/cpu_top_board.rtr` 的 Setup Summary，只看 `u_pll→u_pll` 那行
-  —— **+0.068 ns / 0 失败端点（17,216）**。别拿 pnr 每个 seed 打的 `Setup(Slow): −1.1xx` 当 CPU 时序
-  （那是被 21 条跨域建模假象主导的全设计最差值，对 CPU 侧改动**完全不敏感**）。
+  —— B1-RAS 后 **+0.311 ns / 0 失败端点（18,122）**（RAS 前为 +0.068 ns / 17,216）。别拿 pnr 每个 seed
+  打的 `Setup(Slow): −1.1xx` 当 CPU 时序（那是被 21 条跨域建模假象主导的全设计最差值，对 CPU 侧改动**完全不敏感**）。
 
 ---
 
@@ -87,7 +91,7 @@
 |---|---|---|---|
 | **覆盖 A ✅已完成** | `tb_amo_cpu.S` 转 tohost 判分 + 从 `$skipThese` 摘出 + **"弄坏 `amo_unit` 能 FAIL"** 验证 | **P0（热身）** | 加进回归、能 FAIL、且弄坏能抓到 |
 | **覆盖 B ✅已完成** | `sim/tests/hi_fetch.S`（代码 > 32 KB 取指）+ **"把 `imem_addr2` 截位改回去能 FAIL"** 验证 | **P0（热身）** | 加进回归、能 FAIL、且弄坏能抓到 |
-| **B1-RAS** | 返回地址栈（**真正拿分的**） | **P0** | 见 v10 §5；`+PROF` 看 `region cycles` 下降 |
+| **B1-RAS ✅已完成** | 返回地址栈（**真正拿分的**） | **P0** | 见 v10 §5；`+PROF` 看 `region cycles` 下降 |
 | **B1-BTB** | BTB（赛题点名） | **P1** | 见 v10 §6，**排在 RAS 之后**；必须配"预测目标校验"（v10 §7）|
 
 **顺序：覆盖 A/B → RAS → BTB**（覆盖 A/B 是 2026-10-12 就分给你的，一直没人做；
@@ -115,6 +119,21 @@
 > `git diff rtl/core/core.v` 核对只剩覆盖 A 那两行。文档里 §7 给的 `N=8191` 放不下 64 KB（需 `N≤6142`），
 > 实取 **2048**。详见 `doc/reports/2026-10-14_session_state.md`。
 
+> **B1-RAS（2026-10-14 完成）—— 本轮真正拿分的一项**：
+> 16 项返回地址栈（`RAS_DEPTH=16`）。`call`（`jal`/`jalr` 且 `rd∈{x1,x5}`）在 **EX 级提交那拍**
+> push `id_ex_pc+4`；`ret`（`jalr x0,0(x1|x5)`，opcode `1100111`/f3=000/rd=x0/rs1∈{x1,x5}）在
+> **到达级** 命中即当场 `p_target = ras_top`、`p_pred_taken=1` ⇒ 经**既有的** `p_redirect` 腿同拍重定向，
+> **不新增 `fetch_addr` 的腿**（v10 §5 的硬约束，`fetch_addr` 是 Fmax 第一风险点）。
+> **`region commit` 逐位不变 214,703**（最灵敏探针：提交的指令数一条不差 ⇒ 省下的全是冲刷气泡），
+> `region flush 2,452`（RAS 前 5,645），`region cycles 229,597`（RAS 前 232,345，**−2,748 / −1.18%**），
+> 四 CRC 全对。配套 **v10 §7 预测目标校验**：`ret` 的预测目标与真实 `jalr_target` 不符即并入 `ex_flush`
+> 纠正（**功能正确性靠它兜底**——RAS 预测错会被静默纠正，功能测试抓不到"预测错但被纠正"，故
+> 必须靠"commit 不变 + CRC"证明没算错）。`DESIGN_REV → 0x2026_1021`。
+> **[坑·本项实测]** §7 若直接比 `ex_target != id_ex_pred_target`，会把 ~2 ns 的 `ex_target` 加法器
+> 拽进取指临界路径 ⇒ 时序 **−0.271 ns / 66 失败端点**（基线 +0.068/0）。改法：**只对 `ret` 比对**、
+> 且直接用 `rs1_val`（`(rs1_val & ~1) != id_ex_pred_target`）、`imm≠0` 强制冲刷，**绕开 `ex_target` 加法器**
+> ⇒ 时序回到 **+0.311 ns / 0 失败端点**。详见 `doc/reports/2026-10-14_session_state.md`。
+
 **明确不做**（见 v10 §2）：A3 BHT 加大（实测 +0.10%，已回退）、A0 修 CDC（死胡同）、
 A2 剩余 load-use（要 ≈0.43 ns，余量只有 0.068）。**Cache 相关的事一件都不用做。**
 
@@ -141,7 +160,7 @@ A2 剩余 load-use（要 ≈0.43 ns，余量只有 0.068）。**Cache 相关的�
 ```powershell
 scripts\run_riscv_tests.ps1                              # 49/1/0
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd     # Cache corner，也必须 49/1/0
-scripts\run_coremark.ps1 -Iter 1 -EarlyLd                # region cycles 必须 = 232,345
+scripts\run_coremark.ps1 -Iter 1 -EarlyLd                # B1-RAS 后 region cycles 必须 = 229,597（且 commit = 214,703 不变）
 scripts\run_own_tests.ps1 -DCache -ICache -EarlyLd       # 4 PASS
 scripts\rtthread\run_sim.ps1 -ICache                     # RT-Thread：**停顿相关 bug 的唯一探针**
 ```
