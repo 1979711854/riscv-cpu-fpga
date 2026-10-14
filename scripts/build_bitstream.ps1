@@ -138,11 +138,20 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #       76.5052 MHz ⇒ 20276 行（10138 字）   ← 带 Cache 的降频档
 #     另：横幅主频从写死的字面量改成从宏算（app/main.c）也让 .text 从 10135 → 10137/10138 字。
 #     这个守卫拦下过两次"源码/口径变了但没意识到固件变了"的构建 —— **别顺手把守卫放宽到任意值**。
-$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(20274, 20276);
-                  video = @(758); gomoku = @(11268) }
+# [!] 2026-10-14 任务 T2/T3（标题屏多级菜单 + HUD 重排）：game.c/main.c 大改，
+#     gomoku 与 rtthread 两个固件的 .text 尺寸都变了 —— 已用非 -Sim 的
+#     `gomoku\build.ps1` / `rtthread\build.ps1 -Firmware` 重新量过 elf2mem 输出：
+#       gomoku    5634 -> 6276 字（11268 -> 12552 行，+642 字）
+#       rtthread  10137/10138 -> 10523/10524 字（20274/20276 -> 21046/21048 行）
+#                 85.0051MHz ⇒ 21046 行（10523 字）← 生产档
+#                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
+#     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
+#       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
+$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(21046, 21048);
+                  video = @(758); gomoku = @(12552) }
 $expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
-                  rtthread = "10137 字（85.0051MHz）/ 10138 字（76.5052MHz）";
-                  video = "379 字"; gomoku = "5634 字" }
+                  rtthread = "10523 字（85.0051MHz）/ 10524 字（76.5052MHz）";
+                  video = "379 字"; gomoku = "6276 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。

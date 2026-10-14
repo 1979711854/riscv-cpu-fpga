@@ -480,6 +480,12 @@ HUD/棋盘显示无异常。串口日志覆盖不到这一块，所以单独记�
 **尚未做的**：带 `DESIGN_REV` 的 **gomoku** 位流还没综（目前只综了 CoreMark）。
 要在新网表上复验五子棋，跑 `scripts\build_bitstream.ps1 gomoku`。
 
+> **[OK] 2026-10-14 已补**（T2/T3 整合，见 `doc/reports/2026-10-14_integrate_t2t3_gomoku.md`）：
+> 裸机 gomoku 在新网表（rev1019）上综了两颗 —— 85.0051 MHz 档 `e03c0e6e`
+> （CPU 域 **−0.153 ns / 16 端点 ⇒ 勿烧**，与前两颗 rev1019 85MHz 件逐位相同）
+> 与 76.5052 MHz 档 **`dd4fecb4`（+0.773 ns / 0 端点，All Constraints Met，上板推荐）**。
+> 固件换成队友 T2/T3 版（菜单 + HUD，`mem.hex` 12552 行 / 6276 字）。
+
 ---
 
 ## 2026-10-10 22:49 板上实测：阶段0 + 阶段1 —— **324.5 分**（里程碑）

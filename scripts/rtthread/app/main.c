@@ -94,7 +94,7 @@ int gomoku_ai_pump(game_t *gm, uint32_t now)
     if (gm->ai_pending && !ai_dispatched) {
         ai_cmd.gen   = gm->ai_gen;
         ai_cmd.board = *game_ai_snapshot(gm);
-        ai_cmd.level = gm->level;
+        ai_cmd.level = game_ai_level(gm);
         /* rt_mb_send 非阻塞：满了会返回 -RT_EFULL。单飞下不会满，但万一失败
          * 别置 ai_dispatched —— 下一帧重试。 */
         if (rt_mb_send(&mb_cmd, (rt_ubase_t)&ai_cmd) == RT_EOK)

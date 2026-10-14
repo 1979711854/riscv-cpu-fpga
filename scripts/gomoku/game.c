@@ -27,10 +27,13 @@ void game_init(game_t *gm, int level, int human, uint32_t blink_ticks)
     gm->cursor_hidden= 0;
     gm->t_blink      = 0;
     gm->blink_ticks  = blink_ticks ? blink_ticks : 1;
-    gm->level        = level;
+    gm->mode         = GAME_MODE_HUMAN;
     gm->human        = human;
-    gm->demo         = 0;
-    gm->demo_delay   = blink_ticks ? blink_ticks : 1;
+    gm->level_black  = level;
+    gm->level_white  = level;
+    gm->step_ms      = 1000;
+    gm->menu_stage   = MENU_MODE;
+    gm->demo_delay   = blink_ticks ? blink_ticks : 1;  /* 宿主稍后按 step_ms 覆盖 */
     gm->t_next_ai    = 0;
     gm->winner       = 0;
     gm->ai_nodes     = 0;
@@ -86,7 +89,7 @@ int game_ai_finish(game_t *gm, uint32_t now, int r, int c, const ai_stats_t *st)
 
     after_move(gm);                       /* 判胜负 / 平局 / 切阶段 */
 
-    if (gm->demo) gm->t_next_ai = now + gm->demo_delay;   /* 演示：下一手隔 demo_delay */
+    if (gm->mode == GAME_MODE_AI) gm->t_next_ai = now + gm->demo_delay;   /* AI 对弈：下一手隔 demo_delay */
     gm->ai_pending = 0;
     return GOMOKU_OK;
 }
@@ -105,7 +108,7 @@ int game_ai_run_sync(game_t *gm, uint32_t now, ai_stats_t *out_st)
 
     if (!gm->ai_pending) return 0;
 
-    ret = ai_choose_move(game_ai_snapshot(gm), gm->level, &r, &c, &st);
+    ret = ai_choose_move(game_ai_snapshot(gm), game_ai_level(gm), &r, &c, &st);
     if (out_st) *out_st = st;
     if (ret == GOMOKU_OK) {
         return (game_ai_finish(gm, now, r, c, &st) == GOMOKU_OK);
@@ -117,8 +120,13 @@ int game_ai_run_sync(game_t *gm, uint32_t now, ai_stats_t *out_st)
 int game_ai_turn(const game_t *gm)
 {
     if (gm->phase != GAME_PLAYING) return 0;
-    if (gm->demo) return 1;              /* 演示：双方都是 AI */
+    if (gm->mode == GAME_MODE_AI) return 1;   /* AI 对弈：双方都是 AI */
     return (gm->board.turn != gm->human);
+}
+
+int game_ai_level(const game_t *gm)
+{
+    return (gm->board.turn == GOMOKU_BLACK) ? gm->level_black : gm->level_white;
 }
 
 int game_cursor_shown(const game_t *gm)
@@ -126,53 +134,131 @@ int game_cursor_shown(const game_t *gm)
     return (gm->phase == GAME_PLAYING && gm->cursor_on && !gm->cursor_hidden) ? 1 : 0;
 }
 
+/* ---- 菜单选项循环（到头回绕）-------------------------------------------- */
+static int level_next(int l) { return l >= AI_HARD ? AI_EASY : l + 1; }
+static int level_prev(int l) { return l <= AI_EASY ? AI_HARD : l - 1; }
+
+static uint32_t step_next(uint32_t ms)
+{
+    if (ms >= 2000) return 500;
+    if (ms >= 1000) return 2000;
+    return 1000;                             /* 500 -> 1000 */
+}
+static uint32_t step_prev(uint32_t ms)
+{
+    if (ms <= 500)  return 2000;
+    if (ms <= 1000) return 500;
+    return 1000;                             /* 2000 -> 1000 */
+}
+
+static int color_next(int c) { return c == GOMOKU_BLACK ? GOMOKU_WHITE : GOMOKU_BLACK; }
+#define color_prev(c) color_next(c)          /* 黑/白只有两档，prev == next */
+
+static int mode_next(int m) { return m == GAME_MODE_HUMAN ? GAME_MODE_AI : GAME_MODE_HUMAN; }
+#define mode_prev(m) mode_next(m)
+
+/* ---- 菜单层前进 / 后退 -------------------------------------------------- */
+static menu_stage_t menu_next_stage(const game_t *gm)
+{
+    switch (gm->menu_stage) {
+    case MENU_MODE:       return (gm->mode == GAME_MODE_HUMAN) ? MENU_H_DIFF : MENU_A_BLACK;
+    case MENU_H_DIFF:     return MENU_H_COLOR;
+    case MENU_H_COLOR:    return MENU_DONE;      /* 开始 */
+    case MENU_A_BLACK:    return MENU_A_WHITE;
+    case MENU_A_WHITE:    return MENU_A_INTERVAL;
+    case MENU_A_INTERVAL: return MENU_DONE;      /* 开始 */
+    default:              return MENU_DONE;
+    }
+}
+
+static menu_stage_t menu_prev_stage(const game_t *gm)
+{
+    switch (gm->menu_stage) {
+    case MENU_H_DIFF:     return MENU_MODE;
+    case MENU_H_COLOR:    return MENU_H_DIFF;
+    case MENU_A_BLACK:    return MENU_MODE;
+    case MENU_A_WHITE:    return MENU_A_BLACK;
+    case MENU_A_INTERVAL: return MENU_A_WHITE;
+    default:              return MENU_MODE;      /* MENU_MODE / MENU_DONE 不再回退 */
+    }
+}
+
 /* ---------------------------------------------------------------------------
- * 标题屏：短按 ←/→ 切难度；长按任意键开始
+ * 开始一局：按当前 mode/human/难度/step_ms 的配置清盘清统计 → 进对局。
+ * AI 对弈空盘先停一拍再下第一手；人机且人执白时 AI 先走（避免主循环再开特例）。
+ * ------------------------------------------------------------------------- */
+void game_start(game_t *gm, uint32_t now)
+{
+    gomoku_reset(&gm->board);
+    gm->winner        = 0;
+    gm->ai_nodes      = 0;
+    gm->ai_ms         = 0;
+    gm->ai_depth      = 0;
+    gm->ai_moves      = 0;
+    gm->last_ai_r     = -1;
+    gm->last_ai_c     = -1;
+    gm->ai_pending    = 0;
+    gm->cursor_r      = CURSOR_HOME_R;
+    gm->cursor_c      = CURSOR_HOME_C;
+    gm->cursor_on     = 1;
+    gm->cursor_hidden = 0;
+    gm->phase         = GAME_PLAYING;
+
+    if (gm->mode == GAME_MODE_AI) {
+        gm->t_next_ai = now + gm->demo_delay;   /* 空盘先停一拍再下第一手 */
+    } else if (gm->board.turn != gm->human) {
+        game_ai_begin(gm);                       /* 人执白，AI 先走 */
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * 标题屏：多级菜单（任务 T2）
+ *   短按 ↑/↓ 循环当前项；长按任意键 / 短按 → 确认进下一层；短按 ← 返回。
  * ------------------------------------------------------------------------- */
 static void tick_title(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask)
 {
-    if (short_mask & (1u << KEY_LEFT)) {
-        if (gm->level > AI_EASY) gm->level--;
-    }
-    if (short_mask & (1u << KEY_RIGHT)) {
-        if (gm->level < AI_HARD) gm->level++;
-    }
-    if (long_mask & (1u << KEY_UP)) {       /* 长按 ↑ = 自对弈演示（任务书 B2）*/
-        gomoku_reset(&gm->board);
-        gm->winner    = 0;
-        gm->ai_nodes  = 0;
-        gm->ai_ms     = 0;
-        gm->ai_depth  = 0;
-        gm->ai_moves  = 0;
-        gm->last_ai_r = -1;
-        gm->last_ai_c = -1;
-        gm->ai_pending = 0;
-        gm->cursor_r  = CURSOR_HOME_R;
-        gm->cursor_c  = CURSOR_HOME_C;
-        gm->cursor_on = 1;
-        gm->demo      = 1;
-        gm->level     = AI_NORMAL;          /* 演示固定 NORMAL */
-        gm->phase     = GAME_PLAYING;
-        gm->t_next_ai = now + gm->demo_delay;  /* 空盘先停一拍再下第一手 */
-    } else if (long_mask) {                 /* 长按其它键 = 正常开始 */
-        gomoku_reset(&gm->board);
-        gm->winner    = 0;
-        gm->ai_nodes  = 0;
-        gm->ai_ms     = 0;
-        gm->ai_depth  = 0;
-        gm->ai_moves  = 0;
-        gm->last_ai_r = -1;
-        gm->last_ai_c = -1;
-        gm->ai_pending = 0;
-        gm->cursor_r  = CURSOR_HOME_R;
-        gm->cursor_c  = CURSOR_HOME_C;
-        gm->cursor_on = 1;
-        gm->demo      = 0;
-        gm->phase     = GAME_PLAYING;
+    int up      = (short_mask & (1u << KEY_UP))    != 0;
+    int down    = (short_mask & (1u << KEY_DOWN))  != 0;
+    int left    = (short_mask & (1u << KEY_LEFT))  != 0;
+    int right   = (short_mask & (1u << KEY_RIGHT)) != 0;
+    int confirm = (long_mask != 0) || right;
 
-        /* 人若执白，AI 要先走一步 —— 在这里直接下掉，免得主循环要为
-         * "开局第一手"再开一条特例路径 */
-        if (gm->board.turn != gm->human) game_ai_begin(gm);
+    if (confirm) {
+        menu_stage_t next = menu_next_stage(gm);
+        if (next == MENU_DONE) game_start(gm, now);
+        else                   gm->menu_stage = next;
+        return;
+    }
+    if (left) {
+        gm->menu_stage = menu_prev_stage(gm);
+        return;
+    }
+
+    if (up || down) {
+        int inc = down ? 1 : 0;      /* ↑ = 上一项，↓ = 下一项 */
+        switch (gm->menu_stage) {
+        case MENU_MODE:
+            gm->mode = inc ? mode_next(gm->mode) : mode_prev(gm->mode);
+            break;
+        case MENU_H_DIFF:
+            gm->level_black = inc ? level_next(gm->level_black) : level_prev(gm->level_black);
+            gm->level_white = gm->level_black;   /* 人机只有一个难度，两边同步 */
+            break;
+        case MENU_H_COLOR:
+            gm->human = inc ? color_next(gm->human) : color_prev(gm->human);
+            break;
+        case MENU_A_BLACK:
+            gm->level_black = inc ? level_next(gm->level_black) : level_prev(gm->level_black);
+            break;
+        case MENU_A_WHITE:
+            gm->level_white = inc ? level_next(gm->level_white) : level_prev(gm->level_white);
+            break;
+        case MENU_A_INTERVAL:
+            gm->step_ms = inc ? step_next(gm->step_ms) : step_prev(gm->step_ms);
+            break;
+        default:
+            break;
+        }
     }
 }
 
@@ -183,14 +269,14 @@ static void tick_playing(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t l
 {
     int dr = 0, dc = 0;
 
-    if (gm->demo) {
-        /* 演示模式：忽略人类按键，按节拍让 AI 走；长按任意键 = 中途退回标题。 */
+    if (gm->mode == GAME_MODE_AI) {
+        /* AI 对弈：忽略人类按键，按节拍让 AI 走；长按任意键 = 中途退回标题。 */
         if (long_mask) {
             gomoku_reset(&gm->board);
             gm->winner = 0;
             gm->ai_pending = 0;
-            gm->demo   = 0;
             gm->phase  = GAME_TITLE;
+            gm->menu_stage = MENU_MODE;   /* 回标题菜单也回顶层 */
             return;
         }
         if ((int32_t)(now - gm->t_next_ai) >= 0) {
@@ -242,8 +328,8 @@ static void tick_over(game_t *gm, uint32_t now, uint8_t long_mask)
         gomoku_reset(&gm->board);
         gm->winner = 0;
         gm->ai_pending = 0;
-        gm->demo   = 0;
         gm->phase  = GAME_TITLE;
+        gm->menu_stage = MENU_MODE;
     }
 }
 

@@ -6,7 +6,7 @@
 //
 //   [1] 固件能启动：串口打印出 banner
 //   [2] 上电就把棋盘铺好了：探显存的 nametable，检查四个角/天元的图块号
-//   [3] 按键能开局：注入"长按" -> 串口出现 "start, level="
+//   [3] 按键能开局：注入三次"长按"（标题屏菜单 MODE→DIFF→COLOR 确认到底）-> 串口出现 "start,"
 //   [4] 落子 + AI 应手：再注入一次长按 -> 串口出现 "AI moved"，
 //       且天元的 nametable 从"空格"变成了"黑子"
 //
@@ -252,14 +252,17 @@ module tb_gomoku;
                      nt_byte(7, 7));
         end
 
-        // ---- [3] 长按开局 ----
-        press_long(3);                         // KEY_DOWN；标题屏长按非↑键=正常开局（长按↑=demo，见 game.c:102）
+        // ---- [3] 三次长按：走完标题屏菜单（MODE→DIFF→COLOR），确认到底开始人机对局 ----
+        //      默认 human 模式 / 人执黑，三次确认即可开局（任务 T2 菜单）。
+        press_long(3);                         // 确认 MODE -> DIFF
+        press_long(3);                         // 确认 DIFF -> COLOR
+        press_long(3);                         // 确认 COLOR -> 开始
         checks = checks + 1;
         if (!has_text("start,")) begin
             errors = errors + 1;
-            $display("  [FAIL] 长按之后没等到 start —— 开局没生效");
+            $display("  [FAIL] 菜单确认到底后没等到 start —— 开局没生效");
         end else begin
-            $display("  [ok]   长按开局成功");
+            $display("  [ok]   菜单开局成功");
         end
 
         // ---- [4] 在天元落子，AI 应手 ----

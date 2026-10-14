@@ -8,15 +8,16 @@
  *
  * 按键方案（板上只有 4 个用户键 SW4..SW7 = key[0..3]，见 input.h 的论证）：
  *
- *   标题屏    短按 ←/→ 切难度        长按 ↑ 自对弈演示，长按其它键 开始对局
+ *   标题屏（多级菜单，任务 T2）
+ *       短按 ↑/↓  循环当前项（到头回绕）
+ *       长按任意键 / 短按 →  确认当前项 → 进下一层；最后一层确认 = 开始对局
+ *       短按 ←    返回上一层（最顶层无操作）
  *   对局中    短按 ←/→/↑/↓ 移动光标   长按任意方向键 在光标处落子
  *   胜负后    长按任意键 回标题
+ *   AI 对弈（原演示模式）  双方都是 AI，按 step_ms 间隔落子；长按回标题
  *
- *   人的颜色固定黑（先手）—— 先手在五子棋里有优势，让 AI 后手能看出棋力。
- *
- * [!] AI 是在 game_tick() 里**同步跑**的，会阻塞。回合制棋盘游戏里这是可接受的
- *     （思考期间光标不闪而已）。但 HARD 档在板上要多久**还没标定** ——
- *     如果太慢，`level` 就只开 EASY/NORMAL 两档。
+ * [!] AI 是在 game_tick() 里**派单**（game_ai_begin），真正的搜索由宿主决定怎么跑：
+ *     裸机/x86 同步算完，RT-Thread 丢给低优先级 AI 线程。见 game_ai_begin 的注释。
  * ==========================================================================*/
 #ifndef GOMOKU_GAME_H
 #define GOMOKU_GAME_H
@@ -26,10 +27,27 @@
 #include "ai.h"
 
 typedef enum {
-    GAME_TITLE = 0,     /* 标题屏：选难度 */
+    GAME_TITLE = 0,     /* 标题屏：多级菜单 */
     GAME_PLAYING,       /* 对局中 */
     GAME_OVER           /* 已分胜负或平局 */
 } game_phase_t;
+
+/* 对局模式（任务 T2）*/
+typedef enum {
+    GAME_MODE_HUMAN = 0,   /* 人机对弈 */
+    GAME_MODE_AI    = 1    /* AI 对弈（原演示模式：双方都是 AI）*/
+} game_mode_t;
+
+/* 标题屏菜单的层（任务 T2）。MENU_DONE 是哨兵，不真正存进 menu_stage。 */
+typedef enum {
+    MENU_MODE = 0,         /* 模式：人机 / AI */
+    MENU_H_DIFF,           /* 人机：难度 */
+    MENU_H_COLOR,          /* 人机：执子（人执黑先 / 白后）*/
+    MENU_A_BLACK,          /* AI 对弈：黑方难度 */
+    MENU_A_WHITE,          /* AI 对弈：白方难度 */
+    MENU_A_INTERVAL,       /* AI 对弈：每手间隔 */
+    MENU_DONE              /* 哨兵：确认后开始对局 */
+} menu_stage_t;
 
 typedef struct {
     gomoku_t     board;
@@ -41,14 +59,17 @@ typedef struct {
     uint32_t t_blink;           /* 上次翻转时刻 */
     uint32_t blink_ticks;       /* 半周期（单位与 now 相同）*/
 
-    int level;                  /* AI_EASY / AI_NORMAL / AI_HARD */
-    int human;                  /* 人执哪一方（GOMOKU_BLACK / GOMOKU_WHITE）*/
-    int winner;                 /* 0 = 未分胜负 */
+    int      mode;              /* GAME_MODE_HUMAN / GAME_MODE_AI（AI 对弈=原演示）*/
+    int      human;             /* 人机模式下人执哪一方（GOMOKU_BLACK / GOMOKU_WHITE）*/
+    int      level_black;       /* 黑方 AI 难度（AI_EASY / AI_NORMAL / AI_HARD）*/
+    int      level_white;       /* 白方 AI 难度 */
+    uint32_t step_ms;           /* AI 对弈每手间隔（毫秒）*/
+    int      menu_stage;        /* 标题屏菜单当前层（menu_stage_t）*/
+    int      winner;            /* 0 = 未分胜负 */
 
-    /* 自对弈演示模式：双方都是 AI，每手之间停 demo_delay。 */
-    int      demo;              /* 1 = 演示（AI vs AI）*/
-    uint32_t demo_delay;        /* 每手之间的间隔（单位与 now 相同）*/
-    uint32_t t_next_ai;         /* 演示模式下下一手 AI 的时刻 */
+    /* AI 对弈（原演示模式）：双方都是 AI，每手之间停 demo_delay。 */
+    uint32_t demo_delay;        /* 每手之间的间隔（单位与 now 相同，宿主按 step_ms 换算）*/
+    uint32_t t_next_ai;         /* AI 对弈模式下下一手 AI 的时刻 */
 
     /* AI 最近一步的统计 —— 给上层打串口用（工作清单要求"打印节点数/耗时"）*/
     uint32_t ai_nodes;
@@ -65,9 +86,11 @@ typedef struct {
     uint32_t ai_gen;            /* 派单序号：每次 game_ai_begin 自增，宿主据此丢弃过期结果 */
 } game_t;
 
-/* 初始化并进入标题屏。
- *   level 初始难度；blink_ticks 光标闪烁半周期（单位与 now 相同）。
- *   human 传 GOMOKU_BLACK 或 GOMOKU_WHITE。 */
+/* 初始化并进入标题屏（菜单顶层）。
+ *   level        = 黑白双方难度的初始值（人机模式两边同步，AI 对弈里再分别改）
+ *   human        = 人机模式下人的初始执子（GOMOKU_BLACK / GOMOKU_WHITE）
+ *   blink_ticks  = 光标闪烁半周期（单位与 now 相同）
+ * 其余字段给默认值：mode=HUMAN、step_ms=1000、menu_stage=MENU_MODE。 */
 void game_init(game_t *gm, int level, int human, uint32_t blink_ticks);
 
 /* 推进一拍。
@@ -79,6 +102,15 @@ void game_tick(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask);
 
 /* 现在轮到 AI 吗（标题屏/胜负后不算）*/
 int game_ai_turn(const game_t *gm);
+
+/* 现在轮到谁，就按谁的难度取 —— 黑取 level_black、白取 level_white。
+ * 供 game_ai_run_sync / RT-Thread 宿主派单时把「这一手是谁的难度」带进 ai_cmd。 */
+int game_ai_level(const game_t *gm);
+
+/* 按当前 mode/human/难度/step_ms 的配置开始一局（清盘清统计 → 进对局 →
+ * AI 对弈停一拍再下第一手、人机且人执白时 AI 先走）。菜单末层确认时调用，
+ * 也暴露给测试直接开局。 */
+void game_start(game_t *gm, uint32_t now);
 
 /* 光标是否要画出来。
  * [!] 落子之后会【临时藏起来】，直到玩家再按方向键。原因：显示层没有精灵，

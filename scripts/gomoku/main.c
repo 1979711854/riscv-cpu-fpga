@@ -34,8 +34,8 @@
 /* 光标闪烁半周期（毫秒）。300ms ⇒ 亮 300 / 灭 300，够醒目又不闪眼 */
 #define BLINK_MS   300u
 
-/* 演示模式（AI 自对弈）每手之间的间隔（毫秒）。1.5s 看得清又不拖。 */
-#define DEMO_DELAY_MS 1500u
+/* AI 对弈每手间隔的档位在标题屏菜单里选（step_ms：500/1000/2000ms，见
+ * game.c 的 step_next/step_prev）；主循环每帧把 step_ms 换算成 demo_delay。 */
 
 /* ---- 全局对象 ------------------------------------------------------------
  * 放静态区而不是栈上：栈顶只有 0xF000，而 game_t 里光 gomoku_t 就 232 字节，
@@ -151,35 +151,93 @@ static const char *level_name(int level)
            level == AI_NORMAL ? "NORMAL" : "HARD";
 }
 
+/* 菜单层名 —— 只用字库里有字的字符（字母/数字/空格），见 font.h 的可用字形。 */
+static const char *menu_stage_name(int stage)
+{
+    switch (stage) {
+    case MENU_MODE:       return "MODE";
+    case MENU_H_DIFF:     return "DIFFICULTY";
+    case MENU_H_COLOR:    return "COLOR";
+    case MENU_A_BLACK:    return "BLACK AI";
+    case MENU_A_WHITE:    return "WHITE AI";
+    case MENU_A_INTERVAL: return "INTERVAL";
+    default:              return "";
+    }
+}
+
 static void draw_hud(void)
 {
     char line[SCREEN_COLS + 1];
     char *p;
 
     if (g_game.phase == GAME_TITLE) {
+        /* 清掉对局屏用过的行，防残留：行 2 的黑白/难度行、行 24 的胜负横幅。
+         * render_text(row, 0, "") 会整行铺空格字模（见 render.c 的实现）。 */
+        render_text(2,  0, "");
+        render_text(24, 0, "");
+
         render_text_center(1, "GOMOKU");
-        p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level));
-        render_text_center(3, line);
-        render_text_center(27, "START: HOLD ANY KEY");
-        render_text_center(28, "DEMO: HOLD UP");
+
+        /* 菜单：当前层名（行 3）+ 当前值（行 4），任务 T2 多级菜单 */
+        render_text_center(3, menu_stage_name(g_game.menu_stage));
+        p = line;
+        switch (g_game.menu_stage) {
+        case MENU_MODE:
+            p = buf_append(p, g_game.mode == GAME_MODE_HUMAN ? "HUMAN" : "AI");
+            break;
+        case MENU_H_DIFF:
+            p = buf_append(p, level_name(g_game.level_black));
+            break;
+        case MENU_H_COLOR:
+            p = buf_append(p, g_game.human == GOMOKU_BLACK ? "BLACK" : "WHITE");
+            break;
+        case MENU_A_BLACK:
+            p = buf_append(p, level_name(g_game.level_black));
+            break;
+        case MENU_A_WHITE:
+            p = buf_append(p, level_name(g_game.level_white));
+            break;
+        case MENU_A_INTERVAL:
+            p = u32_to_str(p, g_game.step_ms);
+            p = buf_append(p, "MS");
+            break;
+        default:
+            break;
+        }
+        render_text_center(4, line);
+
+        render_text_center(27, "UP OR DOWN  CHANGE");
+        render_text_center(28, "HOLD OR RIGHT  OK  LEFT  BACK");
         return;
     }
 
-    /* [!] 先清掉【标题屏专用的行】—— 否则进对局后屏幕上会有【两个 LEVEL】。
-     *     标题屏把 LEVEL 画在【行 3】、对局屏画在【行 2】，行 3 不清就一直留着。
+    /* [!] 先清掉【标题屏专用的行】—— 否则进对局后屏幕上会残留菜单文字。
      *     （2026-10-10 板上实踩。这和"同一行内的残字"是同类问题的另一种形态。）
-     *     行 28 不用在这里清：它马上会被下面的 AI 统计整行覆写。
-     *     render_text(row, 0, "") 会整行铺空格字模（见 render.c 的实现）。 */
+     *     行 28 不用在这里清：它马上会被下面的 AI 统计整行覆写。 */
     render_text(3,  0, "");
+    render_text(4,  0, "");
     render_text(27, 0, "");
+    render_text(24, 0, "");          /* 上一局的胜负横幅 */
 
-    /* 顶部：轮次 / 难度（演示模式显示 DEMO）*/
-    if (g_game.demo)
-        render_text(1, 1, "DEMO: AI VS AI");
-    else
+    /* 顶部：轮次 + 难度（任务 T2/T3 行距重排）。
+     *   人机：一行难度（黑白同步）；AI 对弈：黑/白/间隔三行。 */
+    if (g_game.mode == GAME_MODE_AI) {
+        render_text(1, 1, "AI VS AI");
+        p = line; p = buf_append(p, "BLACK AI: "); p = buf_append(p, level_name(g_game.level_black));
+        render_text(2, 1, line);
+        p = line; p = buf_append(p, "WHITE AI: "); p = buf_append(p, level_name(g_game.level_white));
+        render_text(3, 1, line);
+        p = line; p = buf_append(p, "STEP: ");
+        p = u32_to_str(p, g_game.step_ms);
+        p = buf_append(p, "MS");
+        render_text(4, 1, line);
+    } else {
         render_text(1, 1, g_game.board.turn == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
-    p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level));
-    render_text(2, 1, line);
+        p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level_black));
+        render_text(2, 1, line);
+        render_text(3, 1, "");
+        render_text(4, 1, "");
+    }
 
     /* 底部：AI 统计（最有展示价值的一行）*/
     p = line; p = buf_append(p, "AI: NODES ");
@@ -247,7 +305,9 @@ void gomoku_run(void)
     int prev_phase;
     int prev_stones;
     int prev_cr, prev_cc;      /* 上次打印时的光标位置 —— 短按移动要有串口反馈 */
-    int prev_level;            /* 上次打印时的难度 —— 标题屏切档同样要有反馈 */
+    int prev_mode, prev_human; /* 菜单：模式 / 执子（变化要有串口反馈）*/
+    int prev_level_black, prev_level_white;   /* 菜单：黑白难度 */
+    int prev_step_ms, prev_stage;             /* 菜单：间隔档 / 当前层 */
     int warned_no_video = 0;   /* vblank 超时只报一次，别把串口灌爆 */
 
     /* ---- 1) 显示初始化 ----------------------------------------------------
@@ -265,7 +325,7 @@ void gomoku_run(void)
      * NORMAL(4 层) 一次搜索约 2 亿拍，仿真里要跑十几分钟真实时间；
      * EASY 是纯贪心、一次函数调用，秒出。见 build.ps1 -Sim。 */
     game_init(&g_game, GOMOKU_AI_LEVEL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
-    g_game.demo_delay = DEMO_DELAY_MS * hw_ticks_per_ms();   /* 演示每手间隔 1.5s */
+    /* demo_delay（AI 对弈每手间隔）在主循环里每帧按 step_ms 现算 —— 菜单可改档 */
 
     /* 第一行就自证版本：FW=固件名，RTL=设计版本号（来自 mimpid）。
      * 两版位流装同一份固件时，靠 RTL= 那一段区分（见上面 design_rev 的说明）。 */
@@ -275,8 +335,8 @@ void gomoku_run(void)
 
     uart_puts("=== GOMOKU on RV32I ===\r\n");
     uart_puts("keys: SW4/5/6/7 = left/right/up/down\r\n");
-    uart_puts("      tap = move cursor, hold 0.6s = place, hold on title = start\r\n");
-    uart_puts("      hold UP on title = AI self-play demo (NORMAL vs NORMAL)\r\n");
+    uart_puts("      title menu: up/down = change, hold or right = OK, left = back\r\n");
+    uart_puts("      play: tap = move cursor, hold = place\r\n");
     uart_puts("      SW3 = reset\r\n");
     uart_puts("board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)\r\n");
 
@@ -284,7 +344,12 @@ void gomoku_run(void)
     prev_stones = (int)g_game.board.stones;
     prev_cr     = g_game.cursor_r;
     prev_cc     = g_game.cursor_c;
-    prev_level  = -1;          /* -1 保证上电第一圈就打一次当前档位 */
+    prev_mode        = -1;
+    prev_human       = -1;
+    prev_level_black = -1;
+    prev_level_white = -1;
+    prev_step_ms     = -1;
+    prev_stage       = -1;     /* -1 保证上电第一圈就把菜单当前值全打一遍 */
 
     /* ---- 3) 主循环 -------------------------------------------------------- */
     for (;;) {
@@ -304,6 +369,10 @@ void gomoku_run(void)
         }
         now = hw_mtime();
 
+        /* AI 对弈每手间隔：菜单里 step_ms 是毫秒，这里换算成 now 的单位。
+         * 每帧现算 —— 菜单改档后下一局自然生效，不用在别处同步。 */
+        g_game.demo_delay = g_game.step_ms * hw_ticks_per_ms();
+
         /* ---- 采样按键：4 个键逐个取事件 ---- */
         input_poll(&g_input, now, hw_key_raw());
         for (i = 0; i < INPUT_N_KEYS; i++) {
@@ -322,13 +391,13 @@ void gomoku_run(void)
          *     "AI thinking..." 却因为落子失败而没有下文 —— 看着比不打还糟，
          *     用户直接以为是卡死了（H6 已经有一颗黑子，实测复现）。
          *     所以落子失败也【必须】给一行话：串口上没有输出 = 用户以为按键没生效。 */
-        if (!g_game.demo && lmask != 0 && g_game.phase == GAME_PLAYING && game_ai_turn(&g_game)) {
+        if (g_game.mode != GAME_MODE_AI && lmask != 0 && g_game.phase == GAME_PLAYING && game_ai_turn(&g_game)) {
             if (g_game.board.cell[g_game.cursor_r][g_game.cursor_c] != GOMOKU_EMPTY) {
                 uart_puts("occupied -- move the cursor and try again\r\n");
             } else {
-                uart_puts(g_game.level == AI_HARD   ? "AI thinking (HARD 6-ply)...\r\n" :
-                          g_game.level == AI_NORMAL ? "AI thinking (NORMAL 4-ply)...\r\n" :
-                                                      "AI thinking (EASY)...\r\n");
+                uart_puts("AI thinking (");
+                uart_puts(level_name(game_ai_level(&g_game)));
+                uart_puts(")...\r\n");
             }
         }
         game_tick(&g_game, now, smask, lmask);
@@ -343,11 +412,19 @@ void gomoku_run(void)
         /* ---- 状态变化就打串口（一次性事件，不刷屏）---- */
         if (g_game.phase != (game_phase_t)prev_phase) {
             if (g_game.phase == GAME_PLAYING) {
-                if (g_game.demo) {
-                    uart_puts("demo mode (AI vs AI, NORMAL)\r\n");
+                if (g_game.mode == GAME_MODE_AI) {
+                    uart_puts("AI match: black=");
+                    uart_puts(level_name(g_game.level_black));
+                    uart_puts(" white=");
+                    uart_puts(level_name(g_game.level_white));
+                    uart_puts(" step=");
+                    uart_putdec(g_game.step_ms);
+                    uart_puts("ms\r\n");
                 } else {
                     uart_puts("start, level=");
-                    uart_putdec((unsigned)g_game.level);
+                    uart_puts(level_name(g_game.level_black));
+                    uart_puts(" you=");
+                    uart_puts(g_game.human == GOMOKU_BLACK ? "BLACK" : "WHITE");
                     uart_puts("\r\n");
                 }
             } else if (g_game.phase == GAME_OVER) {
@@ -367,7 +444,7 @@ void gomoku_run(void)
         if (g_game.board.stones != prev_stones) {
             int delta = g_game.board.stones - prev_stones;
             /* AI 落子时 stones 会 +2（人一手 + AI 一手）；单独打印 AI 那手的统计 */
-            if (delta > 1 || g_game.board.turn == g_game.human || g_game.demo) {
+            if (delta > 1 || g_game.board.turn == g_game.human || g_game.mode == GAME_MODE_AI) {
                 uart_puts("AI moved, nodes=");
                 uart_putdec((unsigned)g_game.ai_nodes);
                 uart_puts(" depth=");
@@ -381,16 +458,44 @@ void gomoku_run(void)
             prev_stones = (int)g_game.board.stones;
         }
 
-        /* [!] 标题屏切难度【本来是完全静默的】—— 2026-10-04 实测反馈：
-         * 按了 SW4/SW5 却没有任何输出，只能靠开局那行 "start, level=N" 反推，
-         * 玩家根本不知道档位切没切。这里补上。 */
-        if (g_game.level != prev_level) {
-            prev_level = g_game.level;
-            uart_puts("level=");
-            uart_putdec((unsigned)prev_level);
-            uart_puts(prev_level == AI_EASY   ? " EASY (greedy)\r\n" :
-                      prev_level == AI_NORMAL ? " NORMAL (4-ply)\r\n" :
-                                                " HARD (6-ply)\r\n");
+        /* [!] 标题屏菜单变化【本来是完全静默的】—— 2026-10-04 实测反馈：
+         * 按了键却没有任何输出，只能靠开局那行反推，玩家根本不知道档位切没切。
+         * 这里把菜单每一项的变化都打到串口。 */
+        if (g_game.menu_stage != prev_stage) {
+            prev_stage = g_game.menu_stage;
+            uart_puts("menu=");
+            uart_puts(menu_stage_name(prev_stage));
+            uart_puts("\r\n");
+        }
+        if (g_game.mode != prev_mode) {
+            prev_mode = g_game.mode;
+            uart_puts("mode=");
+            uart_puts(prev_mode == GAME_MODE_AI ? "AI" : "HUMAN");
+            uart_puts("\r\n");
+        }
+        if (g_game.human != prev_human) {
+            prev_human = g_game.human;
+            uart_puts("you=");
+            uart_puts(prev_human == GOMOKU_BLACK ? "BLACK" : "WHITE");
+            uart_puts("\r\n");
+        }
+        if (g_game.level_black != prev_level_black) {
+            prev_level_black = g_game.level_black;
+            uart_puts("black=");
+            uart_puts(level_name(prev_level_black));
+            uart_puts("\r\n");
+        }
+        if (g_game.level_white != prev_level_white) {
+            prev_level_white = g_game.level_white;
+            uart_puts("white=");
+            uart_puts(level_name(prev_level_white));
+            uart_puts("\r\n");
+        }
+        if ((int)g_game.step_ms != prev_step_ms) {
+            prev_step_ms = (int)g_game.step_ms;
+            uart_puts("step=");
+            uart_putdec(g_game.step_ms);
+            uart_puts("ms\r\n");
         }
 
         /* 光标动了就报一行。短按移动在板上本来是"零反馈"的 ——
