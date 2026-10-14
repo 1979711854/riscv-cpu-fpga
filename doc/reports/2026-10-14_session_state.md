@@ -366,7 +366,7 @@ CoreMark 的 `jalr` 绝大多数是 `ret`（RAS 已捕获）⇒ **BTB 在计时�
      并用 `-DNOBTB` 复跑时序确认回到 +0.311 附近。
 - 跨域 CDC 两行（−1.046/21、−0.189/1）**与基线逐位一致** ⇒ 未触碰 `fetch_addr` 新腿，符合设计约束。
 
-### 9.8 B1-BTB 改动文件（追加，未提交）
+### 9.8 B1-BTB 改动文件（已提交 `51fa969`）
 
 ```
  M rtl/core/core.v                 ← parameter BTB_EN + BTB 存储 + 到达级 BTB 读/p_target 折入 + EX 训练 + §7 放宽
