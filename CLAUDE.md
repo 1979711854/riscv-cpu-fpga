@@ -959,11 +959,19 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   riscv-tests 默认与 `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd`
   **232,345 一字不差**；`run_own_tests -DCache -ICache -EarlyLd` 2/0。
   详见 `doc/reports/2026-10-14_cache_fix_bug1.md` 与 `..._bug2.md`。
--  **[!] 但 Cache 版位流仍需重出**：`c10a2478`（I+D@76.5）/ `9feaa089`（D-only@85）都是
-  **rev 1017 的旧 RTL，仍【勿烧】**。功能已修，**缺的是 rev ≥ 0x2026_1019 的位流 + 上板实测**；
-  `9feaa089` 那颗还叠了时序问题（CPU 域 −0.177 ns / 13 失败端点）⇒ 即使功能修好也塞不进 85 MHz。
-  **走 `-Cache` + 76.5052 MHz**（约定 50 的四件套：`RATIO0=15.0` → `ip_generate` →
-  `UART_DIV=664` → rtthread 的 `BOARD_SYSTEM_CLOCK_HZ=76,505,200`），**构建后全部还原**。
+-  **[OK] Cache 版位流已重出（2026-10-14 13:48，rev 1019）**：
+  `bitstreams/rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_idcache_76mhz_rev1019_90944754.sbit`
+  （rtthread + I+D @76.5052 MHz；网表自证 `dcache`1190/`icache`1216/`tag0`196；
+  `All Constraints Met`，CPU 域 **+0.534 ns / 0 失败端点（18,997）**，CDC 0 失败；
+  首行自证 **`RTL=0x20261019`**）。约定 50 的四件套**构建后已全部还原**。
+  `c10a2478`（I+D@76.5）/ `9feaa089`（D-only@85）仍是 **rev 1017 旧 RTL，仍【勿烧】**；
+  `9feaa089` 另叠时序问题（CPU 域 −0.177 ns / 13 失败端点）⇒ 塞不进 85 MHz。
+-  **[!] 唯一剩余动作：把 rev 1019 的位流上板实测**（banner + 两线程 + `[hb]` 不断 +
+  `RTL=0x20261019`）。**跑通之前，"Cache 可用"这句话还不算成立**；
+  生产/交付档继续 Cache 全关（`8894cdcb` / `bcd8fdd2`）。
+  > CoreMark 的 I+D@76.5 档（`c6b12d95`，rev 1016）**没有重出** —— 它本来就是通过的，
+  > 且 CoreMark 不含"写 CSR 的指令"⇒ 本次修复对它逐位等价（要用新 rev 的话再跑一次
+  > `build_bitstream.ps1 coremark -Cache` + 降频四件套即可）。
 -  **[OK] 本轮新增的调试开关**（都在 `scripts/rtthread/run_sim.ps1`）：
   `-RxTrace` / `-PcTrace` / `-ITrace` / `-TrapTrace` / `-LTrace` / **`-LdChk`**（load 自检
   + 规范化访存事件流 `rtthread_ldtrace.txt`，**别指望靠 trap_tval 猜寄存器，先用它把

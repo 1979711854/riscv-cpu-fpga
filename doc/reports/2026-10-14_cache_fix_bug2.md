@@ -198,6 +198,14 @@ scripts\rtthread\run_sim.ps1 -ICache -LdChk   # load 数据自检 + 规范化事
 * `c10a2478`（rtthread + I+D @76.5）与 `9feaa089`（rtthread + D-only @85）**仍是旧 RTL、
   仍标"勿烧"**；**但它们记录的两条根因都已修掉**。`9feaa089` 另有时序问题
   （CPU 域 −0.177 ns / 13 失败端点），**即使功能修好也塞不进 85 MHz**。
+* **[OK] 新的 Cache 位流已出（2026-10-14 13:48，rev 1019）**：
+  `bitstreams/rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_idcache_76mhz_rev1019_90944754.sbit`
+  —— rtthread + I+D @76.5052 MHz（约定 50 的四件套，**构建后已全部还原**：
+  `RATIO0=13.5` / `UART_DIV=738` / `BOARD_SYSTEM_CLOCK_HZ=85,005,100` / 生产 `mem.hex`）。
+  * 网表自证（约定 46）：`dcache` 1190 / `icache` 1216 / `tag0` 196 ✓；
+  * **时序全过**：`All Constraints Met`，CPU 域 **+0.534 ns / 0 失败端点（18,997）**，
+    hold +0.147，两条 CDC 也 0 失败 ⇒ 全设计 setup/hold 0 失败端点；
+  * **首行自证 `RTL=0x20261019`**，**[!] 尚未上板** —— 这是"Cache 可用"这句话唯一还缺的一步。
 * **生产/交付档继续用 Cache 全关**（五子棋 `8894cdcb` / 跑分 `bcd8fdd2`）—— 本次修复对它们是
   **逐位等价**的（`mem_ready_int` 恒 1），但 RTL 变了 ⇒ 新位流自证 `RTL=0x2026_1019`。
 * 高阶任务① 的答辩口径可**从"会挂、默认关"升级为**："两条功能缺陷（ID/EX 清零门控、
