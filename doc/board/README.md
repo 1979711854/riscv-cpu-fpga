@@ -20,7 +20,37 @@
 > - ⚠️ I+D 的**前一版 `fa957dbd` 板上失败**（含 bug，只有 banner 循环）：
 >   日志 `uart_20261012_010314.txt` / `_010344.txt`
 >
+> **最新一代（2026-10-14 13:59）**：**RT-Thread + I+D Cache @76.5052 MHz，位流 `90944754`（`RTL=0x20261019`）
+> —— 两条根因修完后的第一颗带 Cache 位流，上板串口侧通过**（见本节顶部那节）**。
+>
 > 更早的各代见下方各节与 `doc/reports/2026-10-04_coremark_score.md`。
+
+## 【[OK] RT-Thread + I+D Cache @76.5052 MHz（rev 1019）首次上板 —— 之前确定性挂死的组合，现在通了（2026-10-14 13:59）
+
+日志 `uart_20261014_135935.txt`（抓 27 s / 30 行）。位流
+`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_idcache_76mhz_rev1019_90944754.sbit`（md5 `90944754`）。
+
+**这一颗要验的就是"带 Cache 的 RT-Thread 到底还挂不挂"** —— 同样是 **I+D Cache 全开 @76.5052 MHz**，
+修复前那两颗的表现是：`c10a2478` 死在"AI 第一手后的第一张棋盘快照"（只有一行 `?? turn=WHITE`），
+`9feaa089` 卡在 `[boot] heap = 9368 bytes` 循环重启（banner 打 3 次）。**现在两条线程都起来、
+调度器活过 20 s。**
+
+| 判据 | 实测 |
+|---|---|
+| **版本自证（权威）** | `[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261019` ✓（五子棋侧同句：`FW=GOMOKU RTL=0x20261019`）|
+| 两条线程都起来 | `[boot] gomoku render thread running` + `[boot] gomoku ai thread running` ✓ |
+| 调度器在跑 / render 没独占 CPU | `[hb] alive, uptime 5000 / 10000 / 15000 / 20000 ticks` —— 每 5 s 一条、**单调递增、全程无断** ✓ |
+| 时钟确实是 76.5052 而非 85 | 串口文本在 115200 下**完全可读**（`UART_DIV=664` 只对 76.5 MHz 成立；若真是 85 MHz 会偏 11% ⇒ 乱码）|
+| 还没验的 | **落子/对局**（需按键或"标题页长按 UP"的 AI 自战）、**显示侧**（本板没接显示器）|
+
+* [!] **踩到的坑（已修源码，未重出位流）**：横幅第 10 行打的是 `@85.0051MHz`，而本颗跑 76.5052 MHz
+  —— 因为 `scripts/rtthread/app/main.c` 把主频**写死在字符串里**了（与位流/时钟无关，看着像烧错位流）。
+  已改成从 `BOARD_SYSTEM_CLOCK_HZ` 算（`app/main.c:173` 的 `rt_kprintf`）。**判位流永远看 `RTL=` 那行。**
+* [!] **已知噪声（不是失败）**：`[!] vblank timeout -- video not running` —— 同一句在无 Cache 的
+  `8894cdcb` 日志里也有，机制见下面 T1/G3 那节（1 ms 采样 vs 63 µs 脉冲）。
+* 另有一处 **~11% 的软性偏差**（本次未动）：`scripts/demo/addr_map.h:68` 的 `CPU_HZ` 写死 85,005,100u，
+  它喂 `hw_ticks_per_ms()` ⇒ 76.5 档下 long-press 的 0.6 s 阈值实际约 0.67 s、AI 打印的 `t=…ms` 约低 10%。
+  **纯阈值/显示，不影响功能**；要修得绑到 `BOARD_SYSTEM_CLOCK_HZ`（会同时改裸机五子棋与仿真的去抖口径，需回归）。
 
 ## 【[OK]+[!] RT-Thread T1/G3 双线程五子棋首次上板（2026-10-13 22:46）—— 串口侧全通，显示侧未测
 
