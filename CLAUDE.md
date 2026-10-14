@@ -885,7 +885,9 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     * [!] **被中断的构建会留下 `cpu_top.v` 的 `DCACHE_EN=1` 不还原**（`finally` 没跑到）——
       下次构建前先 `git diff rtl\top\cpu_top.v` 看一眼，否则 `-Cache` 会把 `DCACHE_EN=1` 当"原值"。
 
-56. [!] **`serial_monitor` 日志里的 `?` 不一定是固件打的 `?`**（2026-10-14 实踩）：
+56*. [!] **`serial_monitor` 日志里的 `?` 不一定是固件打的 `?`**（2026-10-14 实踩）
+    （编号说明：本条与下一条都写成 56，历史遗留。**各处文档引用的"约定 56"是下一条**
+    —— ID/EX 清零门控；本条按"串口字节解码"找。）
     `serial_monitor.ps1` 用 `$sp.ReadExisting()` 且**从未设置 `$sp.Encoding`** ⇒ .NET `SerialPort`
     默认 **ASCII 解码，每个 ≥0x80 的字节在日志里一律变成 `?`（0x3F）**。本次挂死现场那行
     `?? turn=WHITE` 的原始字节是 `3F 3F 07 20`（两个高位字节 + BEL +空格）——固件实际发出的是
@@ -911,24 +913,65 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
     * [!] **同类推广：任何"冻结拍更新"的级间寄存器都要问一句"它服务的是哪一级、
       冻结时该保持还是该清"**（同理见约定 47 的快照同源、约定 51 的 mul 使能同源）。
     * 全套证据链与工具见 `doc/reports/2026-10-14_cache_fix_bug1.md`。
-    * [!] **这只是 #1。第二处缺陷（load 返回错数据）仍未修** —— Cache 版位流
-      （`c10a2478` / `9feaa089`）**都是旧 RTL，勿烧**。
+    * 这只是 #1；**#2 见下一条**（已修）。
+
+57. [!] **EX 级的"副作用"必须门控 `mem_ready_int`，与"离开 EX"同拍 —— 不只是级间寄存器**
+    （2026-10-14 实踩 —— **Cache + RT-Thread 挂死的根因 #2**）。
+    **CSR 写是在 EX 级提交的**（约定 21），而"这条指令离开 EX"发生在 `mem_ready_int=1` 的
+    那个沿（`EX/MEM <= ID/EX` 用的就是同一个条件）。两者不同源时，访存冻结那一拍 CSR
+    **已经写进寄存器组**，而这条指令**仍旧停在 EX**（约定 56 的修复正是让级间寄存器在冻结
+    期间保持）⇒ 下一拍 `alu_result = csr_rdata` 拿到的是【写后】的值 ⇒
+    **`csrrw/csrrs/csrrc` 的 `rd` 被写成新值而不是规范要求的旧值**。
+    * 修法：`assign csr_wr_en = csr_wr_en_raw && !trap && mem_ready_int;`，并把送给
+      `csr_file` 的 `.mret()` 改成 `mret_commit && mem_ready_int`（同族：`mret` 的
+      `mstatus.MIE ← MPIE` 也不该在冻结期间重复施加）。重定向仍走 `mret_commit`。
+    * **触发条件极窄**，所以三条基线全都盖不住：要同时有 ①**访存冻结**
+      （`mem_ready_int=0`，无 Cache 时恒 1，只有开 Cache / AMO 才出现）
+      ②一条**写 CSR 且 `rd != x0`** 的指令（读只读 CSR 的 `csrr` 不受影响 —— CoreMark
+      只有这类，所以 I+D 下也不炸）。RT-Thread 的中断入口/出口各有一条
+      `csrrw sp, mscratch, sp`（**rd 就是 sp**）⇒ 冻结撞上它，**sp 不切到中断栈**、
+      处理函数跑在线程栈上，出口那条再把 `mscratch` 写坏 ⇒ 之后每次中断 sp 漂移 ⇒
+      踩坏内核链表 ⇒ `cause=6`（`sw a4,4(a3)`）死循环转储。
+    * **决定性证据**（同一处的"处理函数 C 帧落点"）：无 Cache 金标准 = `0xffec`（中断栈
+      `__rt_rvstack` 顶 `0xfff0`）；`-ICache` 修前 = **`0xb490`（线程栈！）**；修后 = `0xffec` ✓。
+    * 复现/验证：`scripts\rtthread\run_sim.ps1 -DCache -ICache`（修前崩、修后 PASS），
+      四种配置（无Cache/只D/只I/I+D）修后**全部 PASS**。
+    * **⇒ 推广（本轮最该记住的一句）**：不止级间寄存器，**任何"只该发生一次的 EX 级副作用"**
+      （CSR 写、`mret` 的 mstatus、将来的 fence/AMO 提交、外设写选通……）都要问一句
+      "它和谁同拍提交？冻结时会不会被重复/提前施加？" 同族：约定 47（快照选源）、
+      约定 51（mul 使能）、约定 56（级间清零）；`mem_bus.v` 的外设写 one-shot
+      （`bus_first`）也是同一个问题的另一种解法（"只准第一次那拍发生"）。
+    * [!] **诊断方法（可复用）**：先用 `-DLDCHK`（`run_sim.ps1 -LdChk`）把
+      "某条 load 读错了吗"变成可判定问题（影子寄存器与 MEM/WB **同门控**镜像，
+      期望值取 `mem0[addr]` 按 funct3 解包）—— 本次实测 **297,379 条 RAM load 一条不错**，
+      于是"load 返回错数据"被证伪、嫌疑正确挪到"寄存器值/中断路径"。
+      再用**规范化事件流**（`rtthread_ldtrace.txt`，load 记 WB 沿/store 记 MEM 沿、停顿折叠）
+      对拍两份日志定位首处分叉；**注意中断落点本身是随机的**，别把"中断插在不同指令处"当成 bug。
+    * 全套证据链见 `doc/reports/2026-10-14_cache_fix_bug2.md`。
 
 ## 待办
--  **[OK] 2026-10-14 Cache + RT-Thread 挂死的【根因 #1】已修**（约定 56）：
-  `core.v` ID/EX 清零漏门控 `mem_ready_int` 1 行。`DESIGN_REV` → **`0x2026_1018`**。
-  仿真验证：`-ICache` 13 字节挂死 → 完整启动（两线程+心跳）；riscv-tests 默认与
-  `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd` **232,345 一字不差**。
-  详见 `doc/reports/2026-10-14_cache_fix_bug1.md`。
--  **[!] 但还有【第二处】缺陷未修 —— load 返回错数据**（`_timer_remove` 里 `sw 4(a3)` 未对齐
-  trap，cause=6，`tval` 是指令字/字符串而非指针；`-NoEarlyLd` 同样挂、I-only 就复现）。
-  已定位征兆但未定根因，嫌疑：`wb_rdata_snap` 抓拍时机 / 寄存器堆 write-first 旁路冻结多拍 /
-  I-Cache 停顿与 MEM/WB 交互。**⇒ 在此之前 Cache 版位流一律【勿烧】**
-  （`c10a2478` / `9feaa089` 都是旧 RTL）。下一步做法见那份报告 §5。
--  **[!] 本轮新增的调试开关**（都在 `scripts/rtthread/run_sim.ps1`）：
-  `-RxTrace` / `-PcTrace` / `-ITrace` / `-TrapTrace` / `-LTrace`；
+-  **[OK] 2026-10-14 Cache + RT-Thread 挂死的两条根因都【已修】**：
+  * **#1**（约定 56）：`core.v` ID/EX 清零漏门控 `mem_ready_int`，1 行；
+  * **#2**（约定 57）：CSR 写（+`mret`）漏门控 `mem_ready_int`，1 行 ——
+    RT-Thread 的 `csrrw sp, mscratch, sp` 在冻结拍读到写后值 ⇒ sp 不切中断栈 ⇒ 链表被踩坏。
+  `DESIGN_REV` → **`0x2026_1019`**。
+  仿真验证（`-NoBuild`，同一份固件）：**rtthread 四种配置（无 Cache/只D/只I/I+D）全部 PASS**；
+  riscv-tests 默认与 `-DCache -ICache -EarlyLd` 均 **49/1/0**；CoreMark `-Iter 1 -EarlyLd`
+  **232,345 一字不差**；`run_own_tests -DCache -ICache -EarlyLd` 2/0。
+  详见 `doc/reports/2026-10-14_cache_fix_bug1.md` 与 `..._bug2.md`。
+-  **[!] 但 Cache 版位流仍需重出**：`c10a2478`（I+D@76.5）/ `9feaa089`（D-only@85）都是
+  **rev 1017 的旧 RTL，仍【勿烧】**。功能已修，**缺的是 rev ≥ 0x2026_1019 的位流 + 上板实测**；
+  `9feaa089` 那颗还叠了时序问题（CPU 域 −0.177 ns / 13 失败端点）⇒ 即使功能修好也塞不进 85 MHz。
+  **走 `-Cache` + 76.5052 MHz**（约定 50 的四件套：`RATIO0=15.0` → `ip_generate` →
+  `UART_DIV=664` → rtthread 的 `BOARD_SYSTEM_CLOCK_HZ=76,505,200`），**构建后全部还原**。
+-  **[OK] 本轮新增的调试开关**（都在 `scripts/rtthread/run_sim.ps1`）：
+  `-RxTrace` / `-PcTrace` / `-ITrace` / `-TrapTrace` / `-LTrace` / **`-LdChk`**（load 自检
+  + 规范化访存事件流 `rtthread_ldtrace.txt`，**别指望靠 trap_tval 猜寄存器，先用它把
+  "load 读错了吗"判死**）；
   两个对拍脚本 `scripts/pctrace_diff.py`（PC 流）与 `scripts/itrace_stream_diff.py`
   （指令流，**配对感知，推荐**——`pc` 流在双发射下会因配对差异假分叉）。
+  > [!] 规范化事件流对拍时记住：**中断落在哪条指令上是随机的**（无害），别把
+  > "中断插在不同指令处"当成 bug；**但"被冻结的中断"是有害的**。
 -  **[OK] 2026-10-12 I+D 板上失败的根因已定位并修复**（`core.v` 的 `wb_rdata_snap`
   停顿快照取错流水级，一行；见约定 47 与 `doc/reports/2026-10-12_icache_wb_snap_fix.md`）。
   **[OK] 位流已出（2026-10-12 晚）**：85 MHz **仍不收敛**（−1.143 / 343 端点），

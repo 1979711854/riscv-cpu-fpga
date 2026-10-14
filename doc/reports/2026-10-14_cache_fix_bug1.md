@@ -1,5 +1,12 @@
 # Cache + RT-Thread 挂死 —— 根因 #1 已修（2026-10-14）
 
+> **[!] 2026-10-14 补：本文 §5 的"#2 仍未修"已作废 —— 根因 #2 已定位并修复。**
+> #2 不是"load 返回错数据"（**已用 `-DLdChk` 证伪：297,379 条 RAM load 一条不错**），
+> 而是 **CSR 写在 EX 级提交时漏了 `mem_ready_int` 门控**，RT-Thread 的
+> `csrrw sp, mscratch, sp` 在冻结拍读到【写后】值 ⇒ sp 不切中断栈 ⇒ 内核链表被踩坏。
+> 全文见 **`doc/reports/2026-10-14_cache_fix_bug2.md`**（约定 57）。
+> `DESIGN_REV` 现为 **`0x2026_1019`**；rtthread 四种 Cache 配置**全部 PASS**。
+
 > 接 `2026-10-14_cache_rtthread_sim_bisect.md`（归因：两个 Cache 都能打挂 RT-Thread 固件、
 > 无 Cache 是 PASS ⇒ 功能 bug、与时序无关）。本文是**修复与验证**记录。
 >

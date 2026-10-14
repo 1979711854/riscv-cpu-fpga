@@ -1,5 +1,11 @@
 # RT-Thread + Cache 上板挂死 —— 仿真归因（2026-10-14）
 
+> **[!] 2026-10-14 晚补：本文 §4 的"最强怀疑（未证实）"（Cache 没有重定向输入）已被证伪。**
+> 真正的两条根因都在 `core.v` 的 `mem_ready_int` 门控上：
+> **#1** ID/EX 清零（约定 56，`..._bug1.md`）、**#2** CSR 写 / `mret`（约定 57，`..._bug2.md`）。
+> "load 返回错数据"也已用 `-DLdChk` 证伪（297,379 条 RAM load 一条不错）。
+> 现状：`DESIGN_REV=0x2026_1019`，rtthread **四种 Cache 配置全部 PASS**。
+
 > 接 `2026-10-13_session_state.md`。上一轮（`4055052`）把 **`c10a2478`
 > （rtthread + I+D Cache @76.5052 MHz）上板确定性挂死**记录在案，并给 `tb_rtthread`
 > 补上了 Cache 开关（约定 55）。**本文是补完开关之后的归因结果。**

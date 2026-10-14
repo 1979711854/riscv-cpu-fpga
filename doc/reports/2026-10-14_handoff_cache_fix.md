@@ -1,5 +1,15 @@
 # 交接：Cache + RT-Thread 挂死 —— 根因 #1 已修，根因 #2 待修（2026-10-14）
 
+> **[!] 2026-10-14 晚间补：本文已过期 —— #2 也已修完。**
+> #2 的真身**不是**"load 返回错数据"（`-DLdChk` 证伪：297,379 条 RAM load 一条不错），
+> 而是 **CSR 写（EX 级提交）漏 `mem_ready_int` 门控**：`csrrw rd, csr, rs1` 在冻结拍
+> 读到【写后】的 `csr_rdata`。RT-Thread 的 `csrrw sp, mscratch, sp`（rd=sp）撞上它 ⇒
+> sp 不切中断栈 ⇒ `mscratch` 被写坏 ⇒ 内核链表被踩坏 ⇒ `cause=6` 死循环转储。
+> 全文 **`doc/reports/2026-10-14_cache_fix_bug2.md`**（约定 57）。`DESIGN_REV=0x2026_1019`。
+> 仿真：rtthread **四种 Cache 配置全 PASS**，四条基线逐位不变。
+> **剩余唯一动作 = 重出 rev ≥ 1019 的 Cache 位流并上板**（见 §3 与 CLAUDE.md 待办）。
+> 下面 §3/§5 里"#2 待修""Cache 仍不可交付"的说法按此更新；其余（工具、踩坑、口径）仍有效。
+>
 > 读者：下一个接手 CPU/RTL 线的人（或我自己开新会话）。
 > 本文**自包含**：只看这一份 + `CLAUDE.md` 即可开工。
 > 上一轮的归因见 `doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`；
