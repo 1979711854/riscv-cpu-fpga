@@ -26,6 +26,7 @@
 #include <rthw.h>
 
 #include "game.h"          /* game_t / game_ai_* / ai_stats_t（scripts/gomoku）*/
+#include "board.h"         /* BOARD_SYSTEM_CLOCK_HZ —— 横幅里的主频从它来（别写死）*/
 
 /* 五子棋的应用主体。**不叫 main** —— 见 scripts/gomoku/main_entry.c 的文件头：
  * 五子棋要同时支持裸机与 RT-Thread 两种宿主，两个 main() 会撞。
@@ -170,7 +171,13 @@ int main(void)
         rt_kprintf("[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x%x\n", (unsigned)rev);
     }
     rt_kprintf("========================================\n");
-    rt_kprintf(" RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz\n");
+    /* [!] 主频【不许写死】（2026-10-14 实踩）：同一份固件要装进 85.0051 / 76.5052
+     *     两种位流，写死的那份在另一种上会打出【错的主频】—— 看起来像烧错了位流。
+     *     实测：76.5052MHz 的 rev1019 位流打出 "@85.0051MHz"。
+     *     **位流的权威自证永远是上面那行 `RTL=`（读 mimpid），不是这行。** */
+    rt_kprintf(" RV32IMA + RT-Thread + GOMOKU(G3) @%d.%04dMHz\n",
+               (int)(BOARD_SYSTEM_CLOCK_HZ / 1000000u),
+               (int)((BOARD_SYSTEM_CLOCK_HZ % 1000000u) / 100u));
     rt_kprintf("========================================\n");
     rt_kprintf("[boot] tick         = %d\n", rt_tick_get());
     rt_kprintf("[boot] tick period  = %d Hz\n", RT_TICK_PER_SECOND);
