@@ -77,7 +77,7 @@ Setup Summary，**只看 `clk|u_pll/u_gpll/CLKOUT0_Inferred → 自己` 那一�
 
 | # | 任务 | 优先级 | 说明 |
 |---|---|---|---|
-| **Cache 挂死** | **I/D Cache 在 RT-Thread 五子棋固件上会挂** —— 已仿真复现，待定位 | **P0（缺陷）** | 见 §3.1，**这是"已交付功能里的正确性 bug"，排在最前** |
+| **Cache 挂死** | **I/D Cache 在 RT-Thread 五子棋固件上会挂** —— 已仿真复现，**[OK] 2026-10-14 已定位修复并上板验证（见 §3.1）** | ~~P0（缺陷）~~ 已完成 | 见 §3.1，**这是"已交付功能里的正确性 bug"，排在最前** |
 | **覆盖 A** | `tb_amo_cpu.S` 转 tohost 判分 + 从 `$skipThese` 摘出 + "弄坏 `amo_unit` 能 FAIL" 验证 | **P0（热身）** | 低风险、验收明确，先做 |
 | **覆盖 B** | `sim/tests/hi_fetch.S`（代码 >32 KB 取指）+ "把 `imem_addr2` 截位改回去能 FAIL" 验证 | **P0（热身）** | 同上 |
 | **B1-RAS** | 返回地址栈（真正拿分的） | **P0** | 见 §5 |
@@ -85,7 +85,12 @@ Setup Summary，**只看 `clk|u_pll/u_gpll/CLKOUT0_Inferred → 自己` 那一�
 
 **顺序：覆盖 A/B → RAS → BTB。**
 
-### 3.1 [P0 · 缺陷] Cache 在 RT-Thread 固件上会挂（**先修这个**）
+### 3.1 [P0 · 缺陷] Cache 在 RT-Thread 固件上会挂（**先修这个**）—— [OK] **本条已完成（2026-10-14 修完并上板验证）**
+
+> [!] **后续读者先看这里**：两条根因都已定位修复（**约定 56** = ID/EX 清零漏 `mem_ready_int` 门控；**约定 57** = CSR 写 / `mret` 副作用漏同门控），`DESIGN_REV` → `0x2026_1019`。
+> 证据与结论：`doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`（归因）→ `..._cache_fix_bug1.md`（#1）→ `..._cache_fix_bug2.md`（#2）；
+> **rtthread 四种 Cache 配置仿真全 PASS**，带 Cache 的位流 `90944754` / `53b81dfe` 已上板跑通（接屏下完一局判出 `WHITE wins`）。
+> **下面的复现步骤与判据仍是有效的定位资料**，但"待定位"的结论已过期。
 
 2026-10-14 已用仿真**完整复现**（100 MHz，时序不参与，所以是纯功能 bug）：
 
