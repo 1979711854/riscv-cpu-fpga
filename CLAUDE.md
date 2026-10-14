@@ -1005,8 +1005,14 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
   `b_ready = 1'b1` 是硬连线（`rtl/mem/unified_mem.v:80`）⇒ `mem_ready_int ≡ !amo_hold`**；
   两个交付固件（跑分档 `-march=rv32im_zicsr`、rtthread 档实测 0 条 AMO/lr/sc）**都不含 AMO**
   ⇒ `mem_ready_int ≡ 1` ⇒ 两处修复恒为真 ⇒ **逐位等价**。
-  **但它们的 `mimpid` 是 `0x20261017`**，与"当前 RTL=rev1019"的口径对不上。
-  要统一就重出（各约 10 分钟，85 MHz 不降频；重出后分数/CRC 应逐位相同）。
+  **⚠️ 但 2026-10-14 真的重出了两颗 85 MHz 生产档（`aad1e2ac` CoreMark / `382ce876` rtthread），
+  结果【时序不过】：CPU 域 −0.153 ns / 16 失败端点（两次独立运行逐位相同 ⇒ 确定性），
+  而 rev1017 的 `bcd8fdd2` 是 +0.068 / 0** ⇒ **生产/交付档【继续用 rev1017**（`bcd8fdd2` /
+  `8894cdcb`）】，不要换成 rev1019**；两颗重出件已按 `_wns-0.153ns_` 命名归档、**勿烧**。
+  成因：那两处 AND 加在 `mem_ready_int` 这条**本来就很晚**的使能信号上（ID/EX、EX/MEM、
+  MEM/WB、乘法器共用），把只剩 0.068 ns 的余量吃掉了 ⇒ 要用 rev1019 的 85 MHz 档，
+  得先单独做一笔"使能路径时序优化"（不在本轮范围）。
+  **⇒ 结论：需要这两处修复的配置（有停顿 = 带 Cache）恰好就是已修好并上板验证的那颗（`53b81dfe`）。**
 -  **[!] `vblank timeout` 的性质（2026-10-14 查清）**：它**不是显示坏了**（用户已接屏下棋），
   而是**"vblank 等待变成了一次概率事件"**：RT-Thread 侧 `video_vblank_yield()` 是 `mdelay(1)`
   ⇒ 采样周期 ≈1 ms，而 `rtl/video/video_core.v:139` 的状态位是 **62.7 µs** 的 vsync 脉冲

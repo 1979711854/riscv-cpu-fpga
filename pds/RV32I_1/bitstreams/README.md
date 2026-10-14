@@ -2,21 +2,35 @@
 
 > `.sbit` 被 `.gitignore` 排除（9 MB/个）。**别人 clone 下来一个都没有，必须自己综合。**
 
-> **[!] rev1017 的老位流还要不要重出？（2026-10-14 定论）**
+> **[!] rev1017 的老位流要不要重出？（2026-10-14 实测定论：**功能上不必，时序上不能**）**
 > `rev1017 → rev1019` 的 RTL 差异只有两处**门控**（约定 56 的 ID/EX 清零、约定 57 的 CSR 写/mret，
 > 都在 `rtl/core/core.v`；`rtl/mem` / `rtl/bus` / `rtl/video` **一行未动**）。
 > 而 **Cache 全关时 `ram_ready = b_ready = 1'b1`（`rtl/mem/unified_mem.v:80` 硬连线）**
 > ⇒ `mem_ready_int ≡ !amo_hold`；**两个交付固件都不含任何 AMO/lr/sc**
 > （跑分档 `-march=rv32im_zicsr`，编译器根本发不出；rtthread 档实测 ELF 里 0 条，原子走软实现）
 > ⇒ `amo_hold` 永不成立 ⇒ **`mem_ready_int ≡ 1` ⇒ 两处修复的 `&& mem_ready_int` 因子恒真
-> ⇒ 逐位等价**。所以：
-> * **`bcd8fdd2` / `8894cdcb`（Cache 全关交付档）不必为功能重出**，仍是有效交付件；
-> * **[!] 但它们的 `mimpid` 读出 `0x20261017`** —— 报告/答辩若写"当前 RTL = rev1019"，口径会对不上。
->   要统一就重出一遍（各约 10 分钟，85 MHz 不用降频）；**重出后分数/CRC 应逐位相同**（本身就是无副作用的证据）。
-> * 带 Cache 的档（`c10a2478`/`9feaa089`）**必须重出**，已重出见下表 rev1019 两颗。
+> ⇒ 功能逐位等价**。
+>
+> **[!] 但 2026-10-14 真的重出了两颗 85 MHz 生产档，结果【时序不过】**：
+> | 重出件 | md5 | CPU 域 `u_pll→u_pll` | 失败端点 | 结论 |
+> |---|---|---|---|---|
+> | CoreMark @85.0051（ITER=4280） | `aad1e2ac` | **−0.153 ns** | **16 / 16,581** | `Some Constraints Violated` ✗ |
+> | rtthread 五子棋 @85.0051 | `382ce876` | **−0.153 ns** | **16 / 16,581** | 同上（两次独立运行**逐位相同** ⇒ 确定性，不是 8-seed 抖动）|
+> | 对照：rev1017 的 `bcd8fdd2` | — | **+0.068 ns** | **0 / 17,216** | 达标（且已板级验证 365.93 分）|
+>
+> ⇒ **结论：生产/交付档【继续用 rev1017 的 `bcd8fdd2` / `8894cdcb` 】，不要换成 rev1019。**
+> 两颗 rev1019 的 85 MHz 位流已按 `_wns-0.153ns_` 命名归档，**只作"功能等价"的证据，勿烧**。
+> 成因（供 CPU 线参考）：那两处 AND 加在 `mem_ready_int` 这条**本来就很晚**的信号上（它同时是
+> ID/EX、EX/MEM、MEM/WB、乘法器的使能）⇒ 扇出/连线变差，把只剩 0.068 ns 的余量吃掉了。
+> 想真把 85 MHz 收敛回来，要先解决这条使能路径（例如给它在源头加一级缓冲/寄存器），
+> 那是一笔**独立的时序优化账**，不是顺手能做的。
+> * **带 Cache 的档（`c10a2478`/`9feaa089`）已经重出且达标**（76.5052 MHz，CPU 域 **+0.534 ns / 0**）✓
+>   —— 也就是说：**需要这两处修复的那个配置（有停顿），恰好就是已经修好并上板验证的那一颗。**
 
 | 文件 | 内容 | md5 |
 |---|---|---|
+| **`coremark_dual_aext_ms_earlyld_a1_85mhz_rev1019_wns-0.153ns_aad1e2ac.sbit`** | **[X] rev1019 的 CoreMark 生产档重出 —— 【时序不过，勿烧】**（2026-10-14 15:04 综合，md5 `aad1e2ac`；ITER=4280，脚本期望 `Total ticks ≈ 994,436,600` → 11.7 s）：`DCACHE_EN=ICACHE_EN=0`、85.0051 MHz（`RATIO0=13.5`/`UART_DIV=738`）。网表自证 `dcache` **0** / `icache` **0** / `tag0` **0** ✓（Cache 全关口径正确）。**CPU 域 `u_pll→u_pll` −0.153 ns / 16 失败端点（16,581）⇒ `Design Summary : Some Constraints Violated`**（对照 `bcd8fdd2` = +0.068 / 0）⇒ **不作交付件**，只为"rev1019 与 rev1017 功能等价"留证；分数**未上板验证**，别引用 | `aad1e2ac` |
+| **`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1019_wns-0.153ns_382ce876.sbit`** | **[X] 同上的 rtthread 五子棋版 —— 【时序不过，勿烧】**（2026-10-14 15:24 综合，md5 `382ce876`）：固件 `mem.hex` **20274 行 / 10137 字**（85.0051 MHz 口径；注意与 76.5 MHz 档的 10138 字不同 —— `build_bitstream.ps1` 的 `expectLines` 已改成接受这两个值）。**CPU 域 −0.153 ns / 16 失败端点**，与上面那颗**逐位相同**（两次独立运行 ⇒ 确定性结果，不是 8-seed 抖动）。**交付继续用 `8894cdcb`** | `382ce876` |
 | **`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1017_8894cdcb.sbit`** | **[[OK]+[!]] 已上板（2026-10-13 22:46，未接显示屏）—— RT-Thread 版五子棋（任务 T1/G3：render 高优 + AI 低优两条线程）**：双发射 + `EARLY_LD` + A1 @ **85.0051 MHz**，`DEBUG_LED=1` ⇒ **led[0]=pll_locked / led[1]=video_locked（HDMI 黑屏先看这颗）/ led[2]=done 本变体不会亮，别误判**。固件来自 `scripts/rtthread/`（**非 coremark**，别被 `generate_bitstream\cpu_top_board.sbit` 这个固定名骗了）：静态 **51,193 / 61,440 B（83.3%）**、堆余 9,368 B，串口 banner `[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261017`。**RTL 与跑分版 `bcd8fdd2` 逐位相同**（只换 BRAM 初始化）⇒ CPU 域 **WNS +0.068 ns / 失败端点 0 / 17,216**，与已板级验证过的 `bcd8fdd2` **完全一致**；`clk→video −1.137`(21)、`video→clk −0.081`(1) 仍是跨域建模假象。**已验**：x86 单测 138 项 / 独立复核 28 项 / RV32 交叉编译无警告 / `tb_rtthread` 仿真 `=== PASS ===`；**板上（2026-10-13 22:46，日志 `doc/board/uart_20261013_224652.txt`）**：两条线程都起来、`[hb]` 全程无断、**两线程邮箱往返真通**（`AI moved, nodes=10592 depth=6 t=5068ms` —— RT-Thread 固件链的是异步 pump，子落得下来即该链走通），对局/按键/轮次均正确。**[!] 遗留**：串口有 `[!] vblank timeout`（23 份裸机日志都没有）—— 新加的 `video_vblank_yield()` 用 1 ms 采样去看 RTL 里 **63 µs** 的 vsync 脉冲，粒度差 16 倍；显示侧未测，判据与机制见 `doc/board/README.md` 该节 | `8894cdcb` |
 | **`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_idcache_76mhz_rev1017_c10a2478.sbit`** | **[X] I+D Cache 全开 @76.5052 MHz + RT-Thread 五子棋 —— 已构建/已归档，但【上板确定性挂死，勿烧】**（2026-10-14 00:08 综合，md5 `c10a2478`）：`DCACHE_EN=1`/`ICACHE_EN=1`，`RATIO0=15.0`、`UART_DIV=664`、`board.h` 的 `BOARD_SYSTEM_CLOCK_HZ=76,505,200`（rtthread 固件按约定 50 四件套联动，**构建后已全部还原**）。网表自证（约定 46）：`dcache` 1188 / `icache` 1208 / `tag0` 205 ✓。**时序是历次 I+D 里最好的一次**：CPU 域 `u_pll→u_pll` **+0.904 ns / 0 失败端点（16,560）**，且 76.5 MHz 下两条 CDC 也收敛（+6.347 / +8.558，0 失败）⇒ **全设计 0 失败端点**（对比 `da8ffd31`：CPU 域 +0.015、8-seed 散布 −0.596…+0.015）。**[X] 上板失败（00:08:50 / 00:10:05 / 00:28:30 三次抓取逐字节相同）**：只有一行 `?? turn=WHITE`——原始字节 `3F 3F 07 20`，`serial_monitor` 按 ASCII 解码把**固件实发的 2 个 ≥0x80 字节**显示成了 `??`（约定 56）；程序在 **AI 第一手之后的第一张棋盘快照**处打出损坏数据即挂死（18~29 s 内无 `[hb]` 心跳）。**同一固件在无 Cache 位流 `8894cdcb` 上完全正常**（23:43 日志）⇒ 疑 I+D + `EARLY_LD` + 中断/上下文切换路径上的 RTL bug（约定 47 同族；该组合此前**没有任何仿真覆盖**——`rtthread/run_sim.ps1` 编 `tb_rtthread` 不带任何 `-D` 旗标，见约定 55）。**[OK] 下一步已做完（2026-10-14）：`tb_rtthread` 的 Cache 开关已补（约定 55），仿真复现成功 —— `-DCache`/`-ICache`/`-DCache -ICache` 三种都能打挂这条固件，而无 Cache 是 PASS ⇒ 确认是【功能 bug，与时序无关】，且【两个 Cache 都能打挂它】。归因全文见 `doc/reports/2026-10-14_cache_rtthread_sim_bisect.md`。**[!] 2026-10-14 晚更新：两条根因（约定 56 的 ID/EX 清零门控、约定 57 的 CSR 写门控）都已修，
 同配置仿真 `-DCache -ICache` 已 **PASS**；但本 `.sbit` 是 **rev 1017 的旧 RTL** ⇒

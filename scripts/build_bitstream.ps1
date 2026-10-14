@@ -132,12 +132,17 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #     [!] 这个数必须用【非 -Sim】的 `rtthread\build.ps1 -Firmware` 量（本脚本正是这么调的）
 #     —— `-Sim` 会改 INPUT_*/GOMOKU_AI_LEVEL 等常量，.text 差 8 字节、行数差 4
 #     （20266 vs 20270）。拿仿真口径的数来填，守卫必挂。
-$expectLines = @{ coremark = 17104; demo = 326; rtthread = 20276; video = 758; gomoku = 11268 }
-$expectDesc  = @{ coremark = "8552 字"; demo = "163 字"; rtthread = "10138 字"; video = "379 字"; gomoku = "5634 字" }
-# [!] 2026-10-14 更新 rtthread 的期望值：20270（10135 字）→ 20276（10138 字）。
-#     原因 = 固件源码改了（横幅主频从写死的字面量改成从 BOARD_SYSTEM_CLOCK_HZ 算，
-#     app/main.c 多了几行 printf 参数 ⇒ .text 40355→40361 B，多 3 个字）。
-#     这个守卫拦住了一次"源码改了但没意识到固件变了"的构建 —— **别顺手把守卫放宽**。
+# [!] 2026-10-14 更新 rtthread 的期望值，并改成【一组可接受值】：固件大小**取决于时钟口径**
+#     （board.h 的 BOARD_SYSTEM_CLOCK_HZ 参与 tick/延时换算，会改变 .text）：
+#       85.0051 MHz ⇒ 20274 行（10137 字）   ← 生产档
+#       76.5052 MHz ⇒ 20276 行（10138 字）   ← 带 Cache 的降频档
+#     另：横幅主频从写死的字面量改成从宏算（app/main.c）也让 .text 从 10135 → 10137/10138 字。
+#     这个守卫拦下过两次"源码/口径变了但没意识到固件变了"的构建 —— **别顺手把守卫放宽到任意值**。
+$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(20274, 20276);
+                  video = @(758); gomoku = @(11268) }
+$expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
+                  rtthread = "10137 字（85.0051MHz）/ 10138 字（76.5052MHz）";
+                  video = "379 字"; gomoku = "5634 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -289,8 +294,8 @@ try {
 
     # ---- 2b) 粗筛：字数是否落在预期附近（挡住"根本是别的程序"）----
     $lines = (Get-Content $memHex).Count
-    if ($lines -ne $expectLines[$Variant]) {
-        Write-Host "!! mem.hex 行数与预期不符：期望 $($expectLines[$Variant])（$($expectDesc[$Variant])），实际 $lines" -ForegroundColor Yellow
+    if ($expectLines[$Variant] -notcontains $lines) {
+        Write-Host "!! mem.hex 行数与预期不符：期望 $(($expectLines[$Variant] | Sort-Object) -join ' 或 ')（$($expectDesc[$Variant])），实际 $lines" -ForegroundColor Yellow
         Write-Host "   若本次确实改过编译期常量（EE_TICKS_PER_SEC / ITER 等），属正常，更新本脚本的 expectLines 即可。" -ForegroundColor Yellow
         Write-Host "   否则说明固件不对 —— 停下查清楚再往下走。" -ForegroundColor Yellow
         exit 1

@@ -210,6 +210,12 @@ scripts\rtthread\run_sim.ps1 -ICache -LdChk   # load 数据自检 + 规范化事
     逐位相同**（网表 `dcache`1190/`icache`1216/`tag0`196、CPU 域 +0.534 ns / 0 失败端点 18,997、
     `All Constraints Met` 全都一致），**只换了固件**（横幅主频改成从 `BOARD_SYSTEM_CLOCK_HZ` 算）
     ⇒ 这次会打 `@76.5052MHz`。**推荐烧这颗。**
+  * **[!] 顺带做了个实验：把 85 MHz 生产档（Cache 全关）也用 rev1019 重出** ——
+    两颗（CoreMark `aad1e2ac` / rtthread `382ce876`，两次独立运行）**都是
+    CPU 域 −0.153 ns / 16 失败端点**（`Some Constraints Violated`），而 rev1017 的
+    `bcd8fdd2` 是 **+0.068 / 0** ⇒ **功能虽然逐位等价（§8 那条证明），但时序上换不过去**
+    （那两处 AND 加在 `mem_ready_int` 这条本来就很晚的使能信号上）。
+    **⇒ 生产/交付档继续用 rev1017；需要这两处修复的"带 Cache"档就是已修好并上板验证的 `53b81dfe`。**
 * **[OK] 上板实测（`doc/board/uart_20261014_135935.txt`）**：`RTL=0x20261019`（RT-Thread 侧与五子棋侧
   都自证）+ render/AI **两条线程都起来** + `[hb] alive, uptime 5000…20000 ticks` **每 5 s 一条、
   单调递增、全程无断** ⇒ **"带 Cache 必挂"的组合现在通了**（对照修复前：`c10a2478` 死在 AI 第一手后的
