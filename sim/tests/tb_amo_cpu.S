@@ -5,17 +5,26 @@
  * 「译码→ 前递 → 流水线冻结 → MEM 读写 → 写回寄存器」整条链路。
  *
  * 为什么必须有这个：单元级全过≠ 集成正确。AMO 特别容易在两个地方出错：
- *   1) rs2 的前递 —— "amoadd a0,a1,a2" 里 a2 刚被上一条写过，
+ *   1) rs2 的前递 —— "amoadd.w a0,a1,a2" 里 a2 刚被上一条写过，
  *      若 AMO 的 rs2 没走前递网，会读到陈旧值；
  *   2) 流水线冻结 —— amo_stall 期间前端的取指/重定向必须被正确抑制，
  *      否则会重复取指或漏写。
  *
- * 判据：把结果写进 UART(0xFFFC)，测试台逐字节比对。
+ * 判分用 riscv-tests 的 tohost 机制（sim/tb_riscv.v 已支持）：
+ *   RVTEST_PASS 写 tohost=1；失败分支把 TESTNUM(=N) 报上去，测试台打印
+ *   `=== FAIL (testnum N) ===`。11 个失败分支的 N 按原错误码 0xE1..0xEB 顺序映射。
+ *
+ * [!] scratch 用 0x2000/0x2010/0x2020/0x2030 —— 链接脚本把 .text.init 放 0x0、
+ *     .tohost 放 0x1000、.text 段为空 ⇒ 0x2000 空闲。前提是本测试代码 < 8KB
+ *     （当前约 1KB）。若将来代码膨胀越过 0x2000，会踩到 scratch，须一并挪址。
+ *
+ * 汇编方式见 scripts/run_own_tests.ps1
  * ==========================================================================*/
-    .section .text.init
-    .globl _start
-_start:
-    li      sp, 0x8000
+#include "encoding.h"
+#include "riscv_test.h"
+#include "test_macros.h"
+
+RVTEST_CODE_BEGIN
 
     # ============================================================
     # t0 = 计数器（AMO 最典型的用法：多线程递增同一个变量）
@@ -121,46 +130,46 @@ amo_loop:
     # ============================================================
     # 全部通过
     # ============================================================
-    li      a0, 0xAC              # 'PASS' 的首字节标记
-    j       report
+    RVTEST_PASS
 
 fail_amoadd:
-    li      a0, 0xE1
-    j       report
+    li      TESTNUM, 1
+    j       fail
 fail_aswap:
-    li      a0, 0xE2
-    j       report
+    li      TESTNUM, 2
+    j       fail
 fail_chain:
-    li      a0, 0xE3
-    j       report
+    li      TESTNUM, 3
+    j       fail
 fail_maxu:
-    li      a0, 0xE4
-    j       report
+    li      TESTNUM, 4
+    j       fail
 fail_max:
-    li      a0, 0xE5
-    j       report
+    li      TESTNUM, 5
+    j       fail
 fail_lr:
-    li      a0, 0xE6
-    j       report
+    li      TESTNUM, 6
+    j       fail
 fail_sc:
-    li      a0, 0xE7
-    j       report
+    li      TESTNUM, 7
+    j       fail
 fail_sc_mem:
-    li      a0, 0xE8
-    j       report
+    li      TESTNUM, 8
+    j       fail
 fail_sc_noq:
-    li      a0, 0xE9
-    j       report
+    li      TESTNUM, 9
+    j       fail
 fail_mix:
-    li      a0, 0xEA
-    j       report
+    li      TESTNUM, 10
+    j       fail
 fail_mix2:
-    li      a0, 0xEB
-    j       report
+    li      TESTNUM, 11
+    j       fail
 
-report:
-    li      t0, 0xFFFC            # UART
-    sb      a0, 0(t0)
-    li      t0, 0xFFF8            # done
-    sw      x0, 0(t0)
-1:  j       1b
+fail:
+    RVTEST_FAIL
+
+RVTEST_CODE_END
+
+RVTEST_DATA_BEGIN
+RVTEST_DATA_END

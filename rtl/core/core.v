@@ -12,7 +12,14 @@ module core #(
     //     紧跟其后的 load-use 停顿；0 = 逐位回退到旧行为（load 数据在 WB 才到）。
     // 只有"基址在 ID 级拿得到 + 地址落在 RAM 段 + 紧前不是 store/AMO"的 load
     // 才走快通路，其余退回旧通路（有停顿，但正确）—— 判据见 ld_fast 那一段。
-    parameter EARLY_LD = 0
+    parameter EARLY_LD = 0,
+
+    // ---- [B1-BTB] 分支目标缓冲（赛题点名项）----
+    // 1 = 开；0 = 关（逐位回退成 RAS-only 的行为）。
+    // 只预测【间接跳转 jalr】的目标（条件分支/jal 的目标 PC+imm 由 p_target 现算已正确）。
+    // 为什么给开关：BTB 要新增一条"PC 索引的表读"进取指路径，可能吃时序余量；
+    //   若综合后 CPU 域 WNS 变负、或收益为负，就把它默认关掉（v10 §6.5）。
+    parameter BTB_EN = 1
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -141,6 +148,10 @@ module core #(
     reg        id_ex_reg_write, id_ex_alu_a_sel, id_ex_alu_b_sel, id_ex_mem_read, id_ex_mem_write;
     reg        id_ex_branch, id_ex_jump, id_ex_jump_reg;
     reg        id_ex_pred_taken;   // 该指令在 ID 级是否【实际发生过】预测重定向
+    // [B1-RAS / v10 §7] 该指令被预测时所用的【目标地址】。仅当 id_ex_pred_taken=1 时有意义，
+    //   用于 EX 级校验"预测目标是否正确"：RAS 预测 ret 目标一旦错（栈顶不是真正链接值），
+    //   靠它冲刷纠正；对 branch/jal 它恒等于 ex_target（同一个 pc+imm）⇒ 不改变原行为。
+    reg [31:0] id_ex_pred_target;
     // ID/EX 里是否真的有一条指令（不是气泡）。
     // [重点] 中断受理必须看它：否则在"上一条指令刚重定向、ID/EX 已清空"的那一拍，
     //   若此时 MIE 恰好为 1（例如 mret 刚把 MIE 从 MPIE 恢复），中断会被受理，
@@ -364,6 +375,7 @@ module core #(
     //   【下一组取指】，比 IF/ID 里这两条指令年轻一拍，用它收 lane B 会错位。
     reg        if_id_pair;
     reg        if_id_pred_taken;  // [阶段1] 到达级预测结果随指令进 IF/ID（EX 级判误用）
+    reg [31:0] if_id_pred_target; // [B1-RAS] 到达级那次预测所用的目标（随 pred_taken 一起带进 EX）
 
     // IF/ID 里是否是一条【真指令】（而不是冲刷或取指填充期留下的气泡）。
     // 判据 `|imem_rd` 与"全零字按气泡处理"的约定一致 —— 0x00000000 既不是
@@ -502,6 +514,42 @@ module core #(
     reg [1:0]  bht_ctr  [0:255];
     reg [255:0] bht_valid;
 
+    // ================= [B1-RAS] 返回地址栈 =================
+    // 目的：让 `ret`（= jalr x0,0(x1|x5)）也能在【到达级】当场拿到目标并重定向，
+    //   不再走"EX 级才发现要跳"那条要付 2~3 拍气泡的冲刷路径。
+    //   `ret` 是调用密集代码里最常见、也最贵的跳转；CoreMark 里 jalr 全部是 ret。
+    //
+    // 存储：16 项返回地址栈。push 在 EX 级（call 提交那拍写 id_ex_pc+4），
+    //   pop/读在到达级（ret 到达级直接读栈顶当预测目标）。
+    //   [!] 到达级读 vs EX 写是【同一拍】的寄存器读写——call 紧邻 ret（相隔 1 条）时
+    //   ret 读到的是 call 进 EX 之前的值（上一层），预测错 ⇒ 被 §7 目标校验冲刷纠正。
+    //   这是"EX 更新、到达级读"的固有属性，只损失这次预测、不影响正确性。
+    //
+    // 精度：v10 §5 实测 8 项与 16 项预测命中率都是 99.93%（CoreMark），
+    //   取 16 是为了防 RT-Thread 那种更深的调用嵌套。溢出时饱和丢弃 push（罕见）。
+    localparam integer RAS_DEPTH = 16;
+    reg [31:0] ras_mem [0:RAS_DEPTH-1];
+    reg [4:0]  ras_sp;                                  // 0..RAS_DEPTH
+    wire       ras_empty = (ras_sp == 5'd0);
+    // 栈顶 = ras_mem[ras_sp-1]。sp=0 时 [3:0]-1 回绕到 15，但被 ras_empty 挡掉，语义无碍。
+    // sp=RAS_DEPTH 时 [3:0]=0，0-1 回绕到 15 —— 正好是最后 push 的那一项。
+    wire [31:0] ras_top = ras_mem[ras_sp[3:0] - 4'd1];
+
+    // ================= [B1-BTB] 分支目标缓冲 =================
+    // 目的：给【间接跳转 jalr】预测目标（赛题原文点名的"动态分支预测器（如 BTB）"）。
+    //   条件分支与 jal 的目标 = PC+imm，到达级由 p_target 现算、已经是对的，所以
+    //   BTB 不复存它们（只存 jalr），不与 BHT（方向）打架。
+    //
+    // 形态完全照 BHT：直接映射 256 项，索引 idx=PC[9:2]、tag=PC[31:8]。
+    //   读在到达级（if_addr_d），训练在 EX 级（id_ex_pc），读写同拍读旧值可接受
+    //   （最多一次误预测，被 §7 目标校验兜住）。
+    //   [!] 优先级 RAS > BTB > PC+imm（ret 的目标由栈给，比 BTB 准）；BTB 命中时
+    //   p_pred_taken=1 ⇒ jalr 独占发射（pair_now=0），与它原来"不被预测、不配对"一致。
+    //   [!] 目标只折进【已有的 p_target 腿】，绝不新增 fetch_addr 的腿（Fmax 第一风险点）。
+    reg [23:0] btb_tag    [0:255];
+    reg [31:0] btb_target [0:255];
+    reg [255:0] btb_valid;
+
     // ex_flush 优先：EX 级是更老的指令，它重定向时到达级/ID 级指令本来就会被杀掉。
     // stall / mc_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
     // 流水线状态会脱节。
@@ -575,6 +623,9 @@ module core #(
     wire [6:0] p_op_a  = imem_rd[6:0];
     wire [6:0] p_f7_a  = imem_rd[31:25];
     wire [4:0] p_rd_a  = imem_rd[11:7];
+    // [B1-RAS] 到达级 ret 检测需要的两个字段（原先只有 op/f7/rd）。
+    wire [4:0] p_rs1_a = imem_rd[19:15];
+    wire [2:0] p_f3_a  = imem_rd[14:12];
     wire [6:0] p_op_b  = imem_rd2[6:0];
     wire [6:0] p_f7_b  = imem_rd2[31:25];
     wire [4:0] p_rd_b  = imem_rd2[11:7];
@@ -604,15 +655,40 @@ module core #(
     wire [7:0] bht_idx_p   = if_addr_d[9:2];
     wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[31:8]);
     wire       bht_taken_p = bht_ctr[bht_idx_p][1];
+    // [B1-RAS] 到达级 `ret` 检测。ret = jalr x0,0(x1|x5)：
+    //   opcode=1100111(JALR)、funct3=000、rd=x0、rs1∈{x1(ra),x5(t0)}。
+    //   命中且栈非空 ⇒ 预测目标 = 栈顶（call 时压的 id_ex_pc+4）。
+    //   [!] 这是【绝对地址】预测（不是 pc+imm），所以必须走 §7 的目标校验：
+    //   栈顶一旦不是真正链接值，EX 级比对 ex_target 就会冲刷纠正。
+    wire       p_is_ret  = (p_op_a == 7'b1100111) && (p_f3_a == 3'b000) &&
+                           (p_rd_a == 5'd0) && ((p_rs1_a == 5'd1) || (p_rs1_a == 5'd5));
+    wire       p_ras_hit = p_is_ret && !ras_empty;
+    // [B1-BTB] 间接跳转 jalr（opcode 1100111）的 BTB 目标预测。优先级低于 RAS：
+    //   ret 也是 jalr，但目标该由栈给；只有"非 RAS 命中"的 jalr 才查 BTB。
+    //   BTB_EN=0 时 p_btb_pred 恒 0 ⇒ 逐位回退成 RAS-only 的行为。
+    wire       p_is_jalr  = (p_op_a == 7'b1100111);
+    wire [7:0] btb_idx_p  = if_addr_d[9:2];
+    wire       btb_hit_p  = btb_valid[btb_idx_p] && (btb_tag[btb_idx_p] == if_addr_d[31:8]);
+    wire       p_btb_pred = (BTB_EN != 0) && p_is_jalr && !p_ras_hit && btb_hit_p;
     // 静态规则兜底：BHT 未命中时后向条件分支 / jal 预测跳转（到达级 pc = if_addr_d）
-    wire       p_pred_taken = (p_branch && bht_hit_p) ? bht_taken_p
+    //   [B1-RAS] 最高优先级是 RAS 命中（ret 一定跳、且目标已知）；它取 1 会让 pair_now=0，
+    //   ret 独占发射，与它原来"不被预测、不配对"的行为一致。
+    //   [B1-BTB] 次高优先级是 BTB 命中（jalr 目标已知）；同样让 pair_now=0。
+    wire       p_pred_taken = p_ras_hit  ? 1'b1
+                            : p_btb_pred ? 1'b1
+                            : (p_branch && bht_hit_p) ? bht_taken_p
                             : ((p_branch && imem_rd[31]) || p_jump);
     // [阶段1] 到达级预测目标与重定向。目标 = if_addr_d + imm，imm 由 imem_rd 译出
     //   （第三个 imm_gen 实例，专门给到达级用）。p_redirect 的门控注释见上面
     //   "动态预测（保守版）"那一段（mem_ready 那条承重逻辑）。
     wire [31:0] p_imm;
     imm_gen u_imm_p (.instr(imem_rd), .imm(p_imm));
-    assign      p_target   = if_addr_d + p_imm;
+    // [B1-RAS] 目标折进【已有的 p_target 腿】：RAS 命中时取栈顶，否则保持 pc+imm。
+    // [B1-BTB] 再加一档：RAS 不中但 BTB 中时取 BTB 里的目标。优先级 RAS > BTB > PC+imm。
+    //   [!] 绝不新增 fetch_addr 的腿（那是 Fmax 第一风险点，同当年 MRET 的处理）。
+    assign      p_target   = p_ras_hit  ? ras_top
+                           : p_btb_pred ? btb_target[btb_idx_p]
+                           : (if_addr_d + p_imm);
     assign      p_redirect = p_pred_taken && !ex_flush && !stall_int && !mc_stall && mem_ready_int;
     wire p_opcode_b_ok = (p_op_b == 7'b0110011) || (p_op_b == 7'b0010011) ||
                          (p_op_b == 7'b0110111) || (p_op_b == 7'b0010111);
@@ -985,10 +1061,37 @@ module core #(
     // 实际是否跳转。注意这与"是否冲刷"是两回事：预测正确时这里为 1 但不冲刷。
     wire ex_resolve_taken = (id_ex_branch && branch_taken) ||
                             id_ex_jump || id_ex_jump_reg || mret_commit;
-    // 预测 not-taken 但实际 taken  → 原有冲刷路径（含 jalr，它从不被预测）
-    assign ex_flush   = ex_resolve_taken && !id_ex_pred_taken;
+    // [!] 2026-10-14（根因 #2 同族）：EX 的分支/跳转解析结果必须与"这条指令离开
+    //     EX"同拍（= mem_ready_int）。AMO/LR/SC 占住 MEM 的 4 拍里，前递的
+    //     amo_wb_data 还是【上一条】AMO 的陈旧值，紧跟其后的分支会据此解析出错误
+    //     方向并拉高 ex_flush。而 ex_flush 在 fetch_addr 里的优先级【高于】冻结兜底，
+    //     IF/ID 冲刷清空又没被门控 ⇒ 错误路径被取出并提交（tb_amo_cpu testnum 9 实测：
+    //     连续第二条 sc.w 本应失败 a0=0，bnez a0 却用上一条 SC 的 1 解析成 taken，
+    //     把取指拽到 fail_sc_noq 的 li gp,9 并提交）。
+    //     门控后：冻结期 fetch_addr 退回 if_addr_d、IF/ID 保持；放开那拍再用【正确】
+    //     的前递值重解析，方向因此总是对的。与 ID/EX 清、MEM/WB 捕获、mret CSR
+    //     副作用（见各段）同一个门控，属同一族修复。
+    // [B1-RAS/BTB / v10 §7] 预测【目标】校验：预测过（id_ex_pred_taken=1）但实际目标 != 预测目标
+    //   ⇒ 冲刷纠正。这是 RAS（栈顶错）与 BTB（间接跳转目标错）的唯一纠错路径。
+    //   [!] 校验只用 `rs1_val` 直比，**不经 ex_target** —— ex_target 的 32 位加法器
+    //   是 fetch_addr 临界路径上最贵的一段（P&R 实测 rs1_val→ex_target ≈ 2 ns，
+    //   且它下游还要串 comparator→ex_flush→fetch mux→imem_addr→imem_addr2→BRAM）。
+    //   对 jalr：imm=0（ABI 约定）时 ex_target = (rs1_val+0)&~1 = rs1_val&~1，
+    //   直接比 rs1_val&~1 逐位等价；imm≠0 的 `jalr x0,off(ra)` 极罕见，一律判错、冲刷
+    //   （这样"猜错"最多与"不预测"同代价，不会更差）。
+    //   [B1-BTB] 校验范围从"仅 ret（rd=x0）"放宽到【所有 jalr】—— BTB 预测的是非 ret 的
+    //   间接跳转，同样要校验。安全性靠 `id_ex_pred_taken` 门控：没被预测的 jalr 恒不校验
+    //   （走 ex_resolve_taken && !pred 那条原有冲刷）；branch/jal（id_ex_jump_reg=0）逐位不变。
+    //   必须门控 mem_ready_int，与 ex_flush 的其它项同族。
+    wire ex_is_jalr_ex = id_ex_jump_reg;
+    wire ex_tgt_mm     = ex_is_jalr_ex && ((id_ex_imm != 32'd0) ||
+                                           ((rs1_val & 32'hFFFF_FFFE) != id_ex_pred_target));
+    wire ex_target_wrong = id_ex_pred_taken && ex_tgt_mm;
+    // 预测 not-taken 但实际 taken  → 原有冲刷路径（含未被预测的 jalr）
+    assign ex_flush   = (ex_resolve_taken && !id_ex_pred_taken && mem_ready_int) ||
+                        (ex_target_wrong && mem_ready_int);
     // 预测 taken 但实际 not-taken  → 误判恢复：回到 fall-through
-    assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken;
+    assign ex_mispred = !ex_resolve_taken && id_ex_pred_taken && mem_ready_int;
     assign ex_mispred_target = id_ex_pc + 32'd4;
 
     // ---- BHT 训练（EX 级，用解析结果，与是否冲刷无关）----
@@ -1014,6 +1117,56 @@ module core #(
                 bht_tag[bht_idx_w]   <= id_ex_pc[31:8];
                 bht_ctr[bht_idx_w]   <= branch_taken ? 2'b10 : 2'b01;
             end
+        end
+    end
+
+    // ================= [B1-RAS] EX 级 push/pop =================
+    // 判定用【EX 级寄存器】id_ex_*（EX 级指令就是 ID/EX 里那条）：
+    //   call = (jal | jalr) 且 rd∈{x1(ra),x5(t0)} —— 写链接寄存器的跳转即调用
+    //   ret  = jalr 且 rd=x0 且 rs1∈{x1,x5}
+    //   lane B 永远不是控制指令（p_opcode_b_ok 只放 ALU 类）⇒ 不存在"同拍两条控制指令"，
+    //   push/pop 只由 lane A 驱动。
+    //   只有【提交到 EX】的指令才更新栈：EX 是顺序的，能冲刷某条指令的只有比它更老、
+    //   已在 EX 的分支/跳转；更年轻的指令在到达 EX 之前就被清 ⇒ 到达 EX = 在正确路径上
+    //   ⇒ 无需影子栈/回滚。
+    wire ex_is_call = (id_ex_jump || id_ex_jump_reg) &&
+                      ((id_ex_rd == 5'd1) || (id_ex_rd == 5'd5));
+    wire ex_is_ret  = id_ex_jump_reg && (id_ex_rd == 5'd0) &&
+                      ((id_ex_rs1 == 5'd1) || (id_ex_rs1 == 5'd5));
+    // [!] 更新必须与"这条指令离开 EX / 提交到 EX/MEM"同拍 = mem_ready_int && !mc_stall && !trap。
+    //   门控 mem_ready_int 是硬要求：冻结期 ID/EX【保持】，不门控会把同一条 call/ret 每拍
+    //   重复 push/pop（与根因 #1/#2 同族）。mc_stall 期 ID/EX 保持、EX/MEM 被清 ⇒ 不计提交；
+    //   trap 杀该指令 ⇒ 不计。push 写返回地址 = 该 call 的下一条（id_ex_pc+4）。
+    wire ras_upd_en = mem_ready_int && !mc_stall && !trap;
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            ras_sp <= 5'd0;
+        end else if (ras_upd_en) begin
+            if (ex_is_call && (ras_sp != RAS_DEPTH)) begin   // 满则饱和丢弃（罕见，只影响预测率）
+                ras_mem[ras_sp[3:0]] <= id_ex_pc + 32'd4;
+                ras_sp               <= ras_sp + 5'd1;
+            end else if (ex_is_ret && !ras_empty) begin
+                ras_sp <= ras_sp - 5'd1;
+            end
+        end
+    end
+
+    // ================= [B1-BTB] EX 级训练 =================
+    // 每条【间接跳转 jalr】在 EX 解析出真实目标 jalr_target=(rs1_val+imm)&~1 后，
+    // 把该 PC 的目标写进表：下次这条 jalr 在到达级就能被预测（省下"到 EX 才知道目标"的拍数）。
+    // 存 ret 的目标也行（RAS 空时由 BTB 兜底）；同一 PC 多目标时条目抖动 → 预测错 → §7 纠正。
+    // 与 BHT 训练同构：读写同拍读到旧值可接受，最多一次误预测，被 §7/ex_flush 兜住。
+    // 门控与 RAS 同（= 该指令【提交到 EX】那拍）：mem_ready_int && !mc_stall && !trap。
+    //   冻结期 ID/EX 保持 ⇒ 不门控会每拍重复训练（与根因 #1/#2 同族）。
+    wire       btb_upd_en = (BTB_EN != 0) && mem_ready_int && !mc_stall && !trap && id_ex_jump_reg;
+    wire [7:0] btb_idx_w  = id_ex_pc[9:2];
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            btb_valid <= 256'd0;
+        end else if (btb_upd_en) begin
+            btb_valid[btb_idx_w]  <= 1'b1;
+            btb_tag[btb_idx_w]    <= id_ex_pc[31:8];
+            btb_target[btb_idx_w] <= jalr_target;    // 实际目标（含 ret；RAS 空时兜底）
         end
     end
 
@@ -1304,6 +1457,7 @@ module core #(
             if_id_instr_b <= 32'h00000013;
             if_id_pair    <= 1'b0;
             if_id_pred_taken <= 1'b0;
+            if_id_pred_target <= 32'd0;
         end else if (ex_flush || ex_mispred || trap) begin
             // 三条都只清【一拍】：重定向那一拍 fetch_addr 已经把新地址发出去了，
             // 目标指令的数据下一拍就回来，多清一拍反而会把它杀掉。
@@ -1322,6 +1476,7 @@ module core #(
             if_id_instr_b <= 32'h00000013;
             if_id_pair    <= 1'b0;
             if_id_pred_taken <= 1'b0;
+            if_id_pred_target <= 32'd0;
         end else if (!stall_int && !mc_stall && mem_ready_int) begin
             if_id_valid <= (imem_rd != 32'd0);
             if_id_pc    <= if_addr_d;
@@ -1330,6 +1485,7 @@ module core #(
             // pair_now 就是这一对 (imem_rd, imem_rd2) 的发射判定 —— 同拍寄存。
             if_id_pair    <= pair_now;
             if_id_pred_taken <= p_redirect;
+            if_id_pred_target <= p_target;   // [B1-RAS] 与 pred_taken 同拍锁存预测目标
             if_id_pc_b    <= if_addr_d + 32'd4;
             if_id_instr_b <= imem_rd2;
         end
@@ -1398,6 +1554,7 @@ module core #(
             id_ex_jump      <= 1'b0;
             id_ex_jump_reg  <= 1'b0;
             id_ex_pred_taken <= 1'b0;
+            id_ex_pred_target <= 32'd0;
             id_ex_alu_op    <= 5'd0;
             id_ex_wb_sel    <= 2'b00;
             id_ex_pc        <= 32'd0;
@@ -1455,6 +1612,7 @@ module core #(
             // 若寄存错了，会出现"记着预测过、但 pc_r 根本没重定向"的状态，
             // EX 级据此判定预测正确而不冲刷，流水线就沿错误路径一路跑下去。
             id_ex_pred_taken <= if_id_pred_taken;
+            id_ex_pred_target <= if_id_pred_target;   // [B1-RAS] 预测目标随指令带到 EX 供校验
             id_ex_alu_op    <= alu_op;
             id_ex_wb_sel    <= wb_sel;
             id_ex_pc        <= if_id_pc;
