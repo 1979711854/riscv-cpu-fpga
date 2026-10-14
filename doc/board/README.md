@@ -70,10 +70,15 @@
   已改成从 `BOARD_SYSTEM_CLOCK_HZ` 算（`app/main.c:173` 的 `rt_kprintf`）。**判位流永远看 `RTL=` 那行。**
 * [!] **已知噪声（不是失败）**：`[!] vblank timeout -- video not running` —— 同一句在无 Cache 的
   `8894cdcb` 日志里也有，机制见下面 T1/G3 那节（1 ms 采样 vs 63 µs 脉冲）。
-  **它其实是在说"vblank 同步没在工作"（不是显示坏了 —— 用户已接屏下棋）**：
-  固件在 `video_vblank_yield()` 里 `rt_thread_mdelay(1)` ⇒ 每 ~1 ms 才看一次状态位，
-  而 `rtl/video/video_core.v:139` 的状态位是 `vs_ph`（**V_SYNC=2 行 ≈ 62.7 µs** 的脉冲）
-  ⇒ 单次命中的概率 ≈0.4% ⇒ **每次等待都靠超时兜底**（裸机版没有 yield、连续轮询，所以从不报）。
+  **它不是"显示坏了"**（用户已接屏下棋正常），**而是"vblank 等待变成了一次概率事件"**：
+  * 固件（`scripts/gomoku/video_port.c:62`）在等 `VIDEO_STATUS` bit0；RT-Thread 侧
+    `video_vblank_yield()` 是 `rt_thread_mdelay(1)` ⇒ **采样周期 ≈1 ms**；
+  * 而 `rtl/video/video_core.v:139` 的状态位是 `vs_ph` —— **V_SYNC=2 行 ≈ 62.7 µs** 的脉冲，
+    两者**异步时钟域**（tick 由 CPU 侧 1 ms 定时器驱动，脉冲由 pixel PLL 的 16.67 ms 帧驱动）；
+  * ⇒ **命中是概率性的**：脉冲宽/采样周期 ≈ **6%**（按"最近一次采样距脉冲 ≤62.7 µs"算 ≈12%/帧）。
+    等不到的调用由 **50 ms 超时**（`VIDEO_VBLANK_TIMEOUT_MS`，≈3 帧）兜底返回 ⇒
+    **多数等待会走超时路径**，帧率与同步都不是设计意图（告警按设计"只打一次"，所以日志里只有一行）。
+  * 裸机版没有 yield（空实现、紧忙等）⇒ 连续轮询必定捕获，所以 23 份裸机日志里从没这句 ✓。
   **怎么处理（三选一，成本递增、鲁棒性递增）**：
   | 方案 | 做什么 | 代价 | 效果 |
   |---|---|---|---|
