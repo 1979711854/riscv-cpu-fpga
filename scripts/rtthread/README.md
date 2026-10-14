@@ -25,7 +25,7 @@ scripts\build_bitstream.ps1 rtthread
 ```
 
 它做的事（全部串好，不用手工分步）：编 RT-Thread 固件（**上板口径** 85.0051MHz /
-乒乓 500ms）→ 同步进 PDS 工程 → **sha256 校验**（9498 行 / 4749 字）→ 综合布线出 `.sbit`。
+乒乓 500ms）→ 同步进 PDS 工程 → **sha256 校验**（20274 行 / 10137 字 @85.0051 MHz；20276 行 / 10138 字 @76.5052 MHz）→ 综合布线出 `.sbit`。
 
 > [!] **别用 `scripts\rtthread\build.ps1 -Sim` 的产物上板** —— 那是仿真口径
 > （100MHz / 乒乓 5ms），上板会算错 tick。`build_bitstream.ps1 rtthread` 用的是正确口径。

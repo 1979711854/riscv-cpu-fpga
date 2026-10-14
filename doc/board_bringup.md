@@ -84,7 +84,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
   `CLKOUT0 = 1147.5 ÷ STATIC_RATIO0`：`16.0 → 71.72`、**`15.0 → 76.5052`（I+D Cache 用的档）**、
   `14.5 → 79.14`、**`13.5 → 85.0051`（当前跑分档）**。
   > [!] **I+D Cache 全开在 85 MHz 塞不进**（CPU 域 −1.143 ns / 343 失败端点）⇒ 必须降频；
-  > 76.5052 MHz 收敛（setup +0.589 / hold +0.147 / 0 端点），板上实测 313.63 分（**A1 前口径**）。
+  > 76.5052 MHz 收敛（setup +0.589 / hold +0.147 / 0 端点），板上实测 **325.96 分**（**A1 后**，ITER=3800，位流 da8ffd31；A1 前 313.63 / c6b12d95）。
   > **改完频率必须全部还原**（见 `CLAUDE.md` 约定 50）。
 
 | 信号 | 管脚 | 板上丝印 | 说明 |
@@ -121,7 +121,7 @@ clk(D18, 27MHz 晶振) ──> pll IP ──> clk_sys(85.01MHz) ──> cpu_top
 
 ```powershell
 scripts\build_bitstream.ps1 coremark            # 跑分版（双发射+EARLY_LD，ITER=4280，板上约 11.7 s）
-scripts\build_bitstream.ps1 coremark -DCacheOnly # 同上 + 只开 D-Cache（**推荐提交档**：分数不变）
+scripts\build_bitstream.ps1 coremark -DCacheOnly # 同上 + 只开 D-Cache（**评估档**：分数不变；**提交档 = Cache 全关**，见 doc/paper/论文框架_v1_20261012.md §0.1）
 scripts\build_bitstream.ps1 demo        # 演示程序版（读按键 → 写 LED → 串口打印）
 scripts\build_bitstream.ps1 rtthread    # RT-Thread Nano 版五子棋（T1/G3：render 高优 + AI 低优两条线程）
 scripts\build_bitstream.ps1 gomoku      # 裸机五子棋版（HDMI 出棋盘 + 4 键操作 + 串口棋盘镜像）
@@ -317,7 +317,8 @@ Correct operation validated.
 
 实测：994,386,960 ÷ 85,005,100 = **11.69797 s** → **351.86 CoreMark**（满足赛题 ≥10 s；**A1 前板上值**，A1 后已板上实测 **365.93 分**，见 `uart_20261013_184111.txt`）。
 
-**I+D Cache 版（76.5052 MHz，ITER=3668；A1 前口径）**（日志 `doc/board/uart_20261012_155934.txt`）：
+**I+D Cache 版（76.5052 MHz，ITER=3800；A1 后，位流 `da8ffd31`，日志 `doc/board/uart_20261013_195230.txt`）**：
+**（A1 前对照，ITER=3668，日志 `doc/board/uart_20261012_155934.txt`）**：
 首行 `[build] FW=COREMARK RTL=0x20261016`，`Total ticks 894,745,801` →
 **11.6952 s → 313.63 CoreMark**；`[cache] I` 98.985% / `[cache] D` 99.929%。
 
@@ -366,7 +367,7 @@ ITER=1 → `0xe714`、820 → `0xbd59`、1500 → `0x25b5`、1663 → `0x81c9`�
 | 串口正常但按键没反应 | `key[]` 引脚（C23/B22/A22/B20） |
 | 灯不亮 / 恒亮 | LED 引脚或极性（本板**输出高电平点亮**） |
 | 按键→LED 关系不对 | ① `DEBUG_LED` 是不是 1（那样 `led[2:0]` 被 `pll_locked`/`video_locked`/`done` 占了，见 §3）② `led[]` 是否被改回手册顺序（见 §2 第 2 条） |
-| **`Iterations/Sec` 显示 374 / 333** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的整数秒算的（4116 ÷ 11 ≈ 374；I+D 版 3668 ÷ 11 ≈ 333）。**真实得分要自己算**：85 MHz 跑分档 = `4116 ÷ 11.69797` = **351.86**（A1 前）；**A1 后**用 ITER=4280，显示值 ≈ `4280 ÷ 11` = 389、**真实 365.93**；I+D 版 = `3668 ÷ 11.6952` = **313.63**。历史：双发射 3170 显示 `270` / 真实 270.82；单发射 85 MHz 显示 `249` / 真实 233.85。见 §4 的说明 |
+| **`Iterations/Sec` 显示 374 / 333** | **正常，不是错误** —— 它是 `Iterations ÷ Total time(secs)` 用**截断后**的整数秒算的（4116 ÷ 11 ≈ 374；I+D 版 3668 ÷ 11 ≈ 333）。**真实得分要自己算**：85 MHz 跑分档 = `4116 ÷ 11.69797` = **351.86**（A1 前）；**A1 后**用 ITER=4280，显示值 ≈ `4280 ÷ 11` = 389、**真实 365.93**；I+D 版（A1 后）= `3800 ÷ 11` ≈ 345、**真实 325.96**（位流 `da8ffd31`）；A1 前 = `3668 ÷ 11.6952` = 313.63。历史：双发射 3170 显示 `270` / 真实 270.82；单发射 85 MHz 显示 `249` / 真实 233.85。见 §4 的说明 |
 | 烧录后设备唤醒失败 | 远程平台那套"多烧几次就好"的经验**不适用本地板** —— 出现就是真问题 |
 
 **FPGA 掉配置的判据**：按键完全没反应 + 串口没输出。板子断电或拔过 USB 就会这样（比特流是烧进 SRAM 的）。

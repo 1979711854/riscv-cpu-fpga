@@ -17,7 +17,7 @@
 # [重点] 配置必须显式、且与板上比特流对齐：
 #   默认 = 双发射（编译传 -DDUAL）—— 与 cpu_top.v 的 DUAL_ISSUE=1（板上口径）一致。
 #   -Single = 单发射（不传 -DDUAL）—— 只有为回退版比特流把关时才用。
-#   两条基线不同（双发射 49/1/0 + CoreMark 313,886；单发射 49/1/0 + 363,515），别混。
+#   两条基线不同（双发射 49/1/0 + CoreMark 232,345；单发射 49/1/0 + 303,140），别混。
 #   日志首行 "SIM CONFIG: DUAL_ISSUE=?" 与 results.txt 首行会自证本次跑的是哪一种。
 $ErrorActionPreference = "Stop"
 $dualIssue = if ($Single) { 0 } else { 1 }
