@@ -1012,6 +1012,34 @@ HARD 档 `nodes=10592 depth=6 t=5737ms`（**AI 思考 5.7 s 期间 `[hb]` 照常
       76.5 档下 long-press 阈值 ≈0.67 s、AI 打印 `t=…ms` 约低 10%。**纯阈值/显示**，
       但修它要绑到 `BOARD_SYSTEM_CLOCK_HZ`（会同时改裸机五子棋与仿真的去抖口径，需回归）。
 
+59. [!] **PCE 区域约束试过了，在 85 MHz 档上是【负收益】—— 别再试**（2026-10-15，
+    全文 `doc/reports/2026-10-15_pce_region_result.md`）。
+    把 `u_soc/u_core` + `u_soc/u_bus/u_mem` 框进同一区域
+    （`def_region region1 4 177 144 249`，约 29% die，`Placed fail Instances: 0` 资源够）后：
+    `u_pll` slack **+0.034 → −0.755 ns**（Estimated 85.25 → 79.88 MHz），
+    **CPU 域违规端点 0 → 3**；连带 `u_video`（不在区域里）的 Estimated 也从
+    190.37 掉到 175.69。
+    **原因**：PDS 本来就会把有连接的东西放近，人为加限制只换来拥塞 ——
+    那是约定 43「放松约束 PDS 会偷懒」的镜像面：**收紧约束 PDS 会塞车**。
+    已还原，还原后 slack/频率**逐位回到** +0.034 / 85.2515，位流盖回 `a6ca1c12`。
+    > [!] **副产品（会反复用到）**：**约束不变时 PDS 的 P&R 是确定性**的 ——
+    > 同 RTL、同约束两次综合，slack 与 Estimated **逐位相同**。约定 25 记的
+    > `71.62 vs 67.78` 是**改了时钟约束**（49.8927 → 62.0309），
+    > **别拿它当"P&R 有随机性、结果不可复现"的论据**。
+    > [!] **怎么让 PDS【不覆盖】你放进工程的 pcf**（踩了三轮才通，下次照抄）：
+    > * `wgt_edit_placement_cons` 的 `_input` 下**只放一份**、把
+    >   `(_option target_file (_switch OFF))` ⇒ **没用**。PDS 仍把它当默认覆盖目标，
+    >   写回自动产物；`flow.log` 只留一行
+    >   `W: Public-4010: Pcf file ... has been covered.`
+    >   **判据就是 grep 这一行：它指向哪个文件，就是哪个文件被覆盖了。**
+    > * **正解 = 放两份**：一份显式 `target_file ON`（占住"覆盖目标"这个角色，
+    >   让它去被覆盖），要保护的那份不标。
+    > * **且受保护那份不能带 `def_port`** —— 两份 pcf 的端口 LOC 会撞车，
+    >   P&R **8/8 seed 全失败**（`E: PhysicalConstraintEditor-0013: ... is already placed`）。
+    >   只留 `def_region` + `def_inst_region`，端口 LOC 交还给自动产物那份。
+    > * 依据：UCE 手册 V1.7 第 218-219 行（多份 fdc/pcf 可共存，
+    >   `SetAsTargetFile` 指定哪一份接收新增约束，未修改的约束留在原文件）。
+
 ## 待办
 -  **[OK] 2026-10-14 B1-BTB（分支目标缓冲，赛题点名项）已完成 —— v11 §3 任务表四项全完**：
   256 项**直接映射** BTB（索引 `pc[9:2]`、tag `pc[31:8]`，与 BHT 同形），**只预测间接 `jalr` 目标**
