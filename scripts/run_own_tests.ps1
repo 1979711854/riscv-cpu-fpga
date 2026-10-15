@@ -92,6 +92,10 @@ if ($dcacheEn  -eq 1) { $defs += "-DDCACHE" }
 if ($icacheEn  -eq 1) { $defs += "-DICACHE" }
 if ($earlyLdEn -eq 1) { $defs += "-DEARLYLD" }
 if ($btbEn     -eq 0) { $defs += "-DNOBTB" }
+# [面积优化] A 扩展：**本脚本必须传** —— 套件里有 `tb_amo_cpu`（A 扩展整核测试）。
+#   core 的 A_EXT 默认 0（生产档砍掉省面积），不传的话它会以 testnum 668 FAIL。
+#   `run_riscv_tests.ps1` 则相反：回归集里没有 rv32ua，A_EXT=0 才是板上口径。
+$defs += "-DAEXT"
 $iverilogArgs = @("-g2012") + $defs + @(
     "-I", (Join-Path $repo "rtl\core"), "-I", (Join-Path $repo "rtl\periph"),
     "-I", (Join-Path $repo "rtl\bus"), "-I", $sim,

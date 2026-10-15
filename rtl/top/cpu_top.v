@@ -76,6 +76,13 @@ module cpu_top (
     // [!] 仿真侧由 tb_* 的 -DEARLYLD 决定，两边要一致，否则跑分数与板上对不上。
     parameter EARLY_LD   = 1;
 
+    // ---- [面积优化] A 扩展（RV32A）开关（透传给 core）。**默认 0 = 关** ----
+    // 依据（2026-10-15）：赛题主分 = CoreMark/MHz（主频与面积不进主分），而面积进
+    //   指标(3) CoreMark/LUTs。两个交付固件都不含原子指令 ⇒ 关掉零性能损失、纯省面积。
+    // 1 = 逐位回到原行为；`rtthread\run_sim.ps1 -Atomic`（用硬件原子验证 A 扩展）
+    //   与 `sim\tb_amo_int.v` 需要它。
+    parameter A_EXT      = 0;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -156,7 +163,7 @@ module cpu_top (
     );
 
     core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE),
-           .EARLY_LD(EARLY_LD)) u_core (
+           .EARLY_LD(EARLY_LD), .A_EXT(A_EXT)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),

@@ -112,6 +112,9 @@ if (-not $Single)    { $defs += "-DDUAL" }
 if (-not $NoEarlyLd) { $defs += "-DEARLYLD" }
 if ($DCache)         { $defs += "-DDCACHE" }
 if ($ICache)         { $defs += "-DICACHE" }
+# [面积优化] A_EXT 默认关（= 生产档）。只有 -Atomic（rv32ima 硬件原子固件）才开 ——
+#   不开的话那份固件里的 lr/sc/AMO 会被判非法指令而挂死，那是预期行为，不是 RTL bug。
+if ($Atomic)         { $defs += "-DAEXT" }
 if ($RxTrace)        { $defs += "-DRXTRACE" }
 if ($PcTrace)        { $defs += "-DPCTRACE" }
 if ($ITrace)         { $defs += "-DITRACE" }
@@ -122,7 +125,8 @@ $cfgDual   = if ($Single)    { 0 } else { 1 }
 $cfgDCache = if ($DCache)    { 1 } else { 0 }
 $cfgICache = if ($ICache)    { 1 } else { 0 }
 $cfgEarly  = if ($NoEarlyLd) { 0 } else { 1 }
-Write-Host "    RTL 配置：SIM CONFIG: DUAL_ISSUE=$cfgDual DCACHE_EN=$cfgDCache ICACHE_EN=$cfgICache EARLY_LD=$cfgEarly" -ForegroundColor Cyan
+$cfgAext   = if ($Atomic)    { 1 } else { 0 }
+Write-Host "    RTL 配置：SIM CONFIG: DUAL_ISSUE=$cfgDual DCACHE_EN=$cfgDCache ICACHE_EN=$cfgICache EARLY_LD=$cfgEarly A_EXT=$cfgAext" -ForegroundColor Cyan
 
 $ivOut = & iverilog -g2012 @defs @inc -s tb_rtthread -o $vvp @srcs 2>&1
 $ivOut | ForEach-Object { Write-Host $_ }

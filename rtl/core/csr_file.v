@@ -73,6 +73,13 @@ module csr_file (
     //   加它**不用动地址映射、不用动 mem_bus、不用改固件的板级头文件**，
     //   固件一条 `csrr` 就能读到。
     //   覆盖的值（从新到旧）：
+    //     2026_1023  [面积优化] A 扩展（RV32A）改为 parameter，**默认关**：
+    //                AMO 的 opcode 判非法、`amo_unit` 用 generate 包住不例化。
+    //                实测 −444 LUT / −224 FF、CPU 域余量 +0.034 → +0.160 ns，
+    //                而 CoreMark 五配置的周期数与四 CRC **逐位不变**（零性能代价）。
+    //                赛题公式 Score=Iterations/(Total_Time×Frequency)=CoreMark/MHz
+    //                ⇒ 主频与面积不进主分，面积进指标(3) CoreMark/LUTs（+5.8%）。
+    //                开关：core/cpu_top 的 parameter A_EXT；验证口径见下文注释。
     //     2026_1022  B1-BTB：分支目标缓冲（间接跳转 jalr 在到达级预测目标，RAS>BTB>PC+imm；
     //                §7 校验放宽到所有被预测的 jalr）+ parameter BTB_EN
     //     2026_1021  B1-RAS：返回地址栈（ret 在到达级预测目标）+ §7 预测目标校验
@@ -87,7 +94,7 @@ module csr_file (
     //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
     //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1022;   // 2026-10-14 B1-BTB 分支目标缓冲（+ RAS）
+    localparam [31:0] DESIGN_REV = 32'h2026_1023;   // 2026-10-15 A 扩展默认关（面积优化）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,

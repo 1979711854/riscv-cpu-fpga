@@ -98,14 +98,23 @@ module tb_rtthread;
 `else
     localparam EARLYLD_OUT = 0;
 `endif
+// [面积优化] A 扩展：默认 0（= 生产档口径，core 默认也是 0）。
+//   只有 `rtthread\run_sim.ps1 -Atomic`（-march=rv32ima + 硬件原子固件）才传
+//   -DAEXT；不传的话那份固件里的 lr/sc/AMO 会被判非法指令而挂死 —— 那是预期行为。
+`ifdef AEXT
+    localparam AEXT_OUT = 1;
+`else
+    localparam AEXT_OUT = 0;
+`endif
 
-    // 自证配置：t=0 打印本测试台编译进去的四个开关，每份日志首行自带口径
+    // 自证配置：t=0 打印本测试台编译进去的开关，每份日志首行自带口径
     //（与 tb_riscv/tb_coremark 同一格式，回归脚本靠它核对，见 CLAUDE.md 约定 37）。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d A_EXT=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, AEXT_OUT);
 
     cpu_top #(.DUAL_ISSUE(DUAL_OUT), .DCACHE_EN(DCACHE_OUT),
-              .ICACHE_EN(ICACHE_OUT), .EARLY_LD(EARLYLD_OUT)) u_soc (
+              .ICACHE_EN(ICACHE_OUT), .EARLY_LD(EARLYLD_OUT),
+              .A_EXT(AEXT_OUT)) u_soc (
         .clk        (clk),
         .resetn     (resetn),
         .pc         (pc),

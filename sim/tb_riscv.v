@@ -73,11 +73,23 @@ module cpu_tb_riscv;
     localparam BTB_OUT = 1;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT);
+    // [面积优化] A 扩展（RV32A）：编译时加 -DAEXT 即用 A_EXT=1。**默认 0 = 关**，
+    //   与生产位流一致（core 的参数默认值也是 0，见 core.v 文件头）。
+    //   [!] `scripts\run_own_tests.ps1` 必须传 -DAEXT —— 它的套件里有 `tb_amo_cpu`
+    //       （A 扩展的整核测试），不传会以 testnum 668 FAIL，那是预期行为不是 bug。
+    //       `run_riscv_tests.ps1` 不传（回归集里没有 rv32ua，A_EXT=0 才是板上口径）。
+`ifdef AEXT
+    localparam AEXT_OUT = 1;
+`else
+    localparam AEXT_OUT = 0;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d A_EXT=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, AEXT_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT),
+           .A_EXT(AEXT_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),

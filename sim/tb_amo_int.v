@@ -69,7 +69,9 @@ module tb_amo_int;
     initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d",
                      DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT);
 
-    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT)) u_core (
+    // [!] A_EXT 必须显式传 1 —— 本测试台就是 A 扩展的整核测试，而 core 的默认值
+    //     是 0（生产档砍掉 A 扩展省面积，见 core.v 文件头 parameter A_EXT 处）。
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .A_EXT(1)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
@@ -119,7 +121,9 @@ module tb_amo_int;
     integer latch_bad  = 0;   // ST_LATCH 拍 mem_rdata 含 X 的次数
 
     // AMO 的 st 编码（amo_unit.v）：0=IDLE 1=READ 2=HOLD 3=LATCH 4=WRITE
-    wire [2:0] ast = u_core.u_amo.st;
+    // [!] 路径里的 `g_amo` 是 core.v 里包住 amo_unit 的 generate 块名（A_EXT 门控新增）。
+    //     本测试台传 A_EXT=1 ⇒ 走的是 if 分支，命名块就是 g_amo。
+    wire [2:0] ast = u_core.g_amo.u_amo.st;
 
     wire [31:0] scr = u_bus.u_mem.mem0[13'd2048];     // RAM[0x2000]（0x2000>>2）
 
@@ -136,7 +140,7 @@ module tb_amo_int;
                 $display("[cyc=%0d] pc=%h st=%0d amo_stall=%0d ex_mem_is_amo=%0d ex_mem_pc=%h id_ex_pc=%h amo_addr_r=%h mem_addr=%h mem_re=%0d mem_we=%0d mem_rdata=%h amo_wdata=%h RAM_2000=%h",
                          cyc, pc, ast, u_core.amo_stall, u_core.ex_mem_is_amo,
                          u_core.ex_mem_pc, u_core.id_ex_pc,
-                         u_core.u_amo.amo_addr_r, mem_addr, mem_re, mem_we,
+                         u_core.g_amo.u_amo.amo_addr_r, mem_addr, mem_re, mem_we,
                          mem_rdata, u_core.amo_wdata, scr);
             end
 

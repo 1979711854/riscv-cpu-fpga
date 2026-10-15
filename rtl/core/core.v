@@ -19,7 +19,17 @@ module core #(
     // 只预测【间接跳转 jalr】的目标（条件分支/jal 的目标 PC+imm 由 p_target 现算已正确）。
     // 为什么给开关：BTB 要新增一条"PC 索引的表读"进取指路径，可能吃时序余量；
     //   若综合后 CPU 域 WNS 变负、或收益为负，就把它默认关掉（v10 §6.5）。
-    parameter BTB_EN = 1
+    parameter BTB_EN = 1,
+
+    // ---- [面积优化] A 扩展（RV32A：AMO / LR / SC）----
+    // 0 = 关（**默认**）：opcode `0101111` 判为非法指令，`amo_unit` 整个不例化、
+    //     连同配套的 mux/前递门控一起被综合裁掉。
+    //     依据（2026-10-15 决策）：赛题公式 Score = Iterations/(Total_Time×Frequency)
+    //     = CoreMark/MHz ⇒ **主频与面积不进主分**，而面积进指标(3) CoreMark/LUTs。
+    //     两个交付固件都不含原子指令（CoreMark 用 `-march=rv32im_zicsr`，编译器发不出；
+    //     RT-Thread 档实测 ELF 里 0 条，原子走软实现）⇒ 关掉对分数**零影响**，纯省面积。
+    // 1 = 开：逐位回到原行为。`sim/tb_amo_int.v`（A 扩展的整核测试）必须显式传 1。
+    parameter A_EXT = 0
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -428,6 +438,20 @@ module core #(
         .is_amo     (id_is_amo),
         .amo_funct5 (id_amo_funct5)
     );
+
+    // ---- [面积优化] A_EXT 门控（语义见文件头 parameter A_EXT 处）----
+    // A_EXT=0 时：
+    //   ① `id_is_amo_g` 恒 0 ⇒ 这个标志不带进流水线，下游所有吃它的地方
+    //      （访存口 mux、写回 mux、前递门控、load 快通路门控、mem_ready 冻结）
+    //      全部常数化并被综合裁掉 —— 这才是"砍 RV32A"真正省面积的地方；
+    //   ② 但 AMO 的 opcode 必须【报非法指令】而不是静默当 NOP：
+    //      control.v 仍旧把 `0101111` 译成 AMO，所以在这里补一条 illegal。
+    //      RISC-V 规定"未实现的扩展 ⇒ mcause=2 非法指令"，这正是规范表现。
+    // [!] 为什么门控加在这里、而不是给 control.v 加参数：
+    //     `sim/tb_control.v` 是 control 的独立单测，动它的默认值会把那个单测一起带偏；
+    //     在 core 里补两条 wire 是纯增量、对 control 零侵入。
+    wire id_is_amo_g = (A_EXT != 0) && id_is_amo;
+    wire id_illegal_g = id_illegal || ((A_EXT == 0) && id_is_amo);
 
     wire [31:0] rdata1, rdata2;
     wire [31:0] rdata1_b, rdata2_b;
@@ -884,6 +908,15 @@ module core #(
                               fwd_b_wb  ? wb_data : id_ex_rdata2;
 
 
+    // ================= [面积优化] A_EXT 门控：AMO 单元是否例化 =================
+    // [!] 只把 `start` 接 0 是**不够**的 —— amo_unit 内部的地址/操作数锁存、以及
+    //     状态机寄存器并不依赖 start 的常量性，综合器不会去证明它们恒为常量，
+    //     面积省不下来。**必须用 generate 把整个例化包起来**，单元连同它的
+    //     输出 mux 才会被裁掉。这才是"砍 RV32A"真正省面积的那一下。
+    // A_EXT=0（默认）时 amo_hold 恒 0 ⇒ `mem_ready_int ≡ mem_ready` —— 这正是
+    //   2026-10-14 那两处修复（约定 56/57）所依赖的等式，语义逐位不变。
+    generate if (A_EXT != 0) begin : g_amo
+
     // [重点] store_commit 的含义：任何【会改内存】的指令落到 MEM 时拉高，
     //   用来让 LR 的预约失效（规格要求）。AMO 自己的写在 amo_unit 内部处理，
     //   所以这里只送普通 store —— 也就是 ex_mem_mem_write。
@@ -917,6 +950,22 @@ module core #(
     //   全部【保持】不动，AMO 独占访存口 4 拍。放开那拍 EX/MEM 恰好推进到 MEM/WB，
     //   不早不晚。
     assign amo_hold      = ex_mem_is_amo && !amo_mem_release;
+
+    end else begin : g_no_amo
+        // A_EXT=0：AMO 通路整条不存在。下面这几根线在原实现里全部由 amo_unit 驱动，
+        //   这里给常量，下游 mux 折向另一条腿之后被综合裁掉。
+        assign amo_mem_re      = 1'b0;
+        assign amo_mem_we      = 1'b0;
+        assign amo_byte_en     = 4'b0000;
+        assign amo_wdata       = 32'd0;
+        assign amo_stall       = 1'b0;
+        assign amo_mem_release = 1'b0;
+        assign amo_wb_data     = 32'd0;
+        assign amo_illegal     = 1'b0;
+        assign amo_hold        = 1'b0;
+    end
+    endgenerate
+
     assign mem_ready_int = mem_ready && !amo_hold;
 
     wire [31:0] alu_a = id_ex_alu_a_sel ? id_ex_pc  : rs1_val;
@@ -1628,9 +1677,9 @@ module core #(
             id_ex_csr_addr  <= csr_addr;
             id_ex_csr_cmd   <= csr_cmd;
             id_ex_csr_imm   <= csr_imm;
-            id_ex_is_amo     <= id_is_amo;
+            id_ex_is_amo     <= id_is_amo_g;
             id_ex_amo_funct5 <= id_amo_funct5;
-            id_ex_illegal   <= id_illegal;
+            id_ex_illegal   <= id_illegal_g;
             id_ex_sys_ecall <= sys_ecall;
             id_ex_mret      <= sys_mret;
             // [任务 C] 这条 load 能否走快通路 + 它在 ID 级算好的地址
