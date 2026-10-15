@@ -15,6 +15,16 @@
 **规则来源**：`rtl/core/core.v` 的 `pair_now`（实现）与本文件的 `PURE_ALU` / `BREAK`
 （模型）是同一套规则的两种写法。**改 RTL 的配对规则时，这里要跟着改。**
 
+[!] **2026-10-15 更正：本模型比实现【保守】，不要再把"③"当待做项。**
+    本文件的 `BREAK` 把 lane A 是 branch/jal/jalr/system/fence 一律判成"本组 1 宽" ——
+    那是 2026-10-10（双发射尚未实现）的 Stage-0 假设。而 `pair_now`（core.v:696）实际
+    只门控 `!p_pred_taken` 与 mul/div/amo，**对 lane A 没有任何 opcode 限制** ——
+    即"预测不跳转的分支可以配对"**早已实现**。
+    实测交叉验证：288,056 条指令 / `region commit` 214,703 拍 ⇒ 双提交 **73,353** 对，
+    与本文件「保守 + 分支配对」档的 **72,256** 只差 1.5%。
+    ⇒ **打印出的「③ 放宽上界」不是上界，就是现状**；照它算会得出"+4.18% 可挖"的错误结论。
+    详见 `doc/reports/2026-10-15_pair_rate_analysis.md`。
+
 保守配对规则（slot A = 老，任意指令；slot B = 新，全满足时才与 A 同拍发射）：
 
     - B 是纯 ALU：opcode ∈ {OP, OP-IMM, LUI, AUIPC}
