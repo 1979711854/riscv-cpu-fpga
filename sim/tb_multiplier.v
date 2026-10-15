@@ -18,14 +18,20 @@
 // ============================================================================
 module multiplier_test;
     reg         clk, resetn;
+    reg         en;                 // [A1] 流水线使能（见下）
     reg         start;
     reg  [31:0] a, b;
     reg  [1:0]  op;
     wire [31:0] result;
     wire        busy, done;
 
+    // [!] `en` 是【A1（II=1 流水线）之后新增的端口】。本测试台在 2026-09-28 写的是
+    //     "锁存操作数 → 组合乘法 → done" 的【阻塞】两拍版，那时没有 en。A1 改成
+    //     自由流动的两级流水线后，这个端口一直【没接】—— 悬空输入 = Z（约定 13），
+    //     `en` 恒 X/Z ⇒ 流水线寄存器永不使能 ⇒ done 永不高 ⇒ 840 项全挂。
+    //     2026-10-15 补上：本测试台不测停顿，en 恒 1（= 背靠背连发，正好压 II=1）。
     multiplier u_mul (
-        .clk(clk), .resetn(resetn), .start(start),
+        .clk(clk), .resetn(resetn), .en(en), .start(start),
         .a(a), .b(b), .op(op),
         .result(result), .busy(busy), .done(done)
     );
@@ -73,10 +79,19 @@ module multiplier_test;
                 guard = guard + 1;
             end
 
+            // [A1 口径] 这里原来是 `guard != 0`（旧阻塞版：start 落下那拍 done 就该高）。
+            //   II=1 流水线把 done 推后了一拍，推导（en 恒 1，start 在 N0 拉高、
+            //   N1 落下）：
+            //     P1: en&start ⇒ v0<=1（锁存 a/b/op）
+            //     P2: v1<=v0=1 ⇒ done 在 P2 之后为高；q_res<=sel 同时有效
+            //     N2: 第一次轮询到 done=1 ⇒ guard==1
+            //     P3: v1<=v0=0 ⇒ done 只高 1 拍
+            //   所以期望值从 0 变成 1。**这个数变了不代表行为变坏** —— 它是 A1
+            //   流水线的必然结果，而 core 侧是靠 `mem_ready_int` 同源使能对齐的。
             checks = checks + 1;
-            if (guard != 0) begin
+            if (guard != 1) begin
                 errors = errors + 1;
-                $display("FAIL 握手: op=%0d a=%h b=%h —— done 不在此拍出现（等了 %0d 拍）",
+                $display("FAIL 握手: op=%0d a=%h b=%h —— done 未在 start 后第 2 拍出现（等了 %0d 拍）",
                          o, x, y, guard);
             end else begin
                 exp = ref_mul(x, y, o);
@@ -113,6 +128,7 @@ module multiplier_test;
 
     initial begin
         resetn = 1'b0;
+        en     = 1'b1;              // 见 u_mul 处的说明：不测停顿，恒开
         start  = 1'b0;
         a = 32'd0; b = 32'd0; op = 2'd0;
         checks = 0; errors = 0;
