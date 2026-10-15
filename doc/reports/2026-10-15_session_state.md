@@ -162,6 +162,8 @@ W: Public-4010: Pcf file D:/riscv-cpu-fpga_merged/pds/RV32I_1/cpu_top_region1.pc
 | `doc/reports/2026-10-15_pce_region_result.md` | **§2 的收口文档**：区域约束结论（负收益）与数据、P&R 确定性、`target_file` 的正确开法 |
 | `doc/Physical_Constraint_Editor_User_Guide.pdf` + `_文本提取.txt` | PCE 手册（**注意：手册版本旧，`region -add` 在本版不存在**）|
 | `doc/User_Constraint_Editor_User_Guide.pdf` + `_文本提取.txt` | **UCE 手册（V1.7，较新）—— 区域约束的正确操作在这份里** |
+| `doc/reports/2026-10-15_pair_rate_analysis.md` | 双发射配对率实况（**当晚追加**）—— 纠正 `pair_analyze.py` 一个会误导人的模型 |
+| **`doc/reports/2026-10-15_laneb_mem_plan.md`** | **[重点] lane B 访存改造任务书（方案定稿，RTL 未改）—— 下个会话第一件事** |
 
 ---
 
@@ -169,9 +171,24 @@ W: Public-4010: Pcf file D:/riscv-cpu-fpga_merged/pds/RV32I_1/cpu_top_region1.pc
 
 ```powershell
 cd D:\riscv-cpu-fpga_merged ; git log --oneline -3 ; git status    # 分支 dualissue
+# 【第一件事】读 doc\reports\2026-10-15_laneb_mem_plan.md，从 P0 开始实施。
+#   周期侧唯一剩下的实质机会（+3.5%）；方案已定稿、判据已备齐、RTL 一行未改。
 # §2 的 PCE 实验已完结（结论否定），别再接它。
-# 先看本文件 §7「仍未验证/悬着的」—— 那里才是真待办。
 ```
+
+### 当晚（10-15）本会话追加的三件事 —— 都已在 git 里
+
+| 提交 | 内容 |
+|---|---|
+| `b2bc5a3` | PCE 区域约束实验收口 —— **结论负收益**（slack +0.034 → −0.755 ns），`.pds` 已还原、位流已盖回 `a6ca1c12` |
+| `5ea287f` | `pds/RV32I_1/mem.hex` 入库快照更新到 **ITER=4332**（原 4280 是 B1-RAS 之前的口径）|
+| `10edc98` | 配对率实况 —— 纠正 `pair_analyze.py` 的模型与实现脱节（它打印的"③ 上界"其实就是现状）|
+| `ceaead7` | **lane B 访存任务书**（方案定稿，RTL 未改）|
+
+> [!] **性能线的现状，一句话**：**频率侧已堵死**（余量 +0.034 ns，区域约束已证伪）；
+> **周期侧只剩"给 lane B 加 load"一条，上界 +3.5%**。
+> 注意两个此前流传的虚数：**+7.46% 没扣端口约束**（"每对最多一条访存"后只剩 +3.80%），
+> **+12.31% 是把"早已实现的分支配对"重复计了一次**。
 
 **未 push 的提交**：本会话产生的若干提交都在本地。按项目纪律**不自动 push**，需要时手动。
 
