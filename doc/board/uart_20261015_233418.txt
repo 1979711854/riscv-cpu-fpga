@@ -1,0 +1,60 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-15 23:34:18
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 15 2026 23:13:05
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261023
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @85.0051MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 5144 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261023
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = change, hold or right = OK, left = back
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+menu=MODE
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[!] vblank timeout -- video not running (check D18 video_locked)
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+menu=DIFFICULTY
+black=EASY
+white=EASY
+menu=COLOR
+start, level=EASY you=BLACK
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+[hb] alive, uptime 15000 ticks
+[hb] alive, uptime 20000 ticks
+[hb] alive, uptime 25000 ticks
+# 结束于 2026-10-15 23:34:55，共 58 行

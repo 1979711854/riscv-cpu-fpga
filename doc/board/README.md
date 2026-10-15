@@ -28,6 +28,34 @@
 >
 > 更早的各代见下方各节与 `doc/reports/2026-10-04_coremark_score.md`。
 
+## 【[OK] RT-Thread 五子棋演示档对齐 rev1023 上板（2026-10-15 23:34）—— **应用场景必备项闭环**
+
+> 位流 `rtthread_dual_noaext_ms_earlyld_a1_ras_btb_gomoku_g3_85mhz_rev1023_1e2075e6.sbit`
+> （md5 **`1e2075e6`**，Cache 全关、85.0051MHz、CPU 域 +0.330ns/0 端点）。
+> 日志 **`uart_20261015_233418.txt`**（58 行）。
+
+**背景**：上一颗演示档 `176e0028` 是 **rev1022、A 扩展还在**的 RTL，而跑分档已走到
+`55fae69e`（rev1023 / `A_EXT=0`）。**直接验 `176e0028` 等于验一颗不交付的位流** ——
+正是 rev1017→rev1019 那次踩过的坑。故按新 RTL 重出本颗再验。
+**`176e0028` 自此作废，不要再烧。**
+
+| 判据 | 实测 |
+|---|---|
+| 版本自证 | 首行 `[build] FW=RTTHREAD-GOMOKU-G3 **RTL=0x20261023**` ✓（读 `mimpid`，运行时取 ⇒ 位流权威自证，不是烧成旧的） |
+| render 线程 | `[boot] gomoku render thread running` ✓ |
+| AI 线程 | `[boot] gomoku ai thread running` ✓ |
+| 心跳 | `[hb] alive, uptime 5000 → 25000 ticks` 五条、每 5 s 一条、**单调递增、无断** ✓（`[hb]` 能挤进来 = render 没独占 CPU，**这正是 G3 的前提**） |
+| **显示侧** | **用户接 HDMI 显示器下棋正常；板上 `D18`（led[1]=`video_locked`）常亮** ✓ |
+| 交互 | 菜单真的走通：`menu=MODE` → `menu=DIFFICULTY` → `menu=COLOR` → `start, level=EASY you=BLACK`；串口棋盘镜像渲染出完整 15×15 + `cursor=H8 you=BLACK turn=BLACK` ✓ |
+
+**[OK] `[!] vblank timeout` 就此定案为【假超时】**：本颗日志同样打这句（第 31 行，
+字面是 `video not running`），而 **D18 亮着、显示器画面正常** ⇒ 它**不是"显示坏了"**，
+而是软件采样粒度问题（`rt_thread_mdelay(1)` ≈ 1 ms 采样去看 62.7 µs 的 vsync 脉冲，
+见本节 T1/G3 那节的完整机制与 A/B/C 三个处理方案）。**判据看 D18，不看这句话。**
+
+**灯**：`D19`(led[0]=pll_locked) 与 **`D18`(led[1]=video_locked) 常亮**；
+**`D13`(led[2]=done) 本变体不会亮，别误判**。
+
 ## 【[OK] 裸机五子棋 T2/T3 整合版上板（2026-10-14 18:49 / 18:53 两局）—— CPU 侧无问题
 
 > 位流 `gomoku_dual_aext_ms_earlyld_a1_76mhz_rev1019_dd4fecb4.sbit`（md5 `dd4fecb4`，
