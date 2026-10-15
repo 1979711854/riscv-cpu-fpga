@@ -91,6 +91,8 @@ def reads(instr):
         return {rs1, rs2}
     if op == OPIMM:
         return {rs1}
+    if op == LOAD:                 # [lane B 放 load] 基址寄存器
+        return {rs1}
     return set()   # LUI / AUIPC
 
 
@@ -103,6 +105,26 @@ def is_simple_alu_b(instr):
     if rd == 0:                       # 不写寄存器则配对无意义
         return False
     return True
+
+
+def is_simple_b(instr, allow_load=False):
+    """lane B 能否放这条。allow_load（[任务] lane B 放访存）时额外允许 LOAD。
+
+    [!] **load 不能用 `f7` 判** —— 它的 `instr[31:25]` 是【立即数高位】，不是 funct7。
+        实现里 `p_f7_b != 1` 那条排除必须【收窄成只对 OP_REG】`(op==OP && f7==1)`，
+        否则 `imm[11:5]==1` 的合法 load 会被误排 —— 表现为"少配一对"，不报错、
+        CRC 也不变（任务书 §7 R3）。
+    [!] 不放 store：本轮明确不做（任务书 §8.2，风险 R-main：ex_flush 那拍 lane B
+        若为 store 会静默写坏内存）。A' 档（load+store）只作上界参考。
+    """
+    op, rd, f3, rs1, rs2, f7 = fields(instr)
+    if op in PURE_ALU:
+        if op == OP and f7 == 0x01:   # M 扩展排除（只对 OP_REG 有意义）
+            return False
+        return rd != 0                # 不写寄存器则配对无意义
+    if allow_load and op == LOAD:
+        return rd != 0
+    return False
 
 
 def is_break_a(instr):
@@ -122,15 +144,22 @@ def is_pure_alu_a(a):
     return False
 
 
-def _pair_reason(a, b, allow_bypass, skip_break=False):
+def _pair_reason(a, b, allow_bypass, skip_break=False, allow_load_b=False):
     """返回 'ok' 或失败原因。allow_bypass 时允许 B 依赖纯 ALU 的 A。
-    skip_break=True 时不把 A 的打断性算作失败（用于"预测不跳转的分支"放宽）。"""
+    skip_break=True 时不把 A 的打断性算作失败（用于"预测不跳转的分支"放宽）。
+    allow_load_b=True 时 lane B 可放 load，但【每对最多一条访存】（见下）。"""
     op_a, rd_a, _, _, _, _ = fields(a)
     if not skip_break and is_break_a(a):
         return 'break_a'
-    if not is_simple_alu_b(b):
+    if not is_simple_b(b, allow_load_b):
         return 'b_not_alu'
     op_b, rd_b, _, _, _, _ = fields(b)
+    # [任务书 §2/§3] **每对最多一条访存** —— 规则的前提，时序上就不冲突：
+    #   lane A / lane B 是【同对、同拍锁存】（ex_mem/ex_mem_b 同沿更新）⇒ 任一拍
+    #   MEM 级里躺着的就是这一对的两条 ⇒ 访存口只需一次 2 路 mux，不用仲裁器。
+    #   实现里对应新增的 `&& !(p_mem_a && p_ld_b)`（任务书 §4B）。
+    if allow_load_b and op_a in (LOAD, STORE) and op_b == LOAD:
+        return 'mem_both'
     if rd_a != 0 and rd_a == rd_b:       # 同对 WAW
         return 'waw'
     if rd_a != 0 and rd_a in reads(b):   # B 依赖 A
@@ -164,15 +193,17 @@ def analyze(path):
 
     def reason(a, b, mode):
         # mode: 0=保守; 1=+A→B旁路; 2=+分支配对(预测不跳转的分支可与后继配对)
-        pc_a = None
-        r = _pair_reason(a[1], b[1], mode == 1 or mode == 2)
+        #       3 = 2 + lane B 可放 load（每对最多一条访存）—— 本任务的目标档
+        allow_load_b = (mode == 3)
+        r = _pair_reason(a[1], b[1], mode in (1, 2, 3), allow_load_b=allow_load_b)
         if r != 'break_a':
             return r
         # break_a：看是否能靠"分支配对"救
-        if mode == 2:
+        if mode in (2, 3):
             op_a = a[1] & 0x7f
             if op_a == BRANCH and not taken_branch_at_by_pc(a, b):
-                return _pair_reason(a[1], b[1], False, skip_break=True)
+                return _pair_reason(a[1], b[1], False, skip_break=True,
+                                    allow_load_b=allow_load_b)
         return 'break_a'
 
     def taken_branch_at_by_pc(a, b):
@@ -209,7 +240,7 @@ def analyze(path):
         print(f"  指令数 n          : {n:,}")
         print(f"  2 宽组合 k        : {k:,}   配对率 p = {p:.4f}")
         print(f"  组合总数 g=n-k    : {g:,}")
-        for r in ('break_a', 'b_not_alu', 'b_dep_a', 'waw', 'end'):
+        for r in ('break_a', 'b_not_alu', 'b_dep_a', 'waw', 'mem_both', 'end'):
             if reasons.get(r):
                 print(f"    单独发射-{r:<10}: {reasons[r]:>8,}  ({reasons[r]/g*100:4.1f}% of g)")
         print(f"  预测区间周期数    : {pred_region:,.0f}   (基线 {BASE_REGION_CYCLES:,})")
@@ -223,6 +254,23 @@ def analyze(path):
     p1, s1, be1 = report("② ① + A→B 旁路（Stage D，实测只值 +1 分）", mode=1)
     print()
     p2, s2, be2 = report("③ ① + 允许预测不跳转的分支配对（放宽，上界）", mode=2)
+    print()
+    p3, s3, be3 = report("④ ③ + lane B 可放 load（每对最多一条访存）—— 本任务目标档", mode=3)
+    print("=" * 62)
+    print()
+    # ---- P1 判据（任务书 §6）----
+    # ③ 是【当前实现】的近似（实现只门控 !p_pred_taken + mul/div/amo，对 lane A 无
+    #    opcode 限制）—— 不是"上界"。②③④ 三档的相对差才是本次要看的量。
+    # p = k/g 且 g = n-k  ⇒  k = p*n/(1+p)
+    def k_of(p):
+        return round(p * n / (1.0 + p))
+    k2, k3 = k_of(p2), k_of(p3)
+    print("P1 判据（相对【当前实现近似】= (3) 档）：")
+    print(f"  (3) 现状近似        k = {k2:,}")
+    print(f"  (4) +lane B load    k = {k3:,}   delta = {k3 - k2:+,}  ({(k3 - k2) / max(k2, 1) * 100:+.2f}%)")
+    print(f"  ->  预测拍数        229,597 -> {229597 - (k3 - k2):,}"
+          f"  ({-(k3 - k2) / 229597 * 100:+.2f}%)")
+    print(f"  ->  预测 Score      {1e6 / 229597:.4f} -> {1e6 / (229597 - (k3 - k2)):.4f} CoreMark/MHz")
     print("=" * 62)
     print()
     print("门限判定（以 ① 为准）：")
