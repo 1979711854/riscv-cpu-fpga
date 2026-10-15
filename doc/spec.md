@@ -1,6 +1,7 @@
 # 架构文档 spec.md — RV32IMA 五级流水线（顺序双发射）SoC
 
-> 最近更新：**2026-10-12**（补 §4.4 I/D Cache；当前实现还含**顺序双发射**、**A 扩展**、
+> 最近更新：**2026-10-16**（修正四条并列基线为 2026-10-15 P0 实测值；补 §5 的 `LANEB_MEM` 开关说明。
+> 前次：2026-10-12 补 §4.4 I/D Cache；当前实现还含**顺序双发射**、**A 扩展（默认关）**、
 > **CSR/异常/中断**、**任务C `EARLY_LD`** —— 这些见 `doc/resource_efficiency.md` §14 与 `CLAUDE.md`）
 > 本文件是比赛《性能分析报告》的架构依据，描述**当前实现**（不是计划）。
 > 任务分解见 `doc/plan.md`，基础任务核对见 `doc/base_task_status.md`。
@@ -41,7 +42,7 @@
 | `rtl/periph/uart_tx.v` | uart_tx | UART 发送，1024 深 FIFO |
 | `rtl/periph/uart_rx.v` | uart_rx | UART 接收，中点采样 + 16 深 FIFO |
 | `rtl/periph/gpio.v` | gpio | 8 位 LED 输出 + 8 位按键输入（2 级同步） |
-| `rtl/top/cpu_top.v` | cpu_top | SoC 顶层，只做连线（`DUAL_ISSUE` / `DCACHE_EN` / `ICACHE_EN` / `EARLY_LD` 等 parameter 都在这里）|
+| `rtl/top/cpu_top.v` | cpu_top | SoC 顶层，只做连线（`DUAL_ISSUE` / `DCACHE_EN` / `ICACHE_EN` / `EARLY_LD` / `LANEB_MEM` 等 parameter 都在这里）|
 | `rtl/core/csr_file.v` | csr_file | CSR 文件 + 异常/中断 + **`mimpid` 承载设计版本号 `DESIGN_REV`**（改 RTL 必须递增，见 `CLAUDE.md` 约定 42）|
 | `rtl/core/multiplier.v` | multiplier | M 扩展乘法，**拆成 2 拍**（换时序余量）|
 | `rtl/core/amo_unit.v` | amo_unit | A 扩展原子指令（AMO* / LR / SC）|
@@ -173,7 +174,7 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 > [!] **回绕周期跟着时钟走**：27 MHz 下约 **159 秒**，45 MHz 下 **95.4 秒**，
 > 49.89 MHz 下 **86.1 秒**，**当前板上 85.0051 MHz 下约 50.5 秒**。
 > 按"最长的一次连续计时"算，本项目最长的 CoreMark 计时区间是 **11.70 秒**
-> （**当前跑分档**：ITER=4280 @85.0051 MHz，双发射 + `EARLY_LD` + A1；历史：ITER=4116 双发射 + `EARLY_LD`、ITER=3170 双发射、ITER=2740 单发射），
+> （**当前跑分档**：ITER=4332 @85.0051 MHz，双发射 + `EARLY_LD` + B1-RAS/BTB + A 扩展默认关；历史：ITER=4280 双发射 + `EARLY_LD`、ITER=4116 双发射 + `EARLY_LD`、ITER=3170 双发射、ITER=2740 单发射），
 > 远小于回绕周期，**当前无风险**。
 > 但若日后把 ITER 加到几千、或做更长的长稳测试，**必须重新核对** ——
 > 32 位计数器一回绕，`Total ticks` 就会算出错误的（甚至负的）时长。
@@ -257,14 +258,19 @@ parameter ICACHE_EN = 0;   // 指令 Cache
 
 | 配置 | riscv-tests | CoreMark 每迭代 |
 |---|---|---|
-| **双发射 + `EARLY_LD`（默认，= 板上口径）** | 49 PASS / 1 FAIL / 0 TIMEOUT | **232,345**（A1 前 241,633）|
-| 双发射 + `EARLY_LD=0` | 49 PASS / 1 FAIL / 0 TIMEOUT | **252,730**（A1 前 262,018）|
-| 单发射（`-Single`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **303,140**（A1 前 312,428）|
-| 带 Cache（`-DCache -ICache -EarlyLd`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **235,628**（A1 前 243,933）|
+| **双发射 + `EARLY_LD`（默认，= 板上口径）** | 49 PASS / 1 FAIL / 0 TIMEOUT | **229,597**（A1 后 232,345 → B1-RAS 后 229,597）|
+| 双发射 + `EARLY_LD=0` | 49 PASS / 1 FAIL / 0 TIMEOUT | **249,982**（2026-10-15 P0 实测修正，旧文档值 252,730 是 pre-RAS 口径）|
+| 单发射（`-Single`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **300,392**（同上修正，旧值 303,140）|
+| 带 Cache（`-DCache -ICache -EarlyLd`） | 49 PASS / 1 FAIL / 0 TIMEOUT | **233,013**（同上修正，旧值 235,628）|
 
 > 演进：`420,070`（基线）→ `382,972`（取指重定向）→ `358,846`（ID 级静态预测）
 > → `354,119`（BHT，2026-09-25）→ `363,515`（两拍乘法器）→ `313,886`（顺序双发射，2026-10-06）
-> → `312,428`（单发射阶段0/1，2026-10-11）→ `241,633`（双发射 + 任务C `EARLY_LD`，2026-10-11）→ **`232,345`（2026-10-13 A1 乘法器 II=1，当前）**。
+> → `312,428`（单发射阶段0/1，2026-10-11）→ `241,633`（双发射 + 任务C `EARLY_LD`，2026-10-11）
+> → `232,345`（2026-10-13 A1 乘法器 II=1）→ **`229,597`（2026-10-14 B1-RAS，当前）**。
+> **[lane B 访存]** `core.v` 已新增 `parameter LANEB_MEM`（默认 **0**）：lane B 放 load 的
+> 全部管道（级间寄存器 / 访存口 mux 腿 / 前递门控 / 停顿 / 异常 / WB 解包）已接线在位，
+> 0 档行为与上表逐位相同（P2 已验证）；翻 1 是 P3，判据与风险见
+> `doc/reports/2026-10-16_session_state_p2.md`。
 
 ## 6. 已知限制与后续方向
 
