@@ -19,6 +19,18 @@
 > | 对照：rev1017 的 `bcd8fdd2` | — | **+0.068 ns** | **0 / 17,216** | 达标（且已板级验证 365.93 分）|
 >
 > ⇒ **结论：生产/交付档【继续用 rev1017 的 `bcd8fdd2` / `8894cdcb` 】，不要换成 rev1019。**
+
+> **[OK] 2026-10-15 更新：这条结论【对 rev1019 成立，对 rev1022 已不成立】—— 生产档可以升级了。**
+> rev1022（= rev1019/1020 + **B1-RAS/BTB**）的 85 MHz 生产档**实测达标**：
+> * 跑分档 `f64b977`：CPU 域 **+0.034 ns / 0 失败端点（20,507）**，且**已上板 370.23 分**（10-14 23:39）
+> * 演示档 `176e0028`（本轮重出的 rtthread 五子棋）：**同样是 +0.034 ns / 0 / 20,507**
+>   —— 与跑分版**逐位一致**（同一份 RTL，只换 BRAM 初始化）
+>
+> 也就是说：rev1019 当时那 **−0.153 ns** 的问题，在 rev1022 上**不再出现**。
+> 成因推断：RAS/BTB 把关键路径**重排**了（两者的延迟正好落在 `fetch_addr` 那条链的不同位置），
+> 加上 P&R 布局变化 —— 注意 **+0.034 ns 仍远低于本项目的综合噪声（≈5.7%）**，
+> **换 seed 有可能翻负**（届时按 §9.7 的后备方案：BTB 缩 64 项 → 仍负则 `BTB_EN` 默认 0）。
+> **⇒ rev1022 的 `f64b977` / `176e0028` 现在是新的交付口径；`bcd8fdd2` / `8894cdcb`（rev1017）降为历史对照。**
 > 两颗 rev1019 的 85 MHz 位流已按 `_wns-0.153ns_` 命名归档，**只作"功能等价"的证据，勿烧**。
 > 成因（供 CPU 线参考）：那两处 AND 加在 `mem_ready_int` 这条**本来就很晚**的信号上（它同时是
 > ID/EX、EX/MEM、MEM/WB、乘法器的使能）⇒ 扇出/连线变差，把只剩 0.068 ns 的余量吃掉了。
@@ -29,6 +41,7 @@
 
 | 文件 | 内容 | md5 |
 |---|---|---|
+| **`rtthread_dual_aext_ms_earlyld_a1_ras_btb_gomoku_g3_85mhz_rev1022_176e0028.sbit`** | **[OK] 演示档重出 —— RT-Thread 五子棋，RTL 对齐到 rev1022（2026-10-15 19:49 综合，md5 `176e0028`）**：双发射 + `EARLY_LD` + A1 + **RAS(16)/BTB(256)**，`DESIGN_REV=0x2026_1022`，`DCACHE_EN=ICACHE_EN=0`、`RATIO0=13.5`、`UART_DIV=738`。`DEBUG_LED=1` ⇒ led[0]=pll_locked / led[1]=video_locked / led[2]=done（本变体不亮）。固件来自 `scripts/rtthread/`：`mem.hex` **21046 行 / 10523 字**（守卫 `@(21046, 21048)` ✓ 已过），静态 **52,761 / 61,440 B（85.9%）**、堆余 5,144 B，串口 banner `FW=RTTHREAD-GOMOKU-G3 RTL=0x20261022`。**目的**：上一颗 `8894cdcb` 是 **rev1017** 的 RTL，功能虽逐位等价（Cache 关 + 无 AMO ⇒ `mem_ready_int≡1` ⇒ 两处门控恒真），但交付口径不统一。**时序：CPU 域 `u_pll→u_pll` +0.034 ns / 0 失败端点（20,507）**，请求 85.0051 → 实测 85.2515 MHz —— **与跑分版 `f64b977` 逐位一致**（同一份 RTL，只换 BRAM 初始化）。**[ ] 板上待验**：四条判据（banner / `[broadcast] render thread` / AI 线程 / `[hb]` 无断）。<br>[!] **这颗直接推翻上一条注记的结论** —— 详见下方"rev1017 要不要重出"那段的 [2026-10-15 更新]。 | `176e0028` |
 | **`coremark_dual_aext_ms_earlyld_a1_ras_btb_85mhz_rev1022_f64b977.sbit`** | **[OK] B1-RAS + B1-BTB 跑分版 @85.0051 MHz —— 已上板通过，当前最好成绩（2026-10-14 23:39，370.23 分）**（2026-10-14 23:04 综合，md5 `f64b977`；集成方合并队友 `riscv-cpu-fpga_dualissue_20261014_cpu (2).zip` 后重出，集成报告 `doc/reports/2026-10-14_integrate_b1_ras_btb.md`）：双发射 + `EARLY_LD` + **RAS（16 项返回地址栈）+ BTB（256 项直接映射，只预测间接 `jalr`，RAS>BTB>PC+imm）**，`DCACHE_EN=ICACHE_EN=0`，`DESIGN_REV=0x2026_1022`，`UART_DIV=738`、`EE_TICKS_PER_SEC=85,005,100`，**ITER=4332**。网表自证 `dcache`/`icache`/`tag0` **全 0** ✓、`btb_tag` 145 / `btb_target` 124 / `ras_mem` 16 在网表中 ✓。**时序：CPU 域 `u_pll→u_pll` +0.034 ns / 0 失败端点（20,507）**，请求 85.0051 → 实测 **85.2515 MHz**（`Some Constraints Violated` = 21 条 `u_pll→video` + 1 条 `video→u_pll` 跨域建模假象，CPU 域 0 失败）。资源 **LUT 8,104 / 5.07%**（rev1017 的 7,482 + 622 = RAS+BTB 代价）、FF 3,899、DRM 101.5。**[OK] 上板实测**（日志 `doc/board/uart_20261014_233933.txt`）：首行 `RTL=0x20261022`、`Total ticks 994,412,748` → **11.6980 s** → **370.23 分**（日志里 `Iterations/Sec 393` 是 `HAS_FLOAT=0` 整数截断，别用）、四 CRC `e9f5/e714/1fd7/8e3a` 与仿真**逐位一致**、`Correct operation validated`；拍/迭代 **229,574.8**（仿真 229,597，差 **−0.0097%**，±0.04% 抖动内）⇒ 较 `bcd8fdd2` 365.93 **+1.17%**（周期 −1.18%）。仿真依据：riscv-tests 49/1/0（默认 + `-DCache -ICache -EarlyLd`）、自写 5/5、RT-Thread `-DCache -ICache` PASS | `f64b977` |
 | **`coremark_dual_aext_ms_earlyld_a1_85mhz_rev1019_wns-0.153ns_aad1e2ac.sbit`** | **[X] rev1019 的 CoreMark 生产档重出 —— 【时序不过，勿烧】**（2026-10-14 15:04 综合，md5 `aad1e2ac`；ITER=4280，脚本期望 `Total ticks ≈ 994,436,600` → 11.7 s）：`DCACHE_EN=ICACHE_EN=0`、85.0051 MHz（`RATIO0=13.5`/`UART_DIV=738`）。网表自证 `dcache` **0** / `icache` **0** / `tag0` **0** ✓（Cache 全关口径正确）。**CPU 域 `u_pll→u_pll` −0.153 ns / 16 失败端点（16,581）⇒ `Design Summary : Some Constraints Violated`**（对照 `bcd8fdd2` = +0.068 / 0）⇒ **不作交付件**，只为"rev1019 与 rev1017 功能等价"留证；分数**未上板验证**，别引用 | `aad1e2ac` |
 | **`rtthread_dual_aext_ms_earlyld_a1_gomoku_g3_85mhz_rev1019_wns-0.153ns_382ce876.sbit`** | **[X] 同上的 rtthread 五子棋版 —— 【时序不过，勿烧】**（2026-10-14 15:24 综合，md5 `382ce876`）：固件 `mem.hex` **20274 行 / 10137 字**（85.0051 MHz 口径；注意与 76.5 MHz 档的 10138 字不同 —— `build_bitstream.ps1` 的 `expectLines` 已改成接受这两个值）。**CPU 域 −0.153 ns / 16 失败端点**，与上面那颗**逐位相同**（两次独立运行 ⇒ 确定性结果，不是 8-seed 抖动）。**交付继续用 `8894cdcb`** | `382ce876` |
