@@ -1,0 +1,240 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 820" width="1280" height="820" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#185FA5"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0F6E56"/>
+    </marker>
+    <marker id="arrK" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7A7A7A"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1280" height="820" fill="#FAFAFA"/>
+
+  <!-- ================= 标题 ================= -->
+  <text x="20" y="30" font-size="17" font-weight="700" fill="#1F1F1F">图 1：SoC 顶层结构（cpu_top.v 只做连线；地址译码全部收敛在 mem_bus）</text>
+
+  <!-- ================= CPU 核 ================= -->
+  <rect x="20" y="55" width="300" height="560" rx="8" fill="#FFFFFF" stroke="#185FA5" stroke-width="2"/>
+  <text x="170" y="78" font-size="14" font-weight="700" fill="#185FA5" text-anchor="middle">CPU 核 core.v</text>
+  <text x="170" y="96" font-size="11" fill="#7A7A7A" text-anchor="middle">五级流水 · 顺序双发射（lane A / lane B）</text>
+
+  <!-- 流水级 -->
+  <rect x="45" y="115" width="250" height="52" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="60" y="137" font-size="12" font-weight="600" fill="#1F1F1F">IF 取指</text>
+  <text x="60" y="155" font-size="10.5" fill="#43536B">imem_addr / imem_addr2（A1/A2 口）</text>
+
+  <rect x="120" y="172" width="26" height="30" fill="#F5C86B" stroke="#BA7517" stroke-width="1"/>
+  <text x="133" y="212" font-size="10" fill="#BA7517" text-anchor="middle">IF/ID</text>
+
+  <rect x="45" y="222" width="250" height="52" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="60" y="244" font-size="12" font-weight="600" fill="#1F1F1F">ID 译码 / 到达级配对</text>
+  <text x="60" y="262" font-size="10.5" fill="#43536B">pair_now 白名单 + BHT/RAS/BTB 预测</text>
+
+  <rect x="120" y="279" width="26" height="30" fill="#F5C86B" stroke="#BA7517" stroke-width="1"/>
+  <text x="133" y="319" font-size="10" fill="#BA7517" text-anchor="middle">ID/EX</text>
+
+  <rect x="45" y="329" width="250" height="52" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="60" y="351" font-size="12" font-weight="600" fill="#1F1F1F">EX 执行</text>
+  <text x="60" y="369" font-size="10.5" fill="#43536B">ALU / 乘除 / 分支解析 / 提前 load 地址</text>
+
+  <rect x="120" y="386" width="26" height="30" fill="#F5C86B" stroke="#BA7517" stroke-width="1"/>
+  <text x="133" y="426" font-size="10" fill="#BA7517" text-anchor="middle">EX/MEM</text>
+
+  <rect x="45" y="436" width="250" height="52" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="60" y="458" font-size="12" font-weight="600" fill="#1F1F1F">MEM 访存</text>
+  <text x="60" y="476" font-size="10.5" fill="#43536B">写通路组合输出（零寄存器）</text>
+
+  <rect x="120" y="493" width="26" height="30" fill="#F5C86B" stroke="#BA7517" stroke-width="1"/>
+  <text x="133" y="533" font-size="10" fill="#BA7517" text-anchor="middle">MEM/WB</text>
+
+  <rect x="45" y="543" width="250" height="52" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="60" y="565" font-size="12" font-weight="600" fill="#1F1F1F">WB 写回</text>
+  <text x="60" y="583" font-size="10.5" fill="#43536B">寄存器堆 4 读 2 写（lane A/B 各一套写口）</text>
+
+  <!-- 前馈虚线 -->
+  <path d="M 275 462 L 292 462 L 292 355 L 275 355" fill="none" stroke="#6B3FA0" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text x="297" y="412" font-size="10" fill="#6B3FA0">前递</text>
+  <path d="M 275 569 L 300 569 L 300 250 L 275 250" fill="none" stroke="#6B3FA0" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text x="305" y="412" font-size="10" fill="#6B3FA0">前递</text>
+
+  <!-- ================= mem_bus ================= -->
+  <rect x="400" y="55" width="270" height="560" rx="8" fill="#FFFFFF" stroke="#A32D2D" stroke-width="2"/>
+  <text x="535" y="78" font-size="14" font-weight="700" fill="#A32D2D" text-anchor="middle">mem_bus.v</text>
+  <text x="535" y="96" font-size="11" fill="#7A7A7A" text-anchor="middle">全芯片【唯一】地址译码处</text>
+
+  <rect x="420" y="115" width="230" height="64" rx="5" fill="#F6E3E3" stroke="#A32D2D" stroke-width="1"/>
+  <text x="430" y="136" font-size="12" font-weight="600" fill="#1F1F1F">区译码</text>
+  <text x="430" y="153" font-size="10.5" fill="#43536B">RAM / 兼容区 / 外设区 / 视频区</text>
+  <text x="430" y="169" font-size="10.5" fill="#43536B">（addr[31] / addr[17:16] / addr[15:8]）</text>
+
+  <rect x="420" y="196" width="230" height="64" rx="5" fill="#F6E3E3" stroke="#A32D2D" stroke-width="1"/>
+  <text x="430" y="217" font-size="12" font-weight="600" fill="#1F1F1F">读数据 mux</text>
+  <text x="430" y="234" font-size="10.5" fill="#43536B">rsel_d 0=RAM 1=兼容区 2=外设 3=视频</text>
+  <text x="430" y="250" font-size="10.5" fill="#43536B">读选择位与数据在 MEM→WB 沿寄存</text>
+
+  <rect x="420" y="277" width="230" height="64" rx="5" fill="#F6E3E3" stroke="#A32D2D" stroke-width="1"/>
+  <text x="430" y="298" font-size="12" font-weight="600" fill="#1F1F1F">写选通 + one-shot 门控</text>
+  <text x="430" y="315" font-size="10.5" fill="#43536B">gpio_we / uart_tx_we / uart_rx_ack</text>
+  <text x="430" y="331" font-size="10.5" fill="#43536B">bus_first：只在访问首拍放行</text>
+
+  <rect x="420" y="358" width="230" height="52" rx="5" fill="#F6E3E3" stroke="#A32D2D" stroke-width="1"/>
+  <text x="430" y="379" font-size="12" font-weight="600" fill="#1F1F1F">mem_ready</text>
+  <text x="430" y="396" font-size="10.5" fill="#43536B">空闲期必须为 1（契约）</text>
+
+  <rect x="420" y="427" width="230" height="176" rx="5" fill="#FFFFFF" stroke="#A32D2D" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="430" y="448" font-size="11.5" font-weight="600" fill="#A32D2D">对外契约（mem_bus.v 头部注释）</text>
+  <text x="430" y="470" font-size="10.5" fill="#43536B">① 第 T 拍给地址/写数据，</text>
+  <text x="430" y="487" font-size="10.5" fill="#43536B">　 第 T+1 拍必须拿到读数据</text>
+  <text x="430" y="509" font-size="10.5" fill="#43536B">② 写通路零寄存器（否则读到旧值）</text>
+  <text x="430" y="531" font-size="10.5" fill="#43536B">③ 所有地址源一律 1 拍延迟，</text>
+  <text x="430" y="548" font-size="10.5" fill="#43536B">　 不搞特例</text>
+  <text x="430" y="570" font-size="10.5" fill="#43536B">④ 取指口：同步读、只读、无仲裁</text>
+  <text x="430" y="590" font-size="10.5" fill="#43536B">⑤ 写与读同址读到旧值（read_first）</text>
+
+  <!-- ================= 统一存储器 ================= -->
+  <rect x="740" y="55" width="270" height="330" rx="8" fill="#FFFFFF" stroke="#0F6E56" stroke-width="2"/>
+  <text x="875" y="78" font-size="14" font-weight="700" fill="#0F6E56" text-anchor="middle">unified_mem.v</text>
+  <text x="875" y="96" font-size="11" fill="#7A7A7A" text-anchor="middle">统一（冯诺依曼）存储器 · 双端口 BRAM</text>
+
+  <rect x="758" y="112" width="234" height="42" rx="5" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="768" y="131" font-size="11.5" font-weight="600" fill="#1F1F1F">A1 口：取指 1（只读）</text>
+  <text x="768" y="147" font-size="10" fill="#43536B">同步读，恰好 1 拍延迟</text>
+
+  <rect x="758" y="160" width="234" height="42" rx="5" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="768" y="179" font-size="11.5" font-weight="600" fill="#1F1F1F">A2 口：取指 2（只读，复制阵列）</text>
+  <text x="768" y="195" font-size="10" fill="#43536B">双发射第二指令，与 A1 同拍同延迟</text>
+
+  <rect x="758" y="208" width="234" height="42" rx="5" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="768" y="227" font-size="11.5" font-weight="600" fill="#1F1F1F">C 口：提前 load 读（只读）</text>
+  <text x="768" y="243" font-size="10" fill="#43536B">EARLY_LD 快通路，只镜像 RAM 段</text>
+
+  <rect x="758" y="256" width="234" height="42" rx="5" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="768" y="275" font-size="11.5" font-weight="600" fill="#1F1F1F">B 口：访存（读 + 按字节写）</text>
+  <text x="768" y="291" font-size="10" fill="#43536B">写口广播到所有阵列</text>
+
+  <rect x="758" y="306" width="234" height="66" rx="5" fill="#FFFFFF" stroke="#0F6E56" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="768" y="325" font-size="10.5" fill="#0F6E56">⇒ fence_i（自修改代码）语义成立：</text>
+  <text x="768" y="342" font-size="10.5" fill="#0F6E56">store 写进去的，之后 A1/A2/C 都能读到</text>
+  <text x="768" y="360" font-size="10.5" fill="#43536B">（64 KB = 16,384 × 32 位字）</text>
+
+  <!-- ================= 外设 ================= -->
+  <rect x="740" y="400" width="270" height="215" rx="8" fill="#FFFFFF" stroke="#7A7A7A" stroke-width="2"/>
+  <text x="875" y="423" font-size="14" font-weight="700" fill="#1F1F1F" text-anchor="middle">外设 rtl/periph/</text>
+
+  <rect x="758" y="436" width="234" height="36" rx="4" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1"/>
+  <text x="768" y="458" font-size="11" fill="#1F1F1F">uart_tx：1024 深 FIFO（0x8000_0008 / 0xFFFC）</text>
+
+  <rect x="758" y="478" width="234" height="36" rx="4" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1"/>
+  <text x="768" y="500" font-size="11" fill="#1F1F1F">uart_rx：16 深 FIFO，读即弹出（0x8000_000C）</text>
+
+  <rect x="758" y="520" width="234" height="36" rx="4" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1"/>
+  <text x="768" y="542" font-size="11" fill="#1F1F1F">gpio：写 LED[7:0] / 读 {key, led}（0x8000_0000）</text>
+
+  <rect x="758" y="562" width="234" height="42" rx="4" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1"/>
+  <text x="768" y="580" font-size="11" fill="#1F1F1F">CLINT：mtime / mtimecmp（32 位）</text>
+  <text x="768" y="596" font-size="10" fill="#43536B">mtime≥mtimecmp ⇒ MTIP ⇒ irq_timer 进核</text>
+
+  <!-- ================= 视频 ================= -->
+  <rect x="1080" y="55" width="180" height="560" rx="8" fill="#FFFFFF" stroke="#6B3FA0" stroke-width="2"/>
+  <text x="1170" y="78" font-size="14" font-weight="700" fill="#6B3FA0" text-anchor="middle">video_top</text>
+  <text x="1170" y="96" font-size="11" fill="#7A7A7A" text-anchor="middle">pix_clk 域（25.5 MHz）</text>
+
+  <rect x="1094" y="112" width="152" height="44" rx="5" fill="#E7DFF2" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="131" font-size="11.5" font-weight="600" fill="#1F1F1F">PPU：tile 渲染</text>
+  <text x="1104" y="147" font-size="10" fill="#43536B">滚动 / vblank / 调色板查找</text>
+
+  <rect x="1094" y="164" width="152" height="44" rx="5" fill="#E7DFF2" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="183" font-size="11.5" font-weight="600" fill="#1F1F1F">HDMI / TMDS</text>
+  <text x="1104" y="199" font-size="10" fill="#43536B">serial 127.5 MHz = 5 × pix</text>
+
+  <text x="1094" y="230" font-size="11.5" font-weight="700" fill="#6B3FA0">显存（真双口 BRAM）</text>
+
+  <rect x="1094" y="238" width="152" height="52" rx="5" fill="#F4EFFA" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="256" font-size="11.5" font-weight="600" fill="#1F1F1F">nametable 8 KB</text>
+  <text x="1104" y="272" font-size="10" fill="#43536B">2048 字 = 8192 个 tile 号</text>
+  <text x="1104" y="286" font-size="10" fill="#43536B">0x8001_0000</text>
+
+  <rect x="1094" y="298" width="152" height="52" rx="5" fill="#F4EFFA" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="316" font-size="11.5" font-weight="600" fill="#1F1F1F">pattern 64 KB</text>
+  <text x="1104" y="332" font-size="10" fill="#43536B">16384 字 = 65536 个像素索引</text>
+  <text x="1104" y="346" font-size="10" fill="#43536B">0x8002_0000</text>
+
+  <rect x="1094" y="358" width="152" height="46" rx="5" fill="#F4EFFA" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="376" font-size="11.5" font-weight="600" fill="#1F1F1F">palette 1 KB</text>
+  <text x="1104" y="392" font-size="10" fill="#43536B">256 项 × 24 bit · 0x8003_0000</text>
+
+  <rect x="1094" y="412" width="152" height="60" rx="5" fill="#FFFFFF" stroke="#6B3FA0" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="1104" y="430" font-size="10.5" fill="#6B3FA0">A 口 = CPU 域 clk_sys</text>
+  <text x="1104" y="446" font-size="10.5" fill="#6B3FA0">B 口 = pix_clk 域</text>
+  <text x="1104" y="464" font-size="10.5" fill="#43536B">同源锁相 ⇒ 跨域零握手</text>
+
+  <rect x="1094" y="484" width="152" height="46" rx="5" fill="#F4EFFA" stroke="#6B3FA0" stroke-width="1"/>
+  <text x="1104" y="502" font-size="11.5" font-weight="600" fill="#1F1F1F">控制寄存器</text>
+  <text x="1104" y="518" font-size="10" fill="#43536B">scroll_x/y · vblank 0x8003_0400</text>
+
+  <!-- ================= 连线：core ↔ mem_bus ================= -->
+  <!-- 取指/提前读地址（core → bus） -->
+  <path d="M 320 145 L 370 145 L 370 160 L 400 160" fill="none" stroke="#185FA5" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="330" y="138" font-size="10" fill="#185FA5">取指口</text>
+  <text x="330" y="200" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">imem_addr / imem_addr2</text>
+  <path d="M 320 360 L 390 360 L 390 175 L 400 175" fill="none" stroke="#185FA5" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="330" y="353" font-size="10" fill="#185FA5">提前读口</text>
+  <text x="330" y="390" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">ld_addr</text>
+
+  <!-- 数据返回（bus → core） -->
+  <path d="M 400 205 L 355 205 L 355 225 L 320 225" fill="none" stroke="#0F6E56" stroke-width="1.6" marker-end="url(#arrG)"/>
+  <text x="330" y="243" font-size="10" fill="#0F6E56">指令/数据</text>
+  <text x="330" y="283" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">imem_rd / imem_rd2</text>
+  <text x="330" y="298" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">ld_rdata</text>
+
+  <!-- 访存口（core → bus） -->
+  <path d="M 320 465 L 400 465" fill="none" stroke="#185FA5" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="330" y="458" font-size="10" fill="#185FA5">访存口</text>
+  <text x="330" y="492" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">mem_addr / mem_wdata</text>
+  <text x="330" y="507" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">mem_we / mem_re / mem_byte_en</text>
+
+  <!-- mem_rdata / mem_ready 返回 -->
+  <path d="M 400 500 L 320 500" fill="none" stroke="#0F6E56" stroke-width="1.6" marker-end="url(#arrG)"/>
+  <text x="330" y="528" font-size="10" fill="#0F6E56">读数据 / 就绪</text>
+  <text x="330" y="543" font-size="9.5" fill="#43536B" font-family="Consolas, Menlo, monospace">mem_rdata / mem_ready</text>
+
+  <!-- ================= 连线：mem_bus ↔ 统一存储器 ================= -->
+  <path d="M 670 140 L 740 140" fill="none" stroke="#185FA5" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="678" y="133" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">a_addr / a2_addr / ld_addr</text>
+  <path d="M 670 230 L 740 230" fill="none" stroke="#0F6E56" stroke-width="1.6" marker-end="url(#arrG)"/>
+  <text x="678" y="223" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">a_rd_data / a2_rd_data / ld_rd_data</text>
+  <path d="M 670 285 L 740 285" fill="none" stroke="#185FA5" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="678" y="278" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">b_addr / b_wr_data / b_wr_en / b_byte_en</text>
+  <path d="M 740 310 L 670 310" fill="none" stroke="#0F6E56" stroke-width="1.6" marker-end="url(#arrG)"/>
+  <text x="678" y="303" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">b_rd_data / b_ready(≡1)</text>
+
+  <!-- ================= 连线：mem_bus ↔ 外设 ================= -->
+  <path d="M 670 420 L 700 420 L 700 445 L 740 445" fill="none" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#arrK)"/>
+  <text x="676" y="413" font-size="9.5" fill="#7A7A7A" font-family="Consolas, Menlo, monospace">写选通（one-shot）</text>
+  <path d="M 740 470 L 700 470 L 700 440 L 670 440" fill="none" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#arrK)"/>
+  <text x="676" y="485" font-size="9.5" fill="#7A7A7A" font-family="Consolas, Menlo, monospace">外设读回</text>
+
+  <!-- CLINT 中断回核 -->
+  <path d="M 875 562 L 875 610 L 170 610 L 170 600" fill="none" stroke="#BA7517" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+  <text x="500" y="626" font-size="10.5" fill="#BA7517">irq_timer（CLINT ⇒ core，定时器中断）</text>
+
+  <!-- ================= 连线：mem_bus ↔ 视频 ================= -->
+  <path d="M 670 130 L 720 130 L 720 118 L 1080 118" fill="none" stroke="#6B3FA0" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="900" y="111" font-size="9.5" fill="#6B3FA0" font-family="Consolas, Menlo, monospace">vid_we / vid_vsel / vid_waddr / vid_be / vid_wdata</text>
+  <path d="M 1080 340 L 730 340 L 730 320 L 670 320" fill="none" stroke="#6B3FA0" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="760" y="356" font-size="9.5" fill="#6B3FA0" font-family="Consolas, Menlo, monospace">vid_rdata（显存 A 口 CPU 域读回）</text>
+
+  <!-- ================= 底部时钟域说明 ================= -->
+  <rect x="20" y="650" width="1240" height="86" rx="6" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="1"/>
+  <text x="36" y="674" font-size="12" font-weight="700" fill="#1F1F1F">时钟域</text>
+  <text x="110" y="674" font-size="11.5" fill="#43536B">clk_sys = 85.0051 MHz（CPU 域：核 / 总线 / 外设 / 显存 A 口）　｜　pix_clk = 25.5 MHz（PPU / TMDS / 显存 B 口）　——　两个 PLL 同源锁相（同一 VCO）⇒ 跨域零握手</text>
+  <text x="36" y="700" font-size="12" font-weight="700" fill="#1F1F1F">配置</text>
+  <text x="110" y="700" font-size="11.5" fill="#43536B">双发射 DUAL_ISSUE=1 · EARLY_LD=1 · B1-RAS(16)/BTB(256) · LANEB_MEM=1（lane B 放 load）· LANEB_ST=0 · Cache 全关 · A_EXT=0（DESIGN_REV=0x2026_1027）</text>
+  <text x="36" y="726" font-size="12" font-weight="700" fill="#1F1F1F">地址</text>
+  <text x="110" y="726" font-size="11.5" fill="#43536B">映射唯一定义在 rtl/bus/addr_map.vh（表 1）；软件侧镜像 scripts/demo/addr_map.h，文档侧 doc/spec.md —— 三处同步</text>
+
+  <!-- 图注 -->
+  <text x="20" y="765" font-size="10.5" fill="#7A7A7A">实线 = 数据/地址通路；虚线 = 中断；橙色竖条 = 级间寄存器。核内微架构见第 3 章，外设细节见表 2。</text>
+</svg>

@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 680" width="1180" height="680" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif">
+  <rect x="0" y="0" width="1180" height="680" fill="#FAFAFA"/>
+  <text x="20" y="30" font-size="17" font-weight="700" fill="#1F1F1F">图 4：存储总线时序契约（mem_bus.v）—— 第 T 拍给地址/写数据，第 T+1 拍必须拿到读数据</text>
+
+  <!-- ============ 面板 A：一拍契约 ============ -->
+  <text x="20" y="62" font-size="13" font-weight="700" fill="#1F1F1F">A. 基本契约：所有地址源一律 1 拍延迟，不搞特例</text>
+
+  <!-- 周期网格 -->
+  <g font-family="Consolas, Menlo, monospace" font-size="11" fill="#7A7A7A">
+    <text x="200" y="86" text-anchor="middle">T</text>
+    <text x="290" y="86" text-anchor="middle">T+1</text>
+    <text x="380" y="86" text-anchor="middle">T+2</text>
+    <text x="470" y="86" text-anchor="middle">T+3</text>
+    <text x="560" y="86" text-anchor="middle">T+4</text>
+    <text x="650" y="86" text-anchor="middle">T+5</text>
+    <text x="740" y="86" text-anchor="middle">T+6</text>
+    <text x="830" y="86" text-anchor="middle">T+7</text>
+    <text x="920" y="86" text-anchor="middle">T+8</text>
+    <text x="1010" y="86" text-anchor="middle">T+9</text>
+    <text x="1100" y="86" text-anchor="middle">T+10</text>
+  </g>
+  <g stroke="#E2E2E2" stroke-width="1">
+    <line x1="155" y1="70" x2="155" y2="330"/>
+    <line x1="245" y1="70" x2="245" y2="330"/>
+    <line x1="335" y1="70" x2="335" y2="330"/>
+    <line x1="425" y1="70" x2="425" y2="330"/>
+    <line x1="515" y1="70" x2="515" y2="330"/>
+    <line x1="605" y1="70" x2="605" y2="330"/>
+    <line x1="695" y1="70" x2="695" y2="330"/>
+    <line x1="785" y1="70" x2="785" y2="330"/>
+    <line x1="875" y1="70" x2="875" y2="330"/>
+    <line x1="965" y1="70" x2="965" y2="330"/>
+    <line x1="1055" y1="70" x2="1055" y2="330"/>
+    <line x1="1145" y1="70" x2="1145" y2="330"/>
+  </g>
+
+  <!-- MEM 级（组合输出）band -->
+  <rect x="155" y="92" width="990" height="104" fill="#DCE9F7" opacity="0.35"/>
+  <text x="20" y="110" font-size="12" font-weight="700" fill="#185FA5">第 T 拍</text>
+  <text x="20" y="128" font-size="11" fill="#185FA5">MEM 级</text>
+  <text x="20" y="146" font-size="10.5" fill="#43536B">组合输出</text>
+  <text x="20" y="162" font-size="10.5" fill="#43536B">（零寄存器）</text>
+
+  <!-- mem_re / mem_we -->
+  <text x="20" y="196" font-size="11" fill="#1F1F1F">mem_re / mem_we</text>
+  <polyline points="155,190 200,190 200,172 290,172 290,190 380,190 380,172 425,172 425,190 560,190 560,172 605,172 605,190 650,190 650,172 695,172 695,190 830,190 830,172 875,172 875,190 1010,190 1010,172 1055,172 1055,190 1145,190" fill="none" stroke="#185FA5" stroke-width="1.8"/>
+  <text x="212" y="166" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">lw 0x340</text>
+  <text x="397" y="166" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">sw 0x340</text>
+  <text x="572" y="166" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">lw 0x340</text>
+  <text x="662" y="166" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">lw 外设</text>
+  <text x="842" y="166" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">sw 外设</text>
+
+  <!-- mem_addr -->
+  <text x="20" y="228" font-size="11" fill="#1F1F1F">mem_addr</text>
+  <polyline points="155,222 200,222 200,208 290,208 290,222 380,222 380,208 425,208 425,222 560,222 560,208 605,208 605,222 650,222 650,208 695,208 695,222 830,222 830,208 875,208 875,222 1010,222 1010,208 1055,208 1055,222 1145,222" fill="none" stroke="#0F6E56" stroke-width="1.6"/>
+  <text x="205" y="204" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">0x0000_0340</text>
+  <text x="385" y="204" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">0x0000_0340</text>
+  <text x="565" y="204" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">0x0000_0340</text>
+  <text x="655" y="204" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">0x8000_000C</text>
+  <text x="835" y="204" font-size="9.5" fill="#0F6E56" font-family="Consolas, Menlo, monospace">0x8000_0008</text>
+
+  <!-- mem_wdata -->
+  <text x="20" y="260" font-size="11" fill="#1F1F1F">mem_wdata / be</text>
+  <polyline points="155,254 380,254 380,240 425,240 425,254 830,254 830,240 875,240 875,254 1145,254" fill="none" stroke="#A32D2D" stroke-width="1.6"/>
+  <text x="390" y="236" font-size="9.5" fill="#A32D2D" font-family="Consolas, Menlo, monospace">0x1234_5678 / 4'b1111</text>
+  <text x="840" y="236" font-size="9.5" fill="#A32D2D" font-family="Consolas, Menlo, monospace">字符 / 4'b0001</text>
+
+  <!-- WB 级（寄存器输出）band -->
+  <rect x="155" y="272" width="990" height="52" fill="#D9EDE6" opacity="0.4"/>
+  <text x="20" y="292" font-size="12" font-weight="700" fill="#0F6E56">第 T+1 拍</text>
+  <text x="20" y="310" font-size="11" fill="#0F6E56">WB 级</text>
+  <text x="20" y="326" font-size="10.5" fill="#43536B">寄存器输出</text>
+
+  <!-- mem_rdata -->
+  <text x="20" y="360" font-size="11" fill="#1F1F1F">mem_rdata</text>
+  <polyline points="155,354 245,354 245,340 335,340 335,354 425,354 425,340 515,340 515,354 605,354 605,340 695,340 695,354 785,354 785,340 875,340 875,354 965,354 965,340 1055,340 1055,354 1145,354" fill="none" stroke="#185FA5" stroke-width="1.8"/>
+  <text x="250" y="336" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">mem[0x340]</text>
+  <text x="430" y="336" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">mem[0x340]（= 0x1234_5678 新值）</text>
+  <text x="700" y="336" font-size="9.5" fill="#185FA5" font-family="Consolas, Menlo, monospace">{valid, rx_data}</text>
+
+  <!-- rsel_d -->
+  <text x="20" y="392" font-size="11" fill="#1F1F1F">rsel_d</text>
+  <polyline points="155,386 245,386 245,374 335,374 335,386 425,386 425,374 515,374 515,386 605,386 605,374 695,374 695,386 785,386 785,374 875,374 875,386 1145,386" fill="none" stroke="#6B3FA0" stroke-width="1.6"/>
+  <text x="250" y="370" font-size="9.5" fill="#6B3FA0" font-family="Consolas, Menlo, monospace">0=RAM</text>
+  <text x="430" y="370" font-size="9.5" fill="#6B3FA0" font-family="Consolas, Menlo, monospace">0=RAM</text>
+  <text x="700" y="370" font-size="9.5" fill="#6B3FA0" font-family="Consolas, Menlo, monospace">2=外设</text>
+
+  <!-- 契约注释 -->
+  <rect x="155" y="410" width="990" height="72" rx="6" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="1"/>
+  <text x="170" y="432" font-size="11.5" fill="#1F1F1F">① 写通路零寄存器：sw 在第 T 拍当沿写入；紧接的 lw 在第 T+1 拍发地址、T+2 拍读回 —— 拿到的是【新值】。</text>
+  <text x="186" y="450" font-size="11" fill="#43536B">若把写地址/写数据多寄存一拍，这里读回就是旧值 ⇒ st_ld / ld_st 直接 FAIL（这是"哪里不能插寄存器"的判据）。</text>
+  <text x="170" y="470" font-size="11.5" fill="#1F1F1F">② 读选择位 rsel_d 与读数据一起在 MEM→WB 沿寄存：所有地址源（RAM / 兼容区 / 外设 / 视频）一律 1 拍延迟，不搞特例。</text>
+
+  <!-- ============ 面板 B：one-shot 选通 ============ -->
+  <text x="20" y="522" font-size="13" font-weight="700" fill="#1F1F1F">B. 外设选通 one-shot：访问被冻住时，选通只在【首拍】放行</text>
+
+  <g stroke="#E2E2E2" stroke-width="1">
+    <line x1="245" y1="536" x2="245" y2="630"/>
+    <line x1="335" y1="536" x2="335" y2="630"/>
+    <line x1="425" y1="536" x2="425" y2="630"/>
+    <line x1="515" y1="536" x2="515" y2="630"/>
+    <line x1="605" y1="536" x2="605" y2="630"/>
+    <line x1="695" y1="536" x2="695" y2="630"/>
+    <line x1="785" y1="536" x2="785" y2="630"/>
+  </g>
+  <g font-family="Consolas, Menlo, monospace" font-size="11" fill="#7A7A7A">
+    <text x="290" y="552" text-anchor="middle">T</text>
+    <text x="380" y="552" text-anchor="middle">T+1</text>
+    <text x="470" y="552" text-anchor="middle">T+2</text>
+    <text x="560" y="552" text-anchor="middle">T+3</text>
+    <text x="650" y="552" text-anchor="middle">T+4</text>
+    <text x="740" y="552" text-anchor="middle">T+5</text>
+  </g>
+
+  <text x="20" y="584" font-size="11" fill="#1F1F1F">mem_ready</text>
+  <polyline points="155,578 245,578 245,596 605,596 605,578 785,578" fill="none" stroke="#BA7517" stroke-width="1.8"/>
+  <text x="400" y="612" font-size="9.5" fill="#BA7517">冻结（取指缺失 / Cache 缺失 / APB 桥等待）</text>
+
+  <text x="20" y="640" font-size="11" fill="#1F1F1F">uart_tx_we</text>
+  <polyline points="155,634 245,634 245,620 335,620 335,634 785,634" fill="none" stroke="#A32D2D" stroke-width="1.8"/>
+  <text x="250" y="616" font-size="9.5" fill="#A32D2D">只高 1 拍（bus_first）</text>
+  <text x="860" y="600" font-size="11" fill="#43536B">若不门控：高 3 拍 ⇒ 同一字符入队 3 次（静默数据损坏）</text>
+  <text x="860" y="618" font-size="11" fill="#43536B">门控恒 1 的条件：缓存全关时行为逐位不变</text>
+
+  <text x="20" y="668" font-size="10.5" fill="#7A7A7A">取指口同一契约：第 T 拍给 imem_addr，第 T+1 拍出 imem_rd（同步读、恰好 1 拍、只读、无仲裁）——整条流水线的停顿/冲刷补偿建立在这份契约上（§3.5）。</text>
+</svg>

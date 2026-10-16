@@ -1,0 +1,235 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1010" width="1300" height="1010" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7A7A7A"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1300" height="1010" fill="#FAFAFA"/>
+  <text x="20" y="30" font-size="17" font-weight="700" fill="#1F1F1F">图 3：双发射配对实例 —— 定向测试 tb_laneb_ld 用例 1（真实 +PAIRTRACE 数据，当前树默认档）</text>
+  <text x="20" y="50" font-size="11.5" fill="#7A7A7A">配置自证：SIM CONFIG: DUAL_ISSUE=1 DCACHE_EN=0 ICACHE_EN=0 EARLY_LD=1 BTB_EN=1 A_EXT=0 LANEB_MEM=1 LANEB_ST=0；测试判分 === PASS ===</text>
+
+  <!-- =============== ① 发射流 =============== -->
+  <text x="20" y="84" font-size="13.5" font-weight="700" fill="#1F1F1F">① 发射流（每组 = 一次到达级配对判定；lane A 为上年、lane B 为下年；灰 = 单发）</text>
+
+  <!-- 组 1 -->
+  <g>
+    <rect x="40" y="98" width="118" height="66" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1.2"/>
+    <text x="48" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x194 li a0,256</text>
+    <line x1="44" y1="122" x2="154" y2="122" stroke="#185FA5" stroke-width="0.6"/>
+    <rect x="44" y="126" width="110" height="32" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+    <text x="48" y="144" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x198 auipc t1</text>
+    <text x="48" y="158" font-size="9.5" fill="#0F6E56">lane B = AUIPC</text>
+  </g>
+  <line x1="158" y1="131" x2="170" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 2 -->
+  <g>
+    <rect x="172" y="98" width="118" height="66" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1.2"/>
+    <text x="180" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x19c addi t1,t1,424</text>
+    <line x1="176" y1="122" x2="286" y2="122" stroke="#185FA5" stroke-width="0.6"/>
+    <rect x="176" y="126" width="110" height="32" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+    <text x="180" y="144" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a0 li gp,1</text>
+    <text x="180" y="158" font-size="9.5" fill="#0F6E56">lane B = OP-IMM</text>
+  </g>
+  <line x1="290" y1="131" x2="302" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 3：单发 nop -->
+  <g>
+    <rect x="304" y="98" width="118" height="66" rx="5" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1.2"/>
+    <text x="312" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a4 nop</text>
+    <text x="312" y="134" font-size="9.5" fill="#A32D2D">候选 0x1a8 被拒：</text>
+    <text x="312" y="147" font-size="9.5" fill="#A32D2D">rd_a=x0 = rs1_b=x0</text>
+    <text x="312" y="159" font-size="9" fill="#7A7A7A">RAW 按寄存器号保守比较</text>
+  </g>
+  <line x1="422" y1="131" x2="434" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 4：lane B load（高亮） -->
+  <g>
+    <rect x="436" y="98" width="118" height="66" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1.6"/>
+    <text x="444" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a8 li t3,0</text>
+    <line x1="440" y1="122" x2="550" y2="122" stroke="#185FA5" stroke-width="0.6"/>
+    <rect x="440" y="126" width="110" height="32" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1.4"/>
+    <text x="444" y="144" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1ac lw t0,0(t1)</text>
+    <text x="444" y="158" font-size="9.5" font-weight="700" fill="#0F6E56">lane B = LOAD（1 档）</text>
+  </g>
+  <line x1="554" y1="131" x2="566" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 5：停顿的配对（高亮） -->
+  <g>
+    <rect x="568" y="98" width="118" height="66" rx="5" fill="#DCE9F7" stroke="#BA7517" stroke-width="1.6"/>
+    <text x="576" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b0 addi t2,t0,1</text>
+    <line x1="572" y1="122" x2="682" y2="122" stroke="#BA7517" stroke-width="0.6"/>
+    <rect x="572" y="126" width="110" height="32" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+    <text x="576" y="144" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b4 lui s0,0x12345</text>
+    <text x="576" y="158" font-size="9.5" font-weight="700" fill="#BA7517">在 IF/ID 停 1 拍（trace 同现两次）</text>
+  </g>
+  <line x1="686" y1="131" x2="698" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 6：单发（候选是分支） -->
+  <g>
+    <rect x="700" y="98" width="118" height="66" rx="5" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1.2"/>
+    <text x="708" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b8 addi s0,s0,1657</text>
+    <text x="708" y="134" font-size="9.5" fill="#A32D2D">候选 0x1bc 被拒：</text>
+    <text x="708" y="147" font-size="9.5" fill="#A32D2D">lane B 不能是分支</text>
+    <text x="708" y="159" font-size="9" fill="#7A7A7A">（白名单判据 2）</text>
+  </g>
+  <line x1="818" y1="131" x2="830" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 7：分支单发 -->
+  <g>
+    <rect x="832" y="98" width="118" height="66" rx="5" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1.2"/>
+    <text x="840" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1bc bne t2,s0,fail</text>
+    <text x="840" y="134" font-size="9.5" fill="#43536B">lane A 可以是分支；</text>
+    <text x="840" y="147" font-size="9.5" fill="#43536B">EX 解析 + BHT 训练</text>
+    <text x="840" y="159" font-size="9" fill="#7A7A7A">（本局预测不跳转）</text>
+  </g>
+  <line x1="950" y1="131" x2="962" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 8：单发（候选是 nop） -->
+  <g>
+    <rect x="964" y="98" width="118" height="66" rx="5" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1.2"/>
+    <text x="972" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1c0 li gp,2</text>
+    <text x="972" y="134" font-size="9.5" fill="#A32D2D">候选 0x1c4 被拒：</text>
+    <text x="972" y="147" font-size="9.5" fill="#A32D2D">rd_b = x0（nop）</text>
+    <text x="972" y="159" font-size="9" fill="#7A7A7A">（不写回 ≠ 占用第二槽）</text>
+  </g>
+  <line x1="1082" y1="131" x2="1094" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 9：nop 单发 -->
+  <g>
+    <rect x="1096" y="98" width="90" height="66" rx="5" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1.2"/>
+    <text x="1104" y="116" font-size="10.5" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1c4 nop</text>
+    <text x="1104" y="134" font-size="9.5" fill="#43536B">对齐保险：</text>
+    <text x="1104" y="147" font-size="9.5" fill="#43536B">让下一图案的 L1</text>
+    <text x="1104" y="159" font-size="9" fill="#7A7A7A">稳定落在 lane B</text>
+  </g>
+  <line x1="1186" y1="131" x2="1198" y2="131" stroke="#7A7A7A" stroke-width="1.4" marker-end="url(#a3)"/>
+
+  <!-- 组 10：下一个 lane B load 对 -->
+  <g>
+    <rect x="1200" y="98" width="90" height="66" rx="5" fill="#DCE9F7" stroke="#185FA5" stroke-width="1.2"/>
+    <text x="1206" y="116" font-size="10" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1c8 li t3,0</text>
+    <line x1="1204" y1="122" x2="1286" y2="122" stroke="#185FA5" stroke-width="0.6"/>
+    <rect x="1204" y="126" width="82" height="32" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+    <text x="1206" y="144" font-size="10" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1cc lw t0,0(t1)</text>
+    <text x="1206" y="158" font-size="9" fill="#0F6E56">lane B = LOAD</text>
+  </g>
+
+  <!-- 取指步长说明 -->
+  <text x="40" y="186" font-size="10.5" fill="#7A7A7A">取指步长由配对结果组合：配对 ⇒ +8（两槽天然对齐，无需取指队列）；单发 ⇒ +4。上表"单发"组由 trace 无 PAIR 行 + 步长反推，判据与 RTL pair_now 逐条对应。</text>
+
+  <!-- =============== ② 流水线占位 =============== -->
+  <text x="20" y="226" font-size="13.5" font-weight="700" fill="#1F1F1F">② 上窗口 4 条指令的流水线占位（行 = 流水级，列 = 拍；每格上 = lane A、下 = lane B）</text>
+
+  <!-- 网格 -->
+  <g font-family="Consolas, Menlo, monospace" font-size="12" fill="#7A7A7A">
+    <text x="150" y="252" text-anchor="middle">T</text>
+    <text x="360" y="252" text-anchor="middle">T+1</text>
+    <text x="570" y="252" text-anchor="middle">T+2</text>
+    <text x="780" y="252" text-anchor="middle">T+3</text>
+    <text x="990" y="252" text-anchor="middle">T+4</text>
+  </g>
+  <g stroke="#E2E2E2" stroke-width="1">
+    <line x1="145" y1="240" x2="1100" y2="240"/>
+    <line x1="255" y1="240" x2="255" y2="560"/>
+    <line x1="465" y1="240" x2="465" y2="560"/>
+    <line x1="675" y1="240" x2="675" y2="560"/>
+    <line x1="885" y1="240" x2="885" y2="560"/>
+    <line x1="1095" y1="240" x2="1095" y2="560"/>
+    <line x1="145" y1="560" x2="1100" y2="560"/>
+  </g>
+  <g font-size="12" fill="#1F1F1F">
+    <text x="20" y="290">IF/ID</text>
+    <text x="20" y="374">ID/EX</text>
+    <text x="20" y="458">EX/MEM</text>
+    <text x="20" y="542">MEM/WB</text>
+  </g>
+
+  <!-- 行底 -->
+  <g stroke="#F0F0F0" stroke-width="1">
+    <line x1="145" y1="320" x2="1100" y2="320"/>
+    <line x1="145" y1="404" x2="1100" y2="404"/>
+    <line x1="145" y1="488" x2="1100" y2="488"/>
+  </g>
+
+  <!-- T 列：IF/ID = pair① -->
+  <rect x="150" y="246" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="158" y="268" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a8 li t3,0</text>
+  <rect x="150" y="284" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1.2"/>
+  <text x="158" y="305" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1ac lw t0,0(t1)</text>
+
+  <!-- T+1 列：IF/ID = pair②，ID/EX = pair① -->
+  <rect x="360" y="246" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="368" y="268" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b0 addi t2,t0,1</text>
+  <rect x="360" y="284" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="368" y="305" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b4 lui s0,0x12345</text>
+  <rect x="360" y="330" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="368" y="352" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a8 li t3,0</text>
+  <rect x="360" y="368" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1.2"/>
+  <text x="368" y="389" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1ac lw t0,0(t1)</text>
+
+  <!-- T+2 列：IF/ID = pair②（停），EX/MEM = pair① -->
+  <rect x="570" y="246" width="200" height="34" rx="4" fill="#F5E3C4" stroke="#BA7517" stroke-width="1.4"/>
+  <text x="578" y="268" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b0 addi t2,t0,1</text>
+  <rect x="570" y="284" width="200" height="32" rx="4" fill="#F5E3C4" stroke="#BA7517" stroke-width="1.4"/>
+  <text x="578" y="305" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b4 lui s0,0x12345</text>
+  <text x="578" y="322" font-size="10" font-weight="700" fill="#BA7517">停顿 1 拍：lane B load 无快通路 ⇒ load-use 停</text>
+  <rect x="570" y="414" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="578" y="436" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a8 li t3,0</text>
+  <rect x="570" y="452" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1.4"/>
+  <text x="578" y="473" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1ac lw t0,0(t1)</text>
+  <text x="578" y="490" font-size="10" font-weight="700" fill="#0F6E56">lane B load 驱动访存口（BMEM: addr=0x340）</text>
+
+  <!-- T+3 列：ID/EX = pair②，MEM/WB = pair① -->
+  <rect x="780" y="330" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="788" y="352" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b0 addi t2,t0,1</text>
+  <rect x="780" y="368" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="788" y="389" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b4 lui s0,0x12345</text>
+  <rect x="780" y="498" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="788" y="520" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1a8 li t3,0 ⇒ t3</text>
+  <rect x="780" y="536" width="200" height="20" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1.2"/>
+  <text x="788" y="550" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1ac lw ⇒ t0（数据就绪）</text>
+
+  <!-- T+4 列：EX/MEM = pair②，前递标注 -->
+  <rect x="990" y="414" width="200" height="34" rx="4" fill="#DCE9F7" stroke="#185FA5" stroke-width="1.2"/>
+  <text x="998" y="436" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b0 addi t2,t0,1</text>
+  <rect x="990" y="452" width="200" height="32" rx="4" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="998" y="473" font-size="11" font-family="Consolas, Menlo, monospace" fill="#1F1F1F">0x1b4 lui s0,0x12345</text>
+  <text x="998" y="490" font-size="10" font-weight="700" fill="#6B3FA0">t0 经 MEM/WB 前递进 EX（同一套前递优先级，lane A/B 四源）</text>
+
+  <!-- 气泡说明 -->
+  <rect x="255" y="330" width="105" height="74" rx="4" fill="none" stroke="#C9C9C9" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="262" y="360" font-size="10" fill="#7A7A7A">ID/EX 空</text>
+  <text x="262" y="374" font-size="10" fill="#7A7A7A">（停顿拍）</text>
+  <text x="262" y="392" font-size="10" fill="#7A7A7A">不推流水</text>
+
+  <!-- =============== ③ 判据与数据来源 =============== -->
+  <rect x="20" y="586" width="700" height="180" rx="8" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="1"/>
+  <text x="36" y="610" font-size="13" font-weight="700" fill="#1F1F1F">③ pair_now 判据（到达级，写进 RTL 的条件；本窗口逐条命中）</text>
+  <text x="36" y="632" font-size="11" fill="#43536B">1. lane A 是合法指令且不是多拍单元所有者（乘除/AMO 禁配）；lane B 限白名单 {OP / OP-IMM / LUI / AUIPC} + LOAD（1 档）；</text>
+  <text x="36" y="650" font-size="11" fill="#43536B">2. lane B 只允许结构上不产生控制流的指令 ⇒ 分支/跳转/CSR 永不进第二槽（组 6 命中：bne 被拒）；</text>
+  <text x="36" y="668" font-size="11" fill="#43536B">3. 同对无依赖 rd_a ∉ {rs1_b, rs2_b}，且 rd_b ≠ x0（组 3、组 8 命中）；</text>
+  <text x="36" y="686" font-size="11" fill="#43536B">4. 每对至多一条访存（!(p_mem_a &amp;&amp; p_mem_b)）⇒ 访存口一次 2 路 mux，无仲裁器；</text>
+  <text x="36" y="704" font-size="11" fill="#43536B">5. 不预测 taken 时才配对（!p_pred_taken）——被预测跳转的指令独占发射。</text>
+  <text x="36" y="728" font-size="11" fill="#43536B">代价（本窗口可见）：lane B 的 load 一律走旧通路（无提前读口）⇒ 其消费者停 1 拍（T+2），数据 MEM/WB 前递（T+4）。</text>
+  <text x="36" y="750" font-size="11" fill="#43536B"> lane B store（A1 / LANEB_ST）实测再省 0.181% 拍，但净表 +122 LUT 且作废钉住的 seed 余量 ⇒ 默认关（§3.2）。</text>
+
+  <rect x="740" y="586" width="540" height="180" rx="8" fill="#FFFFFF" stroke="#C9C9C9" stroke-width="1"/>
+  <text x="756" y="610" font-size="13" font-weight="700" fill="#1F1F1F">数据来源与自证</text>
+  <text x="756" y="632" font-size="11" fill="#43536B">· tb_riscv.v +PAIRTRACE：逐拍打印 if_id_pair（真实配对事件）与 b_mem_sel</text>
+  <text x="756" y="650" font-size="11" fill="#43536B">· 本图数据：sim/programs/pairtrace_fig3_raw.txt（2026-10-16 重跑，当前树默认档）</text>
+  <text x="756" y="668" font-size="11" fill="#43536B">· 指令与地址：riscv-none-elf-objdump 反汇编 tb_laneb_ld.elf</text>
+  <text x="756" y="686" font-size="11" fill="#43536B">· 配对判定复述：rtl/core/core.v 的 pair_now（§3.1）</text>
+  <text x="756" y="710" font-size="11" fill="#43536B">图例：</text>
+  <rect x="800" y="700" width="120" height="18" rx="3" fill="#DCE9F7" stroke="#185FA5" stroke-width="1"/>
+  <text x="928" y="714" font-size="10.5" fill="#43536B">lane A</text>
+  <rect x="980" y="700" width="120" height="18" rx="3" fill="#D9EDE6" stroke="#0F6E56" stroke-width="1"/>
+  <text x="1108" y="714" font-size="10.5" fill="#43536B">lane B</text>
+  <rect x="1160" y="700" width="100" height="18" rx="3" fill="#F0F0F0" stroke="#7A7A7A" stroke-width="1"/>
+  <text x="1166" y="714" font-size="10.5" fill="#43536B">单发</text>
+  <rect x="800" y="726" width="120" height="18" rx="3" fill="#F5E3C4" stroke="#BA7517" stroke-width="1.4"/>
+  <text x="928" y="740" font-size="10.5" fill="#43536B">停顿（load-use）</text>
+
+  <text x="20" y="800" font-size="11" fill="#7A7A7A">读法：交付档 32.3% 的指令以配对形式提交（92,962 对 / 迭代，+PROF 实测）；本图放大其中一条 lane B load 对，</text>
+  <text x="20" y="818" font-size="11" fill="#7A7A7A">展示"配对判定 → lane B load 旧通路 → 消费者停顿 1 拍 → MEM/WB 前递"的完整机制，以及三类真实拒配（分支 / rd_b=x0 / RAW x0）。</text>
+</svg>

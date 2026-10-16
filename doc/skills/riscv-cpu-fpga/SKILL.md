@@ -46,7 +46,7 @@ description: >-
 | 交付位流 | 跑分 **`c6af65be`** / 演示 **`e51ac9e5`** —— **同为 rev1027、同一份 RTL、同一布局**（都钉 `gplace_seed 5`），2026-10-16 15:56 / 16:30 分别上板 |
 | 时序 | CPU 域 **+0.277 ns / 0 失败端点（19,114）/ Fmax 87.0549 MHz**（自定判据 `+0.3` 差 0.023 ns 未达；40 个 place seed 软顶 ≈ +0.28）|
 | 四条基线（计时区间拍/迭代） | **1 档 `LANEB_MEM=1` 217,088（生产）** / 0 档 `LANEB_MEM=0` 229,597 / `EARLY_LD=0` 249,982 / 单发射 300,392 / 双发射+I+D Cache 233,013（后三个是 2026-10-15 P0 重测修正值；板上 I+D 234,706.8）|
-| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8）；自写 **6 PASS**（`btb_indirect`/`hi_fetch`/`tb_amo_cpu`/`exceptions`/`timer_irq`/`tb_laneb_ld`）+ 五子棋端到端 `tb_gomoku`（**1 档 6/6 PASS**，2026-10-16）|
+| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8）；自写 **7 PASS**（`btb_indirect`/`hi_fetch`/`tb_amo_cpu`/`exceptions`/`timer_irq`/`tb_laneb_ld`/`tb_laneb_st`，A1 的 store 定向用例）+ 五子棋端到端 `tb_gomoku`（**1 档 6/6 PASS**，2026-10-16）|
 | 资源 | LUT **7,753 = 4.85%**（1 档 rev1027 提交档综合实测；0 档 rev1023 为 7,663）、FF 3,691、DRM 101.5、APM 4 |
 | RTL 规模 | 31 文件 6,106 行（CPU 侧 19 模块 + 视频 PPU 11 模块）|
 
@@ -94,7 +94,7 @@ scripts\run_riscv_tests.ps1                  # 49/1/0（默认双发射；-Singl
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd   # Cache corner，也必须 49/1/0
 scripts\run_coremark.ps1 -Iter 1 -EarlyLd    # +PROF：Total ticks 必须 = 217,088（1 档口径；0 档 LANEB_MEM=0 是 229,597）
 scripts\run_coremark.ps1 -Iter 1             # EARLY_LD=0 口径 = 249,982（2026-10-15 P0 修正；旧文档 252,730 是 pre-RAS 值）
-scripts\run_own_tests.ps1                    # 自写汇编测试 6 PASS（btb_indirect/hi_fetch/tb_amo_cpu/exceptions/timer_irq/tb_laneb_ld）
+scripts\run_own_tests.ps1                    # 自写汇编测试 7 PASS（btb_indirect/hi_fetch/tb_amo_cpu/exceptions/timer_irq/tb_laneb_ld/tb_laneb_st）
 scripts\rtthread\run_sim.ps1 -NoBuild                 # RT-Thread 五子棋（无 Cache）
 scripts\rtthread\run_sim.ps1 -NoBuild -DCache -ICache # ← **Cache corner 的真回归**（四种配置都该 PASS）
 scripts\rtthread\run_sim.ps1 -NoBuild -ICache -LdChk  # load 数据自检 + 规范化事件流（见 §10）
