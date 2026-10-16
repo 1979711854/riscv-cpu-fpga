@@ -114,6 +114,24 @@
 > ② **`.sbit` 的 md5 不是布局指纹**（同一布局两次构建得到不同 md5）⇒ md5 只是"这一次构建的名字"；
 > ③ **PDS 每次跑完都会重写 `.pds`**（含 `_timespec`，并把默认值选项删掉）⇒ 改选项要在流程空闲时做、跑完复核。
 > 全文：`doc/reports/2026-10-16_p3_6_margin_plan.md`（+ 交接 `doc/reports/2026-10-16_handoff_p3_6.md`）。
+>
+> **[OK] 2026-10-16 傍晚（P3.7 = 演示档切 1 档 + 收口）：两个交付档现在同为 rev1027 / `LANEB_MEM=1`**。
+> ① **演示档重出**：`scripts\build_bitstream.ps1 rtthread`（16:19:57 出）⇒ 位流 **`e51ac9e5`**，
+>    CPU 域 **+0.277 ns / 0 失败端点（19,114）/ Fmax 87.0549 MHz**（`.pds` 已钉 `gplace_seed 5`
+>    ⇒ 布局与跑分档一致；`.prr` 的 FF 3,691 同网表）；固件 `mem.hex` 21046 行 / 10523 字、sha256 守卫通过。
+> ② **上板四条判据全过**（日志 `doc/board/uart_20261016_163009.txt`，333 行）：`RTL=0x20261027` /
+>    `render thread` + `ai thread` 两条线程 / `[hb]` `5000→50000` 十条无断 / **真按键接 HDMI 下完一局
+>    判出 `WHITE wins`**（回 title 后又开第二局），`D18` 常亮、显示正常。0 档演示档 `1e2075e6` 降为历史参照。
+> ③ **补上挂账的 1 档功能仿真**（从 P3 起一直没跑）：`scripts\gomoku\run_sim.ps1` 首行自证
+>    `SIM CONFIG: DUAL_ISSUE=1 EARLY_LD=1 LANEB_MEM=1` ⇒ **6/6 checks、`=== PASS ===`**
+>    （日志 `doc/reports/2026-10-16_gomoku_g3_lanebmem1_sim.txt`）。
+> ④ **脚本口径修复**：`build_bitstream.ps1` 现在从 `rtl/top/cpu_top.v` 读 `LANEB_MEM` 并按档选 `$cpiCycles`
+>    （1 档 `217088` / 0 档 `229597` / 单发射 `300392` —— 顺手把 2026-10-15 P0 修正值替换掉 pre-RAS 的 303,140），
+>    构建摘要与"得分预期"行都带 `LANEB_MEM=`。
+> ⑤ **新工具 + 新坑**：`scripts\capture_seed_timing.ps1`（P&R 跑动中抢拷 `seed_*/cpu_top_board.rtr` +
+>    打印 CPU 域降序表 + 落 CSV + 给出"钉哪个 seed"的复现步骤）；**钉 `gplace_seed`（单 seed）模式下
+>    P&R 阶段 `place_route\` 与 `report_timing\` 都不出 `.rtr`**（只有 PDS 跑完才写后者）⇒ 靠 `final_*` 兜底。
+> 全文：`doc/reports/2026-10-16_p3_7_demo_lanebmem1.md`。
 
 ### 【提交档声明】（2026-10-15 更新 —— 论文/答辩/交付一律按这张表说话）
 
@@ -127,17 +145,18 @@
 | 再前一档（历史参照） | `f64b977` | 同上但 A 扩展还在 | 85.0051 MHz | 370.23 分（ITER=4332，`Total ticks 994,412,748`，日志 `doc/board/uart_20261014_233933.txt`；与上一行 ticks 逐位相同，0.08 分差是秒表抖动）|
 | 上板前的中间档（已被 `c6af65be` 取代） | `9b58e84c` | 同上 + `LANEB_MEM=1`（P3.5 那一版）| 85.0051 MHz | 未上板；CPU 域 **+0.014 ns**（薄）—— 同布局的 P3.6 版才是交付档 |
 | 再前一档 | `bcd8fdd2` | 双发射 + `EARLY_LD`，Cache 全关 | 85.0051 MHz | 365.93 分（ITER=4280，`Total ticks 994,229,330` = 11.6961 s）|
-| **★ 提交档（演示）** | **`1e2075e6`** | 同 `55fae69e` RTL（rev1023）+ RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 接 HDMI 真按键下完一局（2026-10-15 23:34 上板，`D18` 常亮）|
-| 前一档（演示，历史参照） | `8894cdcb` | rev1022 + RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 邮箱往返真通、对局正常 |
+| **★ 提交档（演示）** | **`e51ac9e5`** | 同 `c6af65be` RTL（rev1027）+ RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 接 HDMI 真按键下完一局（**`WHITE wins`**）（2026-10-16 16:30 上板，`D18` 常亮、显示正常，日志 `doc/board/uart_20261016_163009.txt`；PDS CPU 域 **+0.277 ns / Fmax 87.0549 MHz**，钉 `gplace_seed 5`）|
+| 前一档（演示，0 档 rev1023） | `1e2075e6` | 同 `55fae69e` RTL（rev1023）+ RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 接 HDMI 真按键下完一局（2026-10-15 23:34 上板，`D18` 常亮）|
+| 再前一档（演示，历史参照） | `8894cdcb` | rev1022 + RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 邮箱往返真通、对局正常 |
 | 评估档 ①（D-Cache）| `56374a08` | `DCACHE_EN=1`/`ICACHE_EN=0` | 85.0051 MHz | **365.92 分**（同频**只掉 0.01 分**）|
 | 评估档 ②（I+D 完整）| `da8ffd31` | I+D 全开 | **76.5052 MHz** | **325.96 分**（−10.9% = **−10.0% 主频 + −1.0% 周期**）|
 | 评估档 ③（修复后带 Cache）| `53b81dfe` | I+D 全开 + 约定 56/57 修复（**rev1019**）| 76.5052 MHz | 两线程 + **真按键下完一局**（`WHITE wins`）+ **接屏下棋正常** |
 
-> [!] **rev1024/1027（P2/P3，lane B 访存管道）已综合并上板** —— 跑分档 = 上表 ★ `c6af65be`
-> （rev1027，`LANEB_MEM=1`，**391.66 分 @85.0051 / Fmax 87.0549 MHz**）。
-> **但演示档（RT-Thread 五子棋）仍是 rev1023 的 `1e2075e6`** —— 要把 1 档作为统一定版，
-> 还得用 1 档 RTL 重出 RT-Thread 位流 + 上板验证（rtthread 四配置在 1 档下仿真已过；
-> **gomoku 的 1 档仿真还没跑**；见 `doc/reports/2026-10-16_handoff_p3_6.md`）。
+> [!] **rev1024/1027（P2/P3，lane B 访存管道）已综合并上板，且两个交付档现在【同为 1 档】** ——
+> 跑分档 ★ `c6af65be`（2026-10-16 15:56，**391.66 分**）+ 演示档 ★ `e51ac9e5`（2026-10-16 16:30，四条判据全过），
+> 同为 rev1027 / `LANEB_MEM=1` / 同一份 `rtl/**` / 同布局（**都钉 `gplace_seed 5`**）
+> ⇒ **"1 档统一定版"成立**；0 档演示档 `1e2075e6`（rev1023）降为历史参照，别再烧。
+> 过程与全量数据见 `doc/reports/2026-10-16_p3_7_demo_lanebmem1.md` 与 `doc/board/README.md`。
 
 **四条纪律**：① **只有一个"我们的分"= 391.66 @85.0051**（前一档 370.31 = 同 RTL 关掉 lane B 访存），
 另两个必须写成"同一颗设计的另一配置 + 主频"；
@@ -154,6 +173,12 @@ RT-Thread Nano 跑在板上，五子棋走**板载 HDMI** 出棋盘 + 4 键操�
 **接 HDMI 显示屏真按键下完一局并判出 `WHITE wins`**、难度切换（EASY/NORMAL/HARD）/复位全响应、
 HARD 档 `nodes=10592 depth=6 t=5737ms`（**AI 思考 5.7 s 期间 `[hb]` 照常**）；末尾 3 次重启已确认
 是**人工按 `SW3`（设计上的复位键）**。⇒ **T1/G3 串口侧 + 显示侧都已验，不再有"未验证"的空白。**
+**2026-10-16 16:30 演示档切到 1 档**（P3.7：位流 `e51ac9e5` / **rev1027 / `LANEB_MEM=1`**，
+日志 `doc/board/uart_20261016_163009.txt`）：四条判据**全部复现**（两线程 + `[hb]` 5000→50000 无断 +
+真按键接 HDMI 下完一局判出 `WHITE wins`、回 title 后又开第二局，`D18` 常亮、显示正常）
+⇒ **应用线现在与跑分档同 RTL、同 REV、同布局**，不再有"跑分 1 档 / 演示 0 档"的口径分裂。
+演示固件 = 我们的 `scripts/rtthread/app/main.c`（G3 两线程入口）+ `scripts/gomoku/` 那 8 个源文件
+⇒ **换五子棋 app 版本不改 RTL/位流结构**（只需重建固件 + 重出 + 上板；`.text` 变了要同步 `expectLines`）。
 `[!] vblank timeout` 已查清：**不是显示坏了**，而是 `video_wait_vblank()` 变成**概率命中**
 （固件 `mdelay(1)` 采样 ≈1 ms vs RTL 里 **62.7 µs** 的 vsync 脉冲 ⇒ 命中率 6~12%，靠 50 ms 超时兜底）；
 三方案（降级日志 / 换 1.04 ms 消隐窗 / **加只读帧计数器，推荐**）见 `doc/board/README.md`，

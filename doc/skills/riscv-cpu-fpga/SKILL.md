@@ -30,27 +30,31 @@ description: >-
 8. **主线分支是 `dualissue`**；`main` 是无关历史的“原始 CPU 线”存档，**禁强推**。
 9. **[最贵的一条 · 2026-10-14]** 冻结（`mem_ready_int=0`）拍上，**凡“只该发生一次”的 EX 级副作用都必须与“离开 EX”同拍**：级间寄存器的**清零**（约定 56）、**CSR 写**与 `mret` 的 mstatus（约定 57）、乘法器使能（约定 51）。漏一处就是**静默错值**，而且**只在"有停顿"的配置下暴露**（Cache / `+MEMWAIT` / AMO）——四条基线全盖不住。详见 **§10 事故复盘**。
 
-## 1. 当前口径速查（**2026-10-14**，唯一准入口径）
+## 1. 当前口径速查（**数字唯一真相 = `doc/paper/论文框架_v1_20261012.md` §0/§0.1**）
 
-| 项 | 值 |
+> **[!] 2026-10-16 P3.7：本节的"复制表"已撤掉 —— 复制表会漂移。**
+> 本节上一次是 **2026-10-14** 的快照（`370.23` / `f64b977` / `RTL=0x20261022` / LUT 8,104），
+> 到 10-16 已差**两代**（B1→A 扩展关 → P3.5 → P3.6 钉 seed → P3.7 演示档切 1 档）。
+> **下面只留"不会漂的锚"，其余一律去论文框架 §0 现查**（改数字要三处同步，见 §7）。
+
+| 锚项 | 值（2026-10-16 P3.7）|
 |---|---|
-| 设计 | RV32IMA + Zicsr/Zifencei，5 级流水线，**顺序双发射**（`DUAL_ISSUE=1`）+ `EARLY_LD=1` + **A1 乘法器 II=1** |
-| `DESIGN_REV` | **`0x2026_1022`**（`csr_file.v`；改 RTL 必须递增，约定 42）|
-| 平台 | 紫光同创 Logos2 PG2L200H（-6）；PDS 2022.2-SP6.4；盘古板 27MHz 晶振 → PLL：**85.0051 MHz**（`RATIO0=13.5`，生产档）／ **76.5052 MHz**（`RATIO0=15.0`，带 Cache 的降频档）|
-| **跑分档（交付）** | **370.23 CoreMark** @85.0051MHz，ITER=**4332**，**229,597** 拍/迭代（板上 229,574.8，−0.0097%）；位流 **`f64b977`**（双发射+`EARLY_LD`+B1-RAS/BTB，Cache 全关，`RTL=0x20261022`，**2026-10-14 23:39 上板通过**，四 CRC 逐位一致）／ 前一档 **`bcd8fdd2`**（365.93，ITER=4280）／ 评估档 **`56374a08`**（D-only，365.92 同分）|
-| 功能完整档（I+D） | I+D 全开 @76.5052MHz，ITER=**3800**，**325.96 分**，**234,706.8** 拍/迭代（**A1 后板上实测**，位流 `da8ffd31`，`RTL=0x20261017`）；**A1 前**：313.63 分 / ITER=3668 / 243,932.9 拍（位流 `c6b12d95`）|
-| **RT-Thread + Cache 档**（新增）| rtthread 五子棋 + I+D @76.5052 MHz，位流 **`53b81dfe`** / `90944754`（`RTL=0x20261019`）—— **2026-10-14 上板通过**（两条根因修完后的第一颗，见 §10）|
-| 效率 | **4.355 CoreMark/MHz**（B1-RAS 后，229,597 拍；A1 后 4.304，A1 前 4.139）；Fmax 87.00MHz（双发射），真实上限 ≈90MHz |
-| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8）；自写 **5 PASS**（`btb_indirect`/`hi_fetch`/`tb_amo_cpu`/`exceptions`/`timer_irq`）|
-| **四条基线（计时区间拍/迭代）** | 双发射+`EARLY_LD` **229,597**（B1-RAS 后；RAS 前 232,345）/ `EARLY_LD=0` **252,730** / 单发射 **303,140** / 双发射+I+D Cache **235,628**（仿真；后三个未含 RAS；**板上 234,706.8**）|
-| 资源 | LUT **8,104 = 5.07%**（**B1-RAS/BTB 后**双发射无 Cache 口径 = 候选档 `f64b977` 综合实测；A1 后 7,482，**+622 = RAS+BTB 代价**）；DRM 101.5；APM 4 |
-| RTL 规模 | 31 文件 6,106 行（CPU 侧 19 模块 + 视频 PPU 11 模块） |
+| RTL | **`rtl/**` 是唯一真相**；`DESIGN_REV` = **`0x2026_1027`**（改 RTL 必须递增，约定 42）|
+| 交付配置 | 顺序双发射 `DUAL_ISSUE=1` + `EARLY_LD=1` + A1（乘法器 II=1）+ B1-RAS(16)/BTB(256) + **`LANEB_MEM=1`（lane B 放 load = "1 档"）**；**`A_EXT=0`（默认关）**、Cache 全关 |
+| 主频 | **85.0051 MHz**（板载 27 MHz × `STATIC_RATIO0=13.5`）／76.5052 MHz（带 Cache 的降频档）|
+| **我们的分（唯一）** | **391.66 CoreMark @ 85.0051 MHz**（ITER=4332，**217,088** 拍/迭代，板上 217,036.1 = −0.0239%）|
+| 交付位流 | 跑分 **`c6af65be`** / 演示 **`e51ac9e5`** —— **同为 rev1027、同一份 RTL、同一布局**（都钉 `gplace_seed 5`），2026-10-16 15:56 / 16:30 分别上板 |
+| 时序 | CPU 域 **+0.277 ns / 0 失败端点（19,114）/ Fmax 87.0549 MHz**（自定判据 `+0.3` 差 0.023 ns 未达；40 个 place seed 软顶 ≈ +0.28）|
+| 四条基线（计时区间拍/迭代） | **1 档 `LANEB_MEM=1` 217,088（生产）** / 0 档 `LANEB_MEM=0` 229,597 / `EARLY_LD=0` 249,982 / 单发射 300,392 / 双发射+I+D Cache 233,013（后三个是 2026-10-15 P0 重测修正值；板上 I+D 234,706.8）|
+| 回归 | riscv-tests **49 PASS / 1 FAIL / 0 TIMEOUT**（唯一 FAIL = `ma_data`，**必须是 FAIL**，见 §8）；自写 **6 PASS**（`btb_indirect`/`hi_fetch`/`tb_amo_cpu`/`exceptions`/`timer_irq`/`tb_laneb_ld`）+ 五子棋端到端 `tb_gomoku`（**1 档 6/6 PASS**，2026-10-16）|
+| 资源 | LUT **7,753 = 4.85%**（1 档 rev1027 提交档综合实测；0 档 rev1023 为 7,663）、FF 3,691、DRM 101.5、APM 4 |
+| RTL 规模 | 31 文件 6,106 行（CPU 侧 19 模块 + 视频 PPU 11 模块）|
 
-> 旧→新映射（文档里见到即换算）：351.86→**365.93**；4.139→**4.304**；241,633→**232,345**；
-> 262,018→**252,730**；312,428→**303,140**；243,933/235,628→**234,706.8**（板上；仿真值仍写 235,628）；ITER 4116→**4280**；ITER 3668→**3800**；313.63→**325.96**；`RTL=0x20261017`→**`0x20261019`**；
-> **232,345→229,597、4.304→4.355、ITER 4280→4332、`RTL=0x20261019`→`0x20261022`、LUT 7,482→8,104、得分 365.93→**370.23**（位流 `bcd8fdd2`→**`f64b977`**，2026-10-14 23:39 上板，`uart_20261014_233933.txt`）（B1-RAS/BTB）**；
+> 旧→新映射（文档里见到即换算）：**370.31→391.66**（1 档）、**4.3555→4.6064**、**229,597→217,088**、
+> `RTL=0x20261023`→**`0x20261027`**、位流 `55fae69e`/`1e2075e6`→**`c6af65be`/`e51ac9e5`**、
+> LUT 7,663→**7,753**、`DESIGN_REV` `0x2026_1022/1023`→**`0x2026_1027`**；
 > “Cache 未做”→“已实现、贡献 0、**默认关（但功能已修复并上板验证）**”；“Cache 会挂”→“两条根因已修”（§10）；“32KB”→“**64KB**”。
-> （更早：270.82→351.86；3.186→4.139；313,886/313,876→241,633/241,604；ITER=3170→4116；单发射 363,515→312,428。）
+> （更早：365.93→370.23→370.31；351.86→365.93；4.139→4.304→4.355；270.82→351.86；3.186→4.139；ITER 3170→4116→4280→4332。）
 
 ## 2. RTL 开发纪律（改 `core.v` / `mem_bus.v` 前必读）
 
@@ -88,9 +92,9 @@ description: >-
 ```powershell
 scripts\run_riscv_tests.ps1                  # 49/1/0（默认双发射；-Single 出单发射）
 scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd   # Cache corner，也必须 49/1/0
-scripts\run_coremark.ps1 -Iter 1 -EarlyLd    # +PROF：Total ticks 必须 = 229,597（B1-RAS 口径）
-scripts\run_coremark.ps1 -Iter 1             # EARLY_LD=0 口径 = 252,730
-scripts\run_own_tests.ps1                    # 自写汇编测试 5 PASS（btb_indirect/hi_fetch/tb_amo_cpu/exceptions/timer_irq）
+scripts\run_coremark.ps1 -Iter 1 -EarlyLd    # +PROF：Total ticks 必须 = 217,088（1 档口径；0 档 LANEB_MEM=0 是 229,597）
+scripts\run_coremark.ps1 -Iter 1             # EARLY_LD=0 口径 = 249,982（2026-10-15 P0 修正；旧文档 252,730 是 pre-RAS 值）
+scripts\run_own_tests.ps1                    # 自写汇编测试 6 PASS（btb_indirect/hi_fetch/tb_amo_cpu/exceptions/timer_irq/tb_laneb_ld）
 scripts\rtthread\run_sim.ps1 -NoBuild                 # RT-Thread 五子棋（无 Cache）
 scripts\rtthread\run_sim.ps1 -NoBuild -DCache -ICache # ← **Cache corner 的真回归**（四种配置都该 PASS）
 scripts\rtthread\run_sim.ps1 -NoBuild -ICache -LdChk  # load 数据自检 + 规范化事件流（见 §10）

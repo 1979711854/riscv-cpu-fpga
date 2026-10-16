@@ -35,18 +35,23 @@
 [!] **改了流水线/取指逻辑、主频或编译选项必须重算**：
         ITER = 时钟频率 × 10s ÷ 每迭代周期数
     当前（双发射 + -O3 + 到达级重定向 + 任务C 的 EARLY_LD + A1 的 II=1 乘法器
-    + **B1-RAS/BTB（rev1022）**，**本机实测**）：
-        85,005,100 × 10 ÷ 229,597 = 3,702（恰好 10s），
-    默认取 4332 → **11.70s（余量 17%）**，与本项目一贯的余量政策一致。
+    + **B1-RAS/BTB（rev1022）+ P3.6 的 lane B 放 load（1 档，`LANEB_MEM=1`）**，**本机实测**）：
+        85,005,100 × 10 ÷ 217,088 = 3,916（恰好 10s），
+    默认取 4332 → **11.06s（余量 10.6%）**，与本项目一贯的余量政策一致。
+    > [!] 0 档（`LANEB_MEM=0`）是 229,597 拍 ⇒ 同理算得 3,702；`$cpiCycles` 已按
+    >     `LANEB_MEM` 自动选（见脚本末尾的期望值打印），别再手算 0 档的账。
     > [!] 2026-10-14 B1-RAS 之前是 ITER=4280（232,345 拍口径，11.6961s）—— 仍有效但
     >     与归档位流对不上，别再用；**RAS 后每迭代 229,597 拍 ⇒ 必须重算**。
     > [!] 2026-10-13 A1 之前是 ITER=4116（241,633 拍口径）—— **用它会跑成 11.24s，仍有效但余量掉到 12%**，
     >     且与归档位流的对不上，别再用。
     > 历史：262,018 拍时代用 3796；282,777 用 3518（**别再用，那是阶段0 的账**）。
-[!] 每迭代周期数**取决于配置与编译选项**（都是本机实测，**2026-10-14 已更新到 B1-RAS/BTB 之后**）：
-    双发射 + EARLY_LD **229,597**（RAS 前 232,345；A1 前 241,633）/ 双发射 EARLY_LD=0 **252,730**（A1 前 262,018）
-    / 单发射 **303,140**（A1 前 312,428）/ 双发射 + I+D Cache **235,628**（A1 前 243,933；**均未含 RAS，未重测**）。
-    **板上跑的是双发射 + EARLY_LD=1**，所以算 ITER 用 229,597。
+[!] 每迭代周期数**取决于配置与编译选项**（都是本机实测，**2026-10-16 已更新到 1 档**）：
+    双发射 + EARLY_LD + **`LANEB_MEM=1`（1 档，生产）= 217,088** / 同配置 `LANEB_MEM=0`（0 档）= **229,597**
+    （RAS 前 232,345；A1 前 241,633）/ 双发射 `EARLY_LD=0` = **249,982** / 单发射 = **300,392**
+    / 双发射 + I+D Cache = **233,013**（后三个是 **2026-10-15 P0 重测修正值**；
+    旧文档的 252,730 / 303,140 / 235,628 是 pre-RAS 陈旧值，**作废**）。
+    **板上跑的是双发射 + EARLY_LD=1 + LANEB_MEM=1**，所以算 ITER 用 **217,088**
+    （`$cpiCycles` 已按 `cpu_top.v` 的 parameter 自动选，别再手算）。
     改完 RTL 或编译选项要量它，跑仿真加 `+PROF`（默认脚本不打印 region cycles 这一行），
     读 `region cycles`；板上的 `Total ticks` 要再 ÷ 当前时钟。别把两个口径混用。
     > [!] 判据：`+PROF` 的 **`region cycles` 必须等于 `Total ticks`**。
@@ -73,7 +78,8 @@
 .PARAMETER Single
     综合【单发射】回退版（把 cpu_top.v 的 DUAL_ISSUE 临时改成 0，结束后自动还原）。
     默认是双发射(1)。
-[!] 回退版会**自动**把期望值换成单发射口径（**303,140 / 280.4**，本机实测）——
+[!] 回退版会**自动**把期望值换成单发射口径（**300,392 / 283.0**，2026-10-15 P0 实测修正；
+    旧文档的 303,140 / 280.4 是 pre-RAS 陈旧值）——
     因为脚本按 DUAL_ISSUE 自动选，不会把双发射的秒数套到单发射上。
 [!] 位流归档名要带配置后缀（`..._dual_...` / `..._single_...`）——
     两种位流的文件名和字节数完全一样，分不出来（这个坑踩过好几次）。
@@ -178,6 +184,19 @@ $dualOrig  = [int]$Matches[1]   # cpu_top.v 里的原值（还原时要用）
 $utf8NoBomCpuTop = New-Object System.Text.UTF8Encoding($false)
 $dualIssue = $dualOrig
 
+# ---- 拟综合的 lane B 访存开关（LANEB_MEM）：同样从 cpu_top.v 读 ----
+# [!] 它与"每迭代周期数"强相关，且和 DUAL_ISSUE 一样是编译期 parameter（PDS 命令行传不了 -D 宏）：
+#       双发射 + EARLY_LD + LANEB_MEM=0（0 档）=> 229,597 拍 / 370.2 分
+#       双发射 + EARLY_LD + LANEB_MEM=1（1 档）=> 217,088 拍 / 391.6 分  <- P3 起的生产档
+#     2026-10-16 P3.6 前本脚本只按 DUAL_ISSUE 选、**不看 lane B** ⇒ 出 1 档位流时会打
+#     "期望 994,614,204 ticks / 370.2 分"，而板上真值是 940,425,216 / 391.66（差 5.4%），
+#     正是"脚本口径与 RTL 现状脱节"这类坑（CLAUDE.md 约定 27 / 58 的同族）。
+if ($cpuTopTxt -notmatch 'parameter\s+LANEB_MEM\s*=\s*(\d+)') {
+    Write-Host "!! 在 cpu_top.v 里找不到 parameter LANEB_MEM —— 版本不匹配，停下。" -ForegroundColor Red
+    exit 1
+}
+$laneBMem = [int]$Matches[1]
+
 # ---- -Single：综合【单发射】回退版 ----
 # [!] 和 DEBUG_LED 同一个理由：PDS 综合取 parameter 默认值、命令行传不了 -D 宏，
 #     所以只能"改默认值 → 综合 → 还原"。以前切回退版要【手改 cpu_top.v:52】——
@@ -225,12 +244,20 @@ if ($Cache -or $DCacheOnly) {   # [!] -DCacheOnly 必须【单独可用】：只
 #   （A1 前是 241,633 / 312,428 —— 别再拿旧值算期望 ticks。）
 # [B1-RAS/BTB] 2026-10-14：双发射 + EARLY_LD=1 降到 **229,597**（−1.18%，region commit 逐位不变）；
 #   单发射/其他配置未重测，暂留 A1 值。
-$cpiCycles = if ($dualIssue -eq 1) { 229597 } else { 303140 }
+# [P3/P3.6] 2026-10-16：lane B 放 load（LANEB_MEM=1）再降到 **217,088**（−5.45%，
+#   四 CRC 逐位不变，板上 391.66 分）⇒ 必须按 LANEB_MEM 分档，否则 1 档会打 0 档的期望值。
+# [2026-10-15 P0 修正] 单发射的**旧文档值 303,140 是 pre-RAS 陈旧值**，实测是 **300,392**
+#   （EARLY_LD=0 同理是 249,982，非 252,730）⇒ 见 论文框架 §0 更新块 3 / CLAUDE.md 四条基线表。
+$cpiCycles = if ($dualIssue -eq 1) {
+                 if ($laneBMem -eq 1) { 217088 } else { 229597 }
+             } else { 300392 }
 $dualNote  = if ($dualIssue -eq 1) { "双发射（与仿真默认一致）" } else { "单发射（-Single 回退版）" }
+$laneBNote = if ($laneBMem -eq 1) { "1 档：lane B 可放 load（当前生产档）" } else { "0 档：lane B 不放访存" }
 
 Write-Host ""
 Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
 Write-Host "    DUAL_ISSUE = $dualIssue  $dualNote"
+Write-Host "    LANEB_MEM  = $laneBMem  $laneBNote"
 if ($dualIssue -ne 1 -and -not $Single) {
     Write-Host "!! 本次将综合【单发射】比特流(DUAL_ISSUE=0)，而仿真脚本默认跑双发射(1)。" -ForegroundColor Yellow
     Write-Host "   要烧回退版请用 -Single（它临时改、结束自动还原）；" -ForegroundColor Yellow
@@ -368,7 +395,7 @@ $md5 = (Get-FileHash $sbit -Algorithm MD5).Hash.Substring(0, 8).ToLower()
 Write-Host ""
 Write-Host "=== 完成 ===" -ForegroundColor Green
 Write-Host "  比特流：$sbit"
-Write-Host "  配置  ：DUAL_ISSUE=$dualIssue [$dualNote]"
+Write-Host "  配置  ：DUAL_ISSUE=$dualIssue LANEB_MEM=$laneBMem [$dualNote]"
 Write-Host "  时间  ：$($fi.LastWriteTime)   大小：$([math]::Round($fi.Length/1MB,2)) MB   md5：$md5..."
 Write-Host ""
 Write-Host "接下来：" -ForegroundColor Cyan
@@ -380,7 +407,7 @@ if ($Variant -eq "coremark") {
     $expTicks = $Iter * $cpiCycles
     Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue；单发射 280.4，双发射 370.2）"
+    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；单发射 280.4；双发射 0 档 370.2 / 1 档 391.6）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + gomoku 的 render/AI 两条线程："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"

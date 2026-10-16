@@ -69,6 +69,14 @@ module tb_gomoku;
         .vid_rdata  (vid_rdata)
     );
 
+    // 自证配置（与 tb_rtthread/tb_coremark/tb_riscv 同一格式，见 CLAUDE.md 约定 37）：
+    //   t=0 打印本测试台【实际例化进去】的开关，日志首行自带口径。
+    // [!] 本测试台【不给 cpu_top 传参】⇒ 这些值就是 rtl/top/cpu_top.v 的 parameter 默认值。
+    //     2026-10-16 P3 起 LANEB_MEM 默认 1（= 1 档，lane B 放 load）⇒ 本台跑的就是当前生产档；
+    //     想跑 0 档得改 cpu_top.v 的默认值（这也是"板上哪一档、仿真哪一档"对不上时的第一个检查点）。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d EARLY_LD=%0d LANEB_MEM=%0d (来自 cpu_top.v 的默认值)",
+                     u_soc.DUAL_ISSUE, u_soc.EARLY_LD, u_soc.LANEB_MEM);
+
     // video_top 那层壳（pll_video / rgb2tmds / OSERDES）是 PDS 专有原语，
     // iverilog 里不存在，所以直接例化 video_core（与 tb_video_bars.v 同理）。
     video_core u_vid (

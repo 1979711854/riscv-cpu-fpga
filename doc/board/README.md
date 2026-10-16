@@ -13,8 +13,11 @@
 > `Correct operation validated`，日志 `uart_20261016_155605.txt`；位流 **`c6af65be`** / `RTL=0x20261027`，
 > PDS CPU 域 **+0.277 ns / Fmax 87.0549 MHz**，布局**钉 `gplace_seed 5`**）。
 > ⇒ **"我们的分"从 370.31 升到 391.66（+5.76%）**。
-> **[!] 演示档仍是 0 档 rev1023 的 `1e2075e6`**（RT-Thread 五子棋）—— 1 档（rev1027）目前**只有跑分固件**，
-> 1 档演示位流待出 + 上板（rtthread 四配置在 1 档下仿真已过；**gomoku 的 1 档仿真还没跑**）。
+> **[OK] 演示档也已切到 1 档（2026-10-16 16:30）—— 两个交付档现在同为 rev1027 / `LANEB_MEM=1`**：
+> 位流 **`e51ac9e5`**（`RTL=0x20261027`，CPU 域 **+0.277 ns / Fmax 87.0549 MHz**，同样钉 `gplace_seed 5`），
+> 上板四条判据全过（banner / render+AI 两条线程 / `[hb]` 5000→50000 无断 / **真按键接 HDMI 下完一局
+> 判出 `WHITE wins`**、`D18` 常亮、显示正常），日志 **`uart_20261016_163009.txt`**（333 行）。
+> 0 档演示档 `1e2075e6`（rev1023）降为历史参照，**别再烧**。
 > **[!] 位流 md5 不是布局指纹**：同一布局两次构建 md5 就不同（`9b58e84c`/`28f8ae6b`、
 > `2e966285`/`c1b7e279`/`c6af65be`），而 `RTL` 自证行与 `9b58e84c` **同为 `0x20261027`**
 > ⇒ 判"板上烧的是哪颗"**只能靠 md5 + 日志时间**，不能靠 `RTL=` 行。
@@ -49,6 +52,35 @@
 > （`RTL=0x20261019`，+0.773ns/0 端点）—— 两局实测 + 串口 29 快照复盘全合法**（见本节顶部那节）。
 >
 > 更早的各代见下方各节与 `doc/reports/2026-10-04_coremark_score.md`。
+
+## 【[OK] 1 档演示档（RT-Thread 五子棋）上板（2026-10-16 16:30）—— **四条判据全过**
+
+> 位流 `rtthread_dual_noaext_ms_earlyld_a1_ras_btb_gomoku_g3_lanebmem_85mhz_rev1027_seed5pin_e51ac9e5.sbit`
+> （md5 **`e51ac9e5`**，`RTL=0x20261027`，`LANEB_MEM=1`、Cache 全关、85.0051 MHz，
+> **PDS CPU 域 +0.277 ns / 0 端点（19,114）/ Fmax 87.0549 MHz**，布局钉 `gplace_seed 5`；
+> `scripts\build_bitstream.ps1 rtthread` 于 16:19:57 出，固件 `mem.hex` 21046 行 / 10523 字、sha256 守卫通过）。
+> 日志 **`uart_20261016_163009.txt`**（333 行，16:30:10–16:31:10）。
+> **这一版让"1 档统一定版"成立**：跑分档与演示档现在同为 rev1027 / `LANEB_MEM=1` 的同一份 `rtl/**`。
+
+| 判据 | 实测 |
+|---|---|
+| 版本自证 | `[build] FW=RTTHREAD-GOMOKU-G3 **RTL=0x20261027**`（app 侧 `FW=GOMOKU RTL=0x20261027` 一致）✓ —— **rev1027 的 rtthread 位流只有这一颗**，旧档 `1e2075e6` 是 rev1023（会打 `0x20261023`）⇒ 自证即"烧对了" |
+| render 线程 | `[boot] gomoku render thread running` ✓ |
+| AI 线程 | `[boot] gomoku ai thread running` ✓ |
+| 心跳（`[hb]`） | `uptime 5000 → 50000 ticks` 共 **10 条、每 5 s 一条、单调递增、无断** ✓（AI 思考 286~609 ms 期间照常）|
+| **真按键 + HDMI 下完一局** | 串口镜像：光标 `H8→I8→J8→K8→L8→L9→L10` 逐步移动 + 落子 + AI 应手，**判出 `WHITE wins`**；回 `title` 后**第二局又开了**（`menu=MODE→DIFFICULTY→COLOR→start, level=NORMAL you=BLACK`）✓；**用户接 HDMI 显示器显示正常、`D18`(led[1]=video_locked) 常亮** ✓ |
+| 灯 | `D19`(pll_locked) / `D18`(video_locked) 常亮；**`D13`(led[2]=done) 本变体不会亮，别误判** |
+
+> **1 档功能仿真（顺手补上从 P3 起挂账的回归）**：`scripts\gomoku\run_sim.ps1`（端到端，真 CPU + 真 PPU）
+> 首行自证 `SIM CONFIG: DUAL_ISSUE=1 EARLY_LD=1 LANEB_MEM=1` ⇒ **6/6 checks、`=== PASS ===`**
+> （2026-10-16，24 min 墙钟；日志 `doc/reports/2026-10-16_gomoku_g3_lanebmem1_sim.txt`）。
+> ⇒ 1 档现在"仿真 + 跑分上板 + 演示上板"三处证据齐了。
+
+> [!] 同一日志第 31 行的 `[!] vblank timeout -- video not running (check D18 video_locked)`
+> 仍是**已知假超时**（0 档 `1e2075e6` 的同款日志也有这句，而当时 D18 亮、画面正常）——**判据看 D18，不看这句话**。
+> [!] **应用侧旁证（非受控测量）**：同一开局位置 `nodes=1287 depth=4`，本颗（rev1027 / 1 档 / 85.0051 MHz）
+> 是 `t=569ms`；0 档 rev1019 的 RT-Thread 档（76.5052 MHz）是 `t=672ms`。含主频 +11.1% 与 lane B 的效率收益，
+> 也含 RT-Thread 调度噪声 ⇒ **只当"应用侧也更快"的旁证，别当性能数字引用**。
 
 ## 【[OK] 1 档（lane B 放 load）跑分档上板（2026-10-16 15:56）—— **391.66 分**
 
