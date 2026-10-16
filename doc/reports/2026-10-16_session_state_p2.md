@@ -274,6 +274,29 @@ AMO 释放拍 `mem_ready_int = b_ready && !amo_hold` 的交互有关）。复现
 规则该闸门已降级为"看掉多少、值不值"，但翻开关后**必须重量时序**（P4 闸门项），
 且补跑时用满 8 seed 再比。
 
+### 9.2 补跑完整流程的结果 + 根因定位（本会话，10:33）
+
+另一个会话那次构建中断在 P&R（seed 3/8）。**本会话补跑了完整 8 seed + report_timing +
+generate_bitstream**（日志 `p2_build_rev1024.log`），结论：
+
+* **数字与中断前的最优 seed 逐位相同**：CPU 域 WNS **−0.165 ns**（20 个失败端点 / 19,939）、
+  可达 **83.8293 MHz**、LUT **7,918**、FF 3,691 ⇒ **不是 seed 抖动，是确定性回归**。
+* **位流已生成但不可交付**：`pds/RV32I_1/generate_bitstream/cpu_top_board.sbit`
+  （md5 `5124b4bc…`，9,188,552 B，10:33:04）。**时序不过，不要上板**；交付仍是 `55fae69e`。
+* **[!] 根因修正**：§9.1 说"关键路径不在 P2 新逻辑上"——**这个判断有误**。本会话从
+  `report_timing/cpu_top_board.rtr` 追到了完整路径，它**确实经过 P2 的新逻辑**：
+  `video palette DRAM 读出 → … → branch_taken → b_mem_unaligned_5/gateop_perm（(H) 新增！）
+  → if_addr_d[3] 的 mux LUT → imem_addr → BRAM`。即 `load_misaligned_b` 背后的
+  `alu_result_b`（32 位加法器 cone）被综合器**合并进了 fetch_addr 的关键 mux**
+  （`core.v:572/688` 预警的"Fmax 第一风险点"）。功能上 `load_misaligned_b` 在 0 档恒 0，
+  但**综合器证明不了**，于是白建了 255 个 LUT 并把长链抬上了关键路径。
+* **修法已写成任务书**（未实施、未验证）：`2026-10-16_laneb_timing_fix_taskbook.md` ——
+  把 7 处新逻辑消费者用 `LANEB_MEM` 门控成常量折叠（0 档综合器整条删掉 ⇒ 逐位恢复
+  rev1023 网表与时序；1 档语义不变），附完整验证步骤与 P3 成本预览方案。
+  `rtl/core/core.v` 已还原到 `b7f39fe`（工作树干净），**一行修配都没落盘**。
+
+**⇒ 下一个会话的第一件事：执行该任务书，而不是直接翻开关。**
+
 ---
 
 ## 10. P3 起手（下个会话第一件事）
