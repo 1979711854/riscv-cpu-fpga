@@ -142,3 +142,6 @@ $RECYCLE.BIN/
 sim/*trace*.txt
 rtthread_*trace*.txt
 sim/*.log
+
+# P3.6 逐 seed 取证目录（40 份 .rtr + 抢拷日志，~28MB，只留本地；结论已落 doc/reports/2026-10-16_p3_6_margin_plan.md）
+/pds/_capture_p36/

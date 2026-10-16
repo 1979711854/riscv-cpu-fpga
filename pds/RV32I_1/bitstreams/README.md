@@ -2,6 +2,21 @@
 
 > `.sbit` 被 `.gitignore` 排除（9 MB/个）。**别人 clone 下来一个都没有，必须自己综合。**
 
+> **[OK] 2026-10-16 新增提交档 `c6af65be`（1 档跑分档，391.66 分）**
+> 文件名 `coremark_dual_noaext_ms_earlyld_a1_ras_btb_lanebmem_85mhz_rev1027_seed5pin_c6af65be.sbit`。
+> RTL = rev1027（`LANEB_MEM=1`，`DESIGN_REV=0x2026_1027`），走 `scripts\build_bitstream.ps1 coremark` 完整体
+> （固件重建 → `mem.hex` sha256/17104 行守卫 → 综合 → P&R → 出位流）；CPU 域 **+0.277 ns / 0 端点（19,114）/
+> Fmax 87.0549 MHz**；板上 **391.66 分**（`Total ticks 940,200,316` = 11.0605 s，
+> 日志 `doc/board/uart_20261016_155605.txt`）。**这是当前 ★ 提交档（跑分）**；上一档 = 0 档 `55fae69e`（370.31）。
+> * **P&R 是"钉 seed"出来的**：`RV32I_1.pds` 的 `cmd_pnr` 里 `(_option gplace_seed (_integer 5))`（单 seed 模式）。
+>   **为什么必须钉**：PDS 默认按"全设计最差"排序选 seed，而"最差"= **跨域 CPU→`pix_clk` 伪影**（不是 CPU 域）⇒
+>   四批默认分别挑到 CPU 域 **+0.014 / +0.166 / −0.111 / −0.091 ns**（**后两批时序不过**）；
+>   逐 seed 读 CPU 域后最优是 **seed_5 = +0.277**。方法与 40 个 seed 的全量分布见
+>   `doc/reports/2026-10-16_p3_6_margin_plan.md` §6。
+> * **[!] md5 没有"指纹"意义**：同一布局两次构建 md5 就不同（`9b58e84c`/`28f8ae6b`；
+>   `2e966285`/`c1b7e279`/`c6af65be` 都是同一布局）。引用位流一律给 **"md5 + 来源报告 + 日志时间"** 三件套；
+>   也**不能**用 `RTL=` 自证行区分（`9b58e84c` 与 `c6af65be` 同为 `0x20261027`）。
+
 > **[!] rev1017 的老位流要不要重出？（2026-10-14 实测定论：**功能上不必，时序上不能**）**
 > `rev1017 → rev1019` 的 RTL 差异只有两处**门控**（约定 56 的 ID/EX 清零、约定 57 的 CSR 写/mret，
 > 都在 `rtl/core/core.v`；`rtl/mem` / `rtl/bus` / `rtl/video` **一行未动**）。

@@ -135,7 +135,15 @@ P3.5(B)：尾段解耦后，最差路径变成 D-RAM 读 → ld_early_val(EARLY_
 ## 7. 未决 / 遗留
 
 * **位流未上板**（`9b58e84c`）；`55fae69e` 仍是正式交付档。
-* **+0.014 ns 余量薄**：见 §5 的补余量建议。
+* **+0.014 ns 余量薄**：见 §5 的补余量建议。**下一步（P3.6）目标与方案已落盘：
+  `doc/reports/2026-10-16_p3_6_margin_plan.md`** —— ② 多 seed / 逐 seed 读 CPU 域 → ① region/floorplan；
+  判据 CPU 域 WNS ≥ +0.3 @85.0051 MHz 且 CoreMark 仍 217,088 + 四 CRC（不动 RTL ⇒ 只重综合）。
+  **[已执行完成 · 2026-10-16 下午/晚间] ② 封顶 `+0.277 ns`（钉 `gplace_seed 5`），可达 87.0549 MHz，
+  位流 `c6af65be` —— 未达 +0.3 判据（差 0.023 ns，layout 软顶 ≈ +0.28），① 受"拿不到 region 坐标
+  （需 PCE GUI）"阻塞。** 该位流 **已上板**（`doc/board/uart_20261016_155605.txt`）：
+  `Total ticks 940,200,316` = 11.0605 s ⇒ **391.66 分**、四 CRC 逐位一致 ⇒ **本报告的 1 档
+  （217,088 + 四 CRC）已在硬件上闭环，"我们的分"由 370.31 升到 391.66**。
+  过程与全量数据见 `reports/2026-10-16_p3_6_margin_plan.md`，下一会话入口 `reports/2026-10-16_handoff_p3_6.md`。
 * `scripts\rtthread\run_sim.ps1` 四配置本次已补跑（1 档）；`scripts/gomoku/run_sim.ps1`
   仍未做 1 档回归（P3 §7 起就挂着）。
 * `tb_amo_cpu` + `+MEMWAIT` 的既有 bug（P2 §7.4）仍未查。
