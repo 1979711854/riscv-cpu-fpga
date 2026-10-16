@@ -33,7 +33,7 @@
 | riscv-tests 默认（双发射 `EARLY_LD=0`） | 49/1/0 | **49/1/0** [OK]（唯一 FAIL = `ma_data` 哨兵） |
 | riscv-tests Cache corner | 49/1/0 | **49/1/0** [OK] |
 | own_tests（`btb_indirect/exceptions/hi_fetch/tb_amo_cpu/timer_irq`） | 5/0 | **5/0** [OK] |
-| CoreMark `+MEMWAIT=1/2`（判四 CRC 不变） | 进行中/待跑 | 见 §7.3 |
+| CoreMark `+MEMWAIT=1/2`（判四 CRC 不变） | 见 §7.3/§7.5：**该组合判据不可靠**，停顿覆盖以 riscv-tests/own_tests 的 `+MEMWAIT` 为准（全过，唯一 FAIL 是 §7.4 的既有 AMO bug） |
 
 **[OK] 结论：P2 判据全部达成，行为零变化。**
 
@@ -152,14 +152,63 @@ scripts\run_riscv_tests.ps1 -DCache -ICache -EarlyLd  # 49/1/0
 scripts\run_own_tests.ps1                           # 5/0（含 exceptions / timer_irq）
 ```
 
-### 7.3 MEMWAIT 停顿注入（纪律项，判"四 CRC 不变"）
+### 7.3 MEMWAIT 停顿注入回归（纪律项）
 
-`+MEMWAIT=1/2` 在跑/待跑（停顿注入使仿真慢数倍）。结果补记于此表：
+| 配置 | 结果 |
+|---|---|
+| riscv-tests 默认 + `+MEMWAIT=1` | **49/1/0** [OK] |
+| riscv-tests 默认 + `+MEMWAIT=2`（更严苛） | **49/1/0** [OK] |
+| riscv-tests Cache corner + `+MEMWAIT=1` | **49/1/0** [OK] |
+| own_tests + `+MEMWAIT=1`（A_EXT=1） | 4/5 —— `tb_amo_cpu` **FAIL (testnum 1)**：**既有 bug，与 P2 无关**，完整结论见 §7.4 |
+| `tb_amo_cpu` + Cache corner + `MEMWAIT=0`（A_EXT=1） | **PASS** [OK]（真实冻结下 AMO 行为正确） |
+| CoreMark + `+MEMWAIT=1` | **未跑完**，且该组合的判据本身不可靠 —— 见 §7.5 |
 
-| 配置 | 四 CRC | 结论 |
-|---|---|---|
-| `+MEMWAIT=1` | 待补 | 待补 |
-| `+MEMWAIT=2` | 待补 | 待补 |
+### 7.4 [!] 既有 bug（**不是 P2 引入的**）：AMO + `+MEMWAIT` 下分支读到陈旧寄存器
+
+**现象**：`own_tests` 的 `tb_amo_cpu` 在 `+MEMWAIT=1` 下 FAIL 于 testnum 1（`fail_amoadd`：
+10 次 `amoadd.w` 后计数器应为 10）。差分 trace（父提交 rev1023 与 rev1024 加同一 trace 块，
+**两者逐位一致**）显示：**循环多跑了一轮** —— 计数器被写了 11 次（1..11），即
+`bnez t2` 读到了**陈旧的 t2**（冻结窗口下的前递缺陷）。
+
+**归属证明（三重）**：
+1. **对照实验**：父提交（rev1023，P2 之前）的 `core.v` 在同一 hex/同一命令下**同样 FAIL**；
+   连编 6 次父提交 **6/6 全 FAIL**，且与 rev1024 的 trace 在失败点前**逐位一致**。
+2. **差分 trace**：两版本对 0x2000（计数器）的写入序列、寄存器写回序列完全一致。
+3. **`b_mem_sel` 插桩**：rev1024 里 `ex_mem_b_mem_read`/`b_mem_sel` **从未为 1**
+   （证明 LANEB_MEM=0 下新逻辑不可达，与 §4 的理论证明互相印证）。
+
+**影响面（小，且不碰交付物）**：
+* **生产配置 `A_EXT=0` 不可能触发**：`amo_unit` 不例化 ⇒ `amo_hold ≡ 0`，AMO 指令判非法，
+  该"AMO 占 MEM 4 拍 + 分支"的图案不存在。交付位流 `55fae69e` 无风险。
+* **真实冻结下正确**：`tb_amo_cpu` 在 Cache corner（I/D 缺失造成的真停顿）下 **PASS**；
+  riscv-tests 三套停顿配置全 49/1/0。⇒ 只在 `+MEMWAIT` 的**自由运行 b_ready**（与是否有
+  访存在途无关地每 n+1 拍才 ready）这种合成压力模式下出现。
+* 最后一条成功记录是 **2026-10-12**（A1/RAS/BTB 之前）；此后 A1、B1-RAS/BTB、约定 56/57
+  修复、砍 RV32A 都没重跑过它 —— **下次回归它大概率还是 FAIL，别当新回归**。
+
+**待查（下一个会话的候选）**：`bnez` 在何种冻结相位下会读到陈旧 `rs1_val`（怀疑与
+AMO 释放拍 `mem_ready_int = b_ready && !amo_hold` 的交互有关）。复现配方：
+`iverilog -g2012 -DDUAL -DAEXT ... sim\tb_riscv.v`（`rtl/**` 全文件）+
+`elf2mem sim/tests/build/tb_amo_cpu.elf` + `vvp ... +MEMWAIT=1`。
+
+### 7.5 [!] 工具链坑（新发现）：**iverilog 构建不确定** + `+MEMWAIT` 可能被静默丢掉
+
+* **构建不确定**：同源文件连编两次，`.vvp` 二进制**不同**（实测 6 次全不同）。
+  ⇒ 任何"跨构建复现"的结论都要警惕；本报告所有对照实验都在**同一命令内**完成。
+  这也解释了 §7.4 排查过程中出现过一次"父提交 PASS"的孤岛结果（很幸运地抽到
+  plusarg 被丢的那个构建，见下）。
+* **`+MEMWAIT` 可能被静默丢掉**：`sim/mem_model.vh` 里 `integer memwait = 0;`
+  （声明初始化）与 `initial` 块里的 `$value$plusargs("MEMWAIT=%d", memwait)` 的
+  **先后顺序在 LRM 里是未定义的**；若声明初始化排在后面，plusarg 读到的值被
+  **重置回 0** ⇒ 这次跑其实**没有注入停顿**（假 PASS）。建议修：把 `memwait = 0;`
+  挪进 initial 块、放在 plusarg 解析**之前**。
+* **CoreMark + `+MEMWAIT` 的判据不可靠**：停顿期间 `mem_we` 会保持多拍，
+  `mem_model.vh` 的注释自己就写明"写操作在停顿期间会被重复执行 n+1 次……
+  **对 FIFO 类外设（UART TX）就不行**" ⇒ CoreMark 的 UART 文本被复制损坏，
+  测试台按文本找结束标记**永远等不到**，只会跑到 1 亿拍超时（本次 1.5 小时没跑完，
+  已杀）。**结论：CoreMark 的 `+MEMWAIT` 不能用来判四 CRC**（历史上 10-12 的
+  "8 组全对"要么那时 UART 模型没这个问题，要么同样没跑完）；停顿覆盖改用
+  riscv-tests/own_tests 的 `+MEMWAIT`（本文 §7.3 前三行，可靠且秒级）。
 
 ---
 
@@ -199,7 +248,8 @@ scripts\run_own_tests.ps1                           # 5/0（含 exceptions / tim
 2. 翻 `core.v` 的 `parameter LANEB_MEM = 1`（一处）；
 3. 判据（任务书 §6 P3）：**riscv-tests 49/1/0 + 四 CRC 逐位一致 + cycles 显著下降**；
    **别拿模型 6.0% 当 go/no-go**（模型两个盲区：lane B load 的 load-use 停顿 + ~5% 固有乐观度）；
-4. P4 清单：`+MEMWAIT=1/2`、Cache 各配置、**RT-Thread 四配置**（需先按 `-Sim` 口径重建固件，
+4. P4 清单：riscv-tests/own_tests 的 `+MEMWAIT=1/2`（**CoreMark 的 `+MEMWAIT` 判据不可靠，见 §7.5**）、
+   Cache 各配置、**RT-Thread 四配置**（需先按 `-Sim` 口径重建固件，
    现在 `scripts/rtthread/build/` 里是板级标定版、`.sim_build_ok` 标记缺失）、PDS 量时序。
 
 ---
@@ -207,7 +257,9 @@ scripts\run_own_tests.ps1                           # 5/0（含 exceptions / tim
 ## 11. 未决 / 遗留
 
 * `tb_rvc` 的 10 项 FAIL 处置未决（修位域 / 连 `rvc_expand.v` 一起删）—— 上一会话遗留；
-* RT-Thread 仿真本会话**未跑**（见 §10.4；四条基线 + 49/1/0×2 + 5/0 已覆盖全部改动路径，
+* **§7.4 的既有 AMO+`+MEMWAIT` bug 待查**（`bnez` 在冻结相位下读陈旧 `rs1_val` 的确切条件）；
+  生产配置不可触发，但它是"停顿相关静默错"家族的新成员，且 `+MEMWAIT` 是唯一能暴露它的配置；
+* RT-Thread 仿真本会话**未跑**（四条基线 + 49/1/0×2 + 5/0 已覆盖全部改动路径，
   但按约定 55 的教训，翻开关后必须补）；
-* §8 的脚本脆弱性待修；
+* §7.5/§8 的两个工具链坑待修（`mem_model.vh` 的 plusarg 竞速、PS 5.1 下脚本被链接器警告打断）；
 * **未 push**（项目纪律：不自动 push）。
