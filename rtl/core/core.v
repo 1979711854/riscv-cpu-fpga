@@ -313,7 +313,11 @@ module core #(
     //    mem_read_b=0 ⇒ id_ex_b_mem_read 恒 0 ⇒ b_mem_sel 恒 0，
     //    mem_re / mem_addr 与基线【逐位相同】。
     //    与 AMO 互斥：p_amo_a 禁止配对 ⇒ lane B valid 时 lane A 不可能是 AMO。
-    wire b_mem_sel = ex_mem_b_valid && ex_mem_b_mem_read;
+    // [!] 时序门控（2026-10-16，任务书 §4-3）：还必须显式带 `(LANEB_MEM != 0)`。
+    //    功能上 0 档 b_mem_sel 已恒 0，但综合器证明不了（id_ex_b_mem_read 是
+    //    真寄存器）⇒ 会把 mem_re/mem_addr 的 lane B mux 腿建出来。门控后 0 档
+    //    折成常量、两条腿被删 ⇒ 与 rev1023 逐位同网表；1 档语义不变。
+    wire b_mem_sel = (LANEB_MEM != 0) && ex_mem_b_valid && ex_mem_b_mem_read;
     // 访存口：MEM 级组合输出，一拍的稳定窗口，直接进总线（写通路零寄存器）
     // [A 扩展] AMO 自己驱动访存端口（它要读-改-写，占两拍）。
     // control.v 的 AMO 分支【没有】置 mem_read/mem_write，所以两者互斥，
@@ -679,7 +683,11 @@ module core #(
                    //   快通路（ld_fast 只由 lane A 的译码驱动，任务书 §3）⇒ 紧跟的
                    //   消费者必须停一拍，数据由 MEM/WB 级的 fwd_*_wbb 前递（wb_data_b）。
                    //   LANEB_MEM=0 时 id_ex_b_mem_read 恒 0 ⇒ 本项恒 0、逐位不变。
-                   (id_ex_b_mem_read && (id_ex_b_rd != 5'd0) &&
+                   // [!] 时序门控（2026-10-16，任务书 §4-4）：整条子句再前置
+                   //   `(LANEB_MEM != 0)`。stall 是流水线控制信号，0 档综合器会把
+                   //   id_ex_b_mem_read 的比较器树建出来挂到 stall → ID/EX 清的路径上。
+                   //   门控后 0 档整条折成常量删除 ⇒ 恢复 rev1023 网表；1 档语义不变。
+                   ((LANEB_MEM != 0) && id_ex_b_mem_read && (id_ex_b_rd != 5'd0) &&
                     ((id_ex_b_rd == rs1) || (id_ex_b_rd == rs2) ||
                      (if_id_pair && ((id_ex_b_rd == rs1_b) || (id_ex_b_rd == rs2_b)))));
 
@@ -801,7 +809,12 @@ module core #(
                       // 同对同拍锁存 ⇒ 任一拍 MEM 级至多一条访存 ⇒ 访存口一次 2 路
                       // mux 就够，不需要仲裁器/ready 握手。LANEB_MEM=0 时 lane B 是
                       // load 已让 p_opcode_b_ok=0，本项冗余（逐位不变）；写上为自明。
-                      !(p_mem_a && p_ld_b) &&
+                      // [!] 时序门控（2026-10-16，任务书 §4-2）：还必须显式带
+                      // `(LANEB_MEM != 0)`。p_mem_a && p_ld_b 这条腿在 0 档虽恒不
+                      // 成立，但综合器会把 p_ld_b 的译码逻辑建出来并挂到 pair_now
+                      // → fetch_addr 的组合路径上（Fmax 第一风险点）。门控后 0 档
+                      // 折成常量删除该腿 ⇒ 恢复 rev1023 网表；1 档语义不变。
+                      !(p_mem_a && p_ld_b && (LANEB_MEM != 0)) &&
                       (p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b) && (p_rd_a != p_rd_b);
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
@@ -886,8 +899,13 @@ module core #(
     //   ex_mem_b_alu_result = 【地址】而不是数据 —— 必须排除 wb_sel==01，与 lane A
     //   的 ld_f_ex 同构。LANEB_MEM=0 时 lane B 不可能是 load（wb_sel_b 恒不为 01）
     //   ⇒ 本门控恒真、逐位不变。
+    // [!] 时序门控（2026-10-16，任务书 §4-5）：五处（ld_f_exb + 四个 fwd_*_exb）
+    //   共用一个 `exb_wb_ok`，且它带 `|| (LANEB_MEM == 0)` 兜底 —— 0 档恒真、
+    //   综合器把五个比较器整批折叠掉，不给前递网白建 lane B load 的解码逻辑；
+    //   1 档就是原来的"排除 wb_sel==01"语义。
+    wire        exb_wb_ok = (ex_mem_b_wb_sel != 2'b01) || (LANEB_MEM == 0);
     wire        ld_f_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == rs1) &&
-                           (ex_mem_b_wb_sel != 2'b01);
+                          exb_wb_ok;
     wire        ld_f_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) && (ex_mem_rd == rs1) &&
                            (ex_mem_wb_sel != 2'b01) && !ex_mem_is_amo;
     wire        ld_f_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == rs1);
@@ -924,7 +942,13 @@ module core #(
                        // ld_fast 仍判"可走快通路" ⇒ load 读到错地址。只有"lane A load
                        // 的基址来自同拍 lane B load"的链式指针解引用才触发，静默错。
                        // LANEB_MEM=0 时 ex_mem_b_mem_read 恒 0 ⇒ 本项恒 0、逐位不变。
-                       ((ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == rs1) && ex_mem_b_mem_read);
+                       // [!] 时序门控（2026-10-16，任务书 §4-6）：整条再前置
+                       //   `(LANEB_MEM != 0)`。ld_bad_base 喂 ld_fast → 提前读口，
+                       //   0 档综合器会把 ex_mem_b_rd 的比较器建到这条 ID 级 AGU 链上
+                       //   （历史上它一度是 CPU 域最差路径）。门控后 0 档整条折成
+                       //   常量删除 ⇒ 恢复 rev1023 网表；1 档语义不变。
+                       ((LANEB_MEM != 0) && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == rs1) &&
+                        ex_mem_b_mem_read);
     //   注意：EX/MEM 里那条是【字快通路 load】时不算拿不到 —— 它的数据这一拍就在
     //   ld_early_data 上（上面 ld_base 的第一路）。旧通路 load、byte/half 快通路 load、
     //   AMO 都仍然算拿不到（数据还没回来 / 要解包，见 ld_f_ld 处的说明）。
@@ -963,10 +987,10 @@ module core #(
     wire        ld_fwd_bb = ld_fwd_en && (ex_mem_rd == id_ex_b_rs2);
 
     // lane A 操作数 1（id_ex_rs1）
-    // [lane B 访存] `&& (ex_mem_b_wb_sel != 2'b01)`：lane B 是 load 时不得把
+    // [lane B 访存] `&& exb_wb_ok`：lane B 是 load 时不得把
     //   【地址】当数据前递（R1）。LANEB_MEM=0 时 lane B 不可能是 load ⇒ 恒真。
     wire fwd_a_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_rs1) &&
-                     (ex_mem_b_wb_sel != 2'b01);
+                     exb_wb_ok;
     wire fwd_a_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                      (ex_mem_rd == id_ex_rs1) && (ex_mem_wb_sel != 2'b01);
     wire fwd_a_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_rs1);
@@ -974,7 +998,7 @@ module core #(
     // lane A 操作数 2（id_ex_rs2）
     // [lane B 访存] 同 fwd_a_exb：排除 lane B load 的地址前递（R1）。
     wire fwd_b_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_rs2) &&
-                     (ex_mem_b_wb_sel != 2'b01);
+                     exb_wb_ok;
     wire fwd_b_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                      (ex_mem_rd == id_ex_rs2) && (ex_mem_wb_sel != 2'b01);
     wire fwd_b_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_rs2);
@@ -1078,7 +1102,7 @@ module core #(
     // lane B 操作数 1（id_ex_b_rs1）
     // [lane B 访存] 同 fwd_a_exb：排除 lane B load 的地址前递（R1）。
     wire fwd_ba_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_b_rs1) &&
-                      (ex_mem_b_wb_sel != 2'b01);
+                      exb_wb_ok;
     wire fwd_ba_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                       (ex_mem_rd == id_ex_b_rs1) && (ex_mem_wb_sel != 2'b01);
     wire fwd_ba_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs1);
@@ -1086,7 +1110,7 @@ module core #(
     // lane B 操作数 2（id_ex_b_rs2）
     // [lane B 访存] 同 fwd_a_exb：排除 lane B load 的地址前递（R1）。
     wire fwd_bb_exb = ex_mem_b_reg_write && (ex_mem_b_rd != 5'd0) && (ex_mem_b_rd == id_ex_b_rs2) &&
-                      (ex_mem_b_wb_sel != 2'b01);
+                      exb_wb_ok;
     wire fwd_bb_ex  = ex_mem_reg_write && (ex_mem_rd != 5'd0) &&
                       (ex_mem_rd == id_ex_b_rs2) && (ex_mem_wb_sel != 2'b01);
     wire fwd_bb_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs2);
@@ -1346,13 +1370,21 @@ module core #(
     //   addr[0]==0；LW 要求 addr[1:0]==00（与 lane A 同一套编码，funct3[1:0]）。
     //   LANEB_MEM=0 时 id_ex_b_mem_read 恒 0 ⇒ 本信号恒 0，ex_exception/exc_cause/
     //   exc_tval/trap_pc 全部逐位回退基线行为。
+    //   [!] 时序门控（2026-10-16 rev1024 时序回归修复，任务书
+    //   `2026-10-16_laneb_timing_fix_taskbook.md` §4-1）：必须显式带
+    //   `(LANEB_MEM != 0)`。功能上 0 档本信号已恒 0，但综合器证明不了 ——
+    //   b_mem_unaligned 背后的 alu_result_b 是 32 位加法器 cone，它喂
+    //   load_misaligned_b → ex_exception → trap → fetch_addr 的【最高优先级
+    //   mux 腿】（core.v 预警的"Fmax 第一风险点"）。实测该 cone 被并进
+    //   if_addr_d 的关键 LUT，CPU 域余量 +0.330 → −0.165 ns。门控后 0 档
+    //   折成常量、整条 cone 被删 ⇒ 逐位恢复 rev1023 网表与时序；1 档语义不变。
     //   [!] lane B 是 load 时 lane A 只可能是 ALU/branch/jal/jalr/CSR/SYSTEM
     //   （pair_now 排掉 p_mem_a）—— 这些在"先陷异常、mret 后整对重放"下都幂等，
     //   安全性论证见 EX/MEM 段 lane B 锁存处的注释。
     wire [1:0] b_addr_low = alu_result_b[1:0];
     wire b_mem_unaligned = (id_ex_b_funct3[1:0] == 2'b01) ? b_addr_low[0] :
                            (id_ex_b_funct3[1:0] == 2'b10) ? |b_addr_low : 1'b0;
-    wire load_misaligned_b = id_ex_b_mem_read && b_mem_unaligned;
+    wire load_misaligned_b = (LANEB_MEM != 0) && id_ex_b_mem_read && b_mem_unaligned;
 
     // ---- CSR 写数据与写使能 ----
     // 立即数形式的源在 instr[19:15]（零扩展），它已随指令带到 id_ex_rs1。
@@ -1595,7 +1627,11 @@ module core #(
 
     // lane B 写回数据（LANEB_MEM=1 时多一路 load 解包；=0 时 lane B 不可能是
     // load ⇒ wb_sel_b 恒不为 01，与基线逐位相同）
-    assign wb_data_b = (mem_wb_b_wb_sel == 2'b01) ? load_data_b :
+    // [!] 时序门控（2026-10-16，任务书 §4-7）：load 腿再带 `&& (LANEB_MEM != 0)`。
+    //   load_data_b 是并行解包逻辑（字节选择 + 符号扩展），0 档综合器证明不了
+    //   wb_sel_b 恒不为 01 ⇒ 会把整份解包 mux 树建出来挂在写回/前递路径上。
+    //   门控后 0 档折成常量、整棵树被删 ⇒ 恢复 rev1023 网表；1 档语义不变。
+    assign wb_data_b = ((mem_wb_b_wb_sel == 2'b01) && (LANEB_MEM != 0)) ? load_data_b :
                        (mem_wb_b_wb_sel == 2'b10) ? (mem_wb_b_pc + 32'd4) :
                        (mem_wb_b_wb_sel == 2'b11) ? mem_wb_b_imm :
                        mem_wb_b_alu_result;
