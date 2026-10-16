@@ -84,12 +84,23 @@ module cpu_tb_riscv;
     localparam AEXT_OUT = 0;
 `endif
 
+    // [lane B 访存] lane B 放 load：编译时加 -DLANEBMEM 即用 LANEB_MEM=1。
+    // 默认 0（与 P2 阶段的 core.v 参数默认值一致）。P3 翻开关后：
+    //   * core.v 的 parameter 默认值改 1（PDS/上板口径走它，cpu_top 不传这个参数）；
+    //   * 仿真侧仍靠这个宏显式二选一 —— 同一份 RTL 下能跑 0/1 两档对照，
+    //     这正是 tb_laneb_ld.S "先写用例再翻开关" 的玩法（run_own_tests.ps1 -LanebMem）。
+`ifdef LANEBMEM
+    localparam LANEBMEM_OUT = 1;
+`else
+    localparam LANEBMEM_OUT = 0;
+`endif
+
     // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d A_EXT=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, AEXT_OUT);
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d A_EXT=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, AEXT_OUT, LANEBMEM_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT),
-           .A_EXT(AEXT_OUT)) u_core (
+           .A_EXT(AEXT_OUT), .LANEB_MEM(LANEBMEM_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
@@ -161,6 +172,27 @@ module cpu_tb_riscv;
     final begin
         if (btbtrace_on)
             $display("BTBTRACE: btb pred = %0d, btb train = %0d", btbpred_cnt, btbtrain_cnt);
+    end
+
+    // ------------------------------------------------------------------
+    // [lane B 访存] +PAIRTRACE：被动打印 ID/EX 每次锁存的配对（lane A/B 的 PC 与
+    //   lane B opcode），以及 lane B load 驱动访存口（b_mem_sel）的事件。
+    //   **纯被动观测**（同 +LDBUG/+BTBTRACE 纪律，不改变周期数）。
+    //   用途：tb_laneb_ld.S 的定向图案依赖"X 与 L1 真的配成了对"—— 若因某个
+    //   配对约束看漏导致 L1 落到 lane A，测试会【通过但什么都没测】。跑一遍
+    //   +PAIRTRACE 即可从日志自证配对发生（L1 的 PC 出现在 PAIR 行、且随后有
+    //   对应的 BMEM 行）。P3 翻开关后的回归也建议带上，留档。
+    // ------------------------------------------------------------------
+    integer pairtrace_on;
+    initial if ($test$plusargs("PAIRTRACE")) pairtrace_on = 1; else pairtrace_on = 0;
+    always @(posedge clk) begin
+        if (pairtrace_on && resetn) begin
+            if (u_core.if_id_pair)
+                $display("PAIR a_pc=%h b_pc=%h b_op=%02d",
+                         u_core.if_id_pc, u_core.if_id_pc + 32'd4, u_core.if_id_instr_b[6:0]);
+            if (u_core.b_mem_sel)
+                $display("BMEM b_pc=%h addr=%h", u_core.ex_mem_b_pc, u_core.mem_addr);
+        end
     end
 
     initial clk = 1'b0;

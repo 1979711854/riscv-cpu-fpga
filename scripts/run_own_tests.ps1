@@ -21,6 +21,7 @@ param(
     [switch]$ICache,    # 打开 I-Cache（-DICACHE，ICACHE_EN=1）。默认关
     [switch]$EarlyLd,   # [任务 C] load 地址提前（-DEARLYLD，EARLY_LD=1）。默认关
     [switch]$NoBtb,     # [B1-BTB] 关分支目标缓冲（-DNOBTB，BTB_EN=0）。默认【开】，与板上一致
+    [switch]$LanebMem,  # [lane B 访存] lane B 放 load（-DLANEBMEM，LANEB_MEM=1）。默认关（P2 口径）
     [switch]$Single     # 切单发射（不传 -DDUAL）。默认【双发射】，与板上比特流一致
 )
 
@@ -30,6 +31,9 @@ $dcacheEn  = if ($DCache) { 1 } else { 0 }
 $icacheEn  = if ($ICache) { 1 } else { 0 }
 $earlyLdEn = if ($EarlyLd) { 1 } else { 0 }
 $btbEn     = if ($NoBtb)  { 0 } else { 1 }
+# [lane B 访存] 默认 0 = P2 口径（lane B 不放 load）；-LanebMem 切 1 = P3 口径。
+#   core.v 的参数默认值终将随 P3 翻 1，但仿真侧保留显式开关，便于 0/1 两档对照。
+$lanebMemEn = if ($LanebMem) { 1 } else { 0 }
 $repo = Split-Path -Parent $PSScriptRoot
 
 $gcc = "D:\riscv-toolchain\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gcc.exe"
@@ -90,7 +94,8 @@ if ($dcacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_dcache.vvp" }
 if ($icacheEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_icache.vvp" }
 if ($earlyLdEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_earlyld.vvp" }
 if ($btbEn     -eq 0) { $vvpName = $vvpName -replace "\.vvp$", "_nobtb.vvp" }
-Write-Host "[2/3] 编译测试台 ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn（$vvpName）"
+if ($lanebMemEn -eq 1) { $vvpName = $vvpName -replace "\.vvp$", "_lanebmem.vvp" }
+Write-Host "[2/3] 编译测试台 ... DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn LANEB_MEM=$lanebMemEn（$vvpName）"
 $vvp  = Join-Path $sim $vvpName
 $rtl = @()
 foreach ($d in @("rtl\core", "rtl\periph", "rtl\bus")) {
@@ -102,6 +107,8 @@ if ($dcacheEn  -eq 1) { $defs += "-DDCACHE" }
 if ($icacheEn  -eq 1) { $defs += "-DICACHE" }
 if ($earlyLdEn -eq 1) { $defs += "-DEARLYLD" }
 if ($btbEn     -eq 0) { $defs += "-DNOBTB" }
+# [lane B 访存] -LanebMem → -DLANEBMEM（LANEB_MEM=1）。不传 = 0（P2 口径，与板上默认一致）。
+if ($lanebMemEn -eq 1) { $defs += "-DLANEBMEM" }
 # [面积优化] A 扩展：**本脚本必须传** —— 套件里有 `tb_amo_cpu`（A 扩展整核测试）。
 #   core 的 A_EXT 默认 0（生产档砍掉省面积），不传的话它会以 testnum 668 FAIL。
 #   `run_riscv_tests.ps1` 则相反：回归集里没有 rv32ua，A_EXT=0 才是板上口径。
@@ -124,7 +131,7 @@ if ($widthWarn.Count -gt 0) {
 # ---------------------------------------------------------------------------
 # [3/3] 逐个跑
 # ---------------------------------------------------------------------------
-Write-Host "[3/3] 运行 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn MEMWAIT=$MemWait）"
+Write-Host "[3/3] 运行 ...（SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn LANEB_MEM=$lanebMemEn MEMWAIT=$MemWait）"
 $pass = 0; $fail = 0; $other = 0
 $results = @()
 foreach ($s in $srcs) {
@@ -151,7 +158,7 @@ foreach ($s in $srcs) {
 
 Write-Host ""
 Write-Host "======== 汇总 ========"
-Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn MEMWAIT=$MemWait" -ForegroundColor Cyan
+Write-Host "SIM CONFIG: DUAL_ISSUE=$dualIssue DCACHE_EN=$dcacheEn ICACHE_EN=$icacheEn EARLY_LD=$earlyLdEn BTB_EN=$btbEn LANEB_MEM=$lanebMemEn MEMWAIT=$MemWait" -ForegroundColor Cyan
 Write-Host "PASS=$pass  FAIL=$fail  OTHER=$other"
 $results | Format-Table -AutoSize | Out-String | Write-Host
 

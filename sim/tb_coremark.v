@@ -71,11 +71,22 @@ module coremark_tb;
     localparam BTB_OUT = 1;
 `endif
 
-    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT);
+    // [lane B 访存] lane B 放 load：编译时加 -DLANEBMEM 即用 LANEB_MEM=1。
+    // 默认 0（P2 口径，与 core.v 的参数默认值一致）。P3 翻开关后 core.v 默认
+    //   改 1，但仿真侧仍显式二选一（run_coremark.ps1 -LanebMem），跑分日志的
+    //   SIM CONFIG 行自证口径 —— 与 DUAL/EARLYLD/BTB 同一套纪律。
+`ifdef LANEBMEM
+    localparam LANEBMEM_OUT = 1;
+`else
+    localparam LANEBMEM_OUT = 0;
+`endif
 
-    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT)) u_core (
+    // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, LANEBMEM_OUT);
+
+    core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT),
+           .LANEB_MEM(LANEBMEM_OUT)) u_core (
         .clk(clk), .resetn(resetn), .pc(pc),
         .imem_addr(imem_addr), .imem_rd(imem_rd),
         .imem_addr2(imem_addr2), .imem_rd2(imem_rd2),
