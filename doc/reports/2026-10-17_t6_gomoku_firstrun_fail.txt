@@ -1,0 +1,8 @@
+SIM CONFIG: DUAL_ISSUE=1 EARLY_LD=1 LANEB_MEM=1 (来自 cpu_top.v 的默认值)
+=== tb_gomoku：五子棋固件端到端 ===
+  跑的是 build.ps1 -Sim 的固件（按键阈值 1ms/5ms）
+  [ok]   banner 收到：固件已启动
+  [ok]   棋盘左上角已铺好（tile=20）
+  [ok]   天元是星位点（tile=149）—— 标题屏空盘铺星位，符合预期
+  [FAIL] 菜单确认到底后没等到 start —— 开局没生效
+  [进度] t=246647065 ns  帧=60  checks=4  errors=1
