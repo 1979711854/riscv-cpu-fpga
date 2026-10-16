@@ -151,17 +151,81 @@ static const char *level_name(int level)
            level == AI_NORMAL ? "NORMAL" : "HARD";
 }
 
-/* 菜单层名 —— 只用字库里有字的字符（字母/数字/空格），见 font.h 的可用字形。 */
-static const char *menu_stage_name(int stage)
+/* 菜单页名 / 选中项名 / 项文案 —— 只用字库里有字的字符（大写/数字/空格），见 font.h。 */
+
+static const char *menu_page_name(int page)
 {
-    switch (stage) {
-    case MENU_MODE:       return "MODE";
-    case MENU_H_DIFF:     return "DIFFICULTY";
-    case MENU_H_COLOR:    return "COLOR";
-    case MENU_A_BLACK:    return "BLACK AI";
-    case MENU_A_WHITE:    return "WHITE AI";
-    case MENU_A_INTERVAL: return "INTERVAL";
-    default:              return "";
+    return page == MENU_PAGE_MAIN  ? "MAIN" :
+           page == MENU_PAGE_HUMAN ? "HUMAN" : "AI";
+}
+
+static const char *menu_item_name(const game_t *gm)
+{
+    switch (gm->menu_page) {
+    case MENU_PAGE_MAIN:  return gm->menu_cursor == 0 ? "HUMAN" : "AI";
+    case MENU_PAGE_HUMAN: return gm->menu_cursor == 0 ? "DIFF" :
+                                  gm->menu_cursor == 1 ? "COLOR" : "START";
+    case MENU_PAGE_AI:    return gm->menu_cursor == 0 ? "BLACK" :
+                                  gm->menu_cursor == 1 ? "WHITE" :
+                                  gm->menu_cursor == 2 ? "STEP" : "START";
+    }
+    return "";
+}
+
+/* 菜单某一项的显示文案（label + 当前值）。返回静态缓冲，立即渲染/打印，别跨项复用。 */
+static const char *menu_item_text(const game_t *gm, int i)
+{
+    static char buf[24];
+    char *p = buf;
+
+    switch (gm->menu_page) {
+    case MENU_PAGE_MAIN:
+        return i == 0 ? "HUMAN VS AI" : "AI VS AI";
+    case MENU_PAGE_HUMAN:
+        if (i == 0) {
+            p = buf_append(p, "DIFFICULTY  ");
+            p = buf_append(p, level_name(gm->level_black));
+        } else if (i == 1) {
+            p = buf_append(p, "COLOR  ");
+            p = buf_append(p, gm->human == GOMOKU_BLACK ? "BLACK" : "WHITE");
+        } else {
+            return "START";
+        }
+        break;
+    case MENU_PAGE_AI:
+        if (i == 0) {
+            p = buf_append(p, "BLACK AI  ");
+            p = buf_append(p, level_name(gm->level_black));
+        } else if (i == 1) {
+            p = buf_append(p, "WHITE AI  ");
+            p = buf_append(p, level_name(gm->level_white));
+        } else if (i == 2) {
+            p = buf_append(p, "STEP  ");
+            p = u32_to_str(p, gm->step_ms);
+            p = buf_append(p, "MS");
+        } else {
+            return "START";
+        }
+        break;
+    default:
+        return "";
+    }
+    *p = '\0';
+    return buf;
+}
+
+/* 标题屏竖排菜单：最多 4 项，选中项左侧放一颗黑子图标；未用到的行清空防残留。 */
+static void render_menu(void)
+{
+    int i, n = game_menu_item_count(&g_game);
+    for (i = 0; i < 4; i++) {
+        int row = 1 + i;
+        if (i < n) {
+            render_text(row, 14, menu_item_text(&g_game, i));
+            if (i == g_game.menu_cursor) render_put(row, 11, RENDER_TILE_ICON_BLACK);
+        } else {
+            render_text(row, 0, "");
+        }
     }
 }
 
@@ -171,58 +235,33 @@ static void draw_hud(void)
     char *p;
 
     if (g_game.phase == GAME_TITLE) {
-        /* 清掉对局屏用过的行，防残留：行 2 的黑白/难度行、行 24 的胜负横幅。
-         * render_text(row, 0, "") 会整行铺空格字模（见 render.c 的实现）。 */
-        render_text(2,  0, "");
+        /* 清掉对局屏用过的行，防残留：行 24 的胜负横幅。行 1-4 会被菜单整行覆盖。 */
         render_text(24, 0, "");
 
-        render_text_center(1, "GOMOKU");
+        render_text_center(0, "GOMOKU");
+        render_menu();                       /* 竖排菜单：行 1-4，选中项加黑子图标 */
 
-        /* 菜单：当前层名（行 3）+ 当前值（行 4），任务 T2 多级菜单 */
-        render_text_center(3, menu_stage_name(g_game.menu_stage));
-        p = line;
-        switch (g_game.menu_stage) {
-        case MENU_MODE:
-            p = buf_append(p, g_game.mode == GAME_MODE_HUMAN ? "HUMAN" : "AI");
-            break;
-        case MENU_H_DIFF:
-            p = buf_append(p, level_name(g_game.level_black));
-            break;
-        case MENU_H_COLOR:
-            p = buf_append(p, g_game.human == GOMOKU_BLACK ? "BLACK" : "WHITE");
-            break;
-        case MENU_A_BLACK:
-            p = buf_append(p, level_name(g_game.level_black));
-            break;
-        case MENU_A_WHITE:
-            p = buf_append(p, level_name(g_game.level_white));
-            break;
-        case MENU_A_INTERVAL:
-            p = u32_to_str(p, g_game.step_ms);
-            p = buf_append(p, "MS");
-            break;
-        default:
-            break;
-        }
-        render_text_center(4, line);
-
-        render_text_center(27, "UP OR DOWN  CHANGE");
-        render_text_center(28, "HOLD OR RIGHT  OK  LEFT  BACK");
+        render_text_center(27, "UP DOWN  MOVE   LEFT RIGHT  CHANGE");
+        render_text_center(28, "HOLD  OK   LEFT ON START  BACK");
         return;
     }
 
     /* [!] 先清掉【标题屏专用的行】—— 否则进对局后屏幕上会残留菜单文字。
      *     （2026-10-10 板上实踩。这和"同一行内的残字"是同类问题的另一种形态。）
      *     行 28 不用在这里清：它马上会被下面的 AI 统计整行覆写。 */
+    render_text(0,  0, "");          /* 标题屏的 "GOMOKU" */
     render_text(3,  0, "");
     render_text(4,  0, "");
     render_text(27, 0, "");
     render_text(24, 0, "");          /* 上一局的胜负横幅 */
 
-    /* 顶部：轮次 + 难度（任务 T2/T3 行距重排）。
-     *   人机：一行难度（黑白同步）；AI 对弈：黑/白/间隔三行。 */
+    /* 顶部：轮次（棋子图标 + 文字）+ 难度（任务 T6 阶段 1 加图标）。
+     *   人机：一行难度（黑白同步）；AI 对弈：黑/白/间隔三行。
+     *   [!] render_text 会整行铺空格，所以图标必须在 render_text 之后用 render_put 盖上。 */
     if (g_game.mode == GAME_MODE_AI) {
-        render_text(1, 1, "AI VS AI");
+        render_text(1, 5, "AI VS AI");
+        render_put(1, 1, RENDER_TILE_ICON_BLACK);
+        render_put(1, 3, RENDER_TILE_ICON_WHITE);
         p = line; p = buf_append(p, "BLACK AI: "); p = buf_append(p, level_name(g_game.level_black));
         render_text(2, 1, line);
         p = line; p = buf_append(p, "WHITE AI: "); p = buf_append(p, level_name(g_game.level_white));
@@ -232,7 +271,9 @@ static void draw_hud(void)
         p = buf_append(p, "MS");
         render_text(4, 1, line);
     } else {
-        render_text(1, 1, g_game.board.turn == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
+        int who = g_game.board.turn;
+        render_text(1, 3, who == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
+        render_put(1, 1, who == GOMOKU_BLACK ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
         p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level_black));
         render_text(2, 1, line);
         render_text(3, 1, "");
@@ -307,7 +348,8 @@ void gomoku_run(void)
     int prev_cr, prev_cc;      /* 上次打印时的光标位置 —— 短按移动要有串口反馈 */
     int prev_mode, prev_human; /* 菜单：模式 / 执子（变化要有串口反馈）*/
     int prev_level_black, prev_level_white;   /* 菜单：黑白难度 */
-    int prev_step_ms, prev_stage;             /* 菜单：间隔档 / 当前层 */
+    int prev_step_ms;                         /* 菜单：间隔档 */
+    int prev_page, prev_cursor;               /* 菜单：页 / 选中项 */
     int warned_no_video = 0;   /* vblank 超时只报一次，别把串口灌爆 */
 
     /* ---- 1) 显示初始化 ----------------------------------------------------
@@ -316,6 +358,8 @@ void gomoku_run(void)
     render_init();
     video_set_scroll(0, 0);      /* 棋类静态，滚动归零；但必须显式写一次 */
     render_clear();
+    render_board_frame();        /* 阶段 1：外框 + 坐标轴，上电画一次（在 15x15 之外）*/
+    render_board_labels();
 
     /* ---- 2) 输入与状态机 -------------------------------------------------- */
     input_init(&g_input, hw_mtime(), hw_key_raw(),
@@ -335,7 +379,7 @@ void gomoku_run(void)
 
     uart_puts("=== GOMOKU on RV32I ===\r\n");
     uart_puts("keys: SW4/5/6/7 = left/right/up/down\r\n");
-    uart_puts("      title menu: up/down = change, hold or right = OK, left = back\r\n");
+    uart_puts("      title menu: up/down = move, left/right = change value, hold = OK\r\n");
     uart_puts("      play: tap = move cursor, hold = place\r\n");
     uart_puts("      SW3 = reset\r\n");
     uart_puts("board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)\r\n");
@@ -349,7 +393,8 @@ void gomoku_run(void)
     prev_level_black = -1;
     prev_level_white = -1;
     prev_step_ms     = -1;
-    prev_stage       = -1;     /* -1 保证上电第一圈就把菜单当前值全打一遍 */
+    prev_page        = -1;
+    prev_cursor      = -1;     /* -1 保证上电第一圈就把菜单当前值全打一遍 */
 
     /* ---- 3) 主循环 -------------------------------------------------------- */
     for (;;) {
@@ -461,10 +506,16 @@ void gomoku_run(void)
         /* [!] 标题屏菜单变化【本来是完全静默的】—— 2026-10-04 实测反馈：
          * 按了键却没有任何输出，只能靠开局那行反推，玩家根本不知道档位切没切。
          * 这里把菜单每一项的变化都打到串口。 */
-        if (g_game.menu_stage != prev_stage) {
-            prev_stage = g_game.menu_stage;
+        if (g_game.menu_page != prev_page) {
+            prev_page = g_game.menu_page;
             uart_puts("menu=");
-            uart_puts(menu_stage_name(prev_stage));
+            uart_puts(menu_page_name(prev_page));
+            uart_puts("\r\n");
+        }
+        if (g_game.menu_cursor != prev_cursor) {
+            prev_cursor = g_game.menu_cursor;
+            uart_puts("item=");
+            uart_puts(menu_item_name(&g_game));
             uart_puts("\r\n");
         }
         if (g_game.mode != prev_mode) {

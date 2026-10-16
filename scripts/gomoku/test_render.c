@@ -244,9 +244,9 @@ static void test_init(void)
         CHECK(f_ok, "字库图块只应含 FONT_FG/FONT_BG 两种颜色");
     }
 
-    /* 字库之后（tile 131 起）不该被写 */
-    CHECK(g_pat[(unsigned)(FONT_TILE_BASE + FONT_N_GLYPHS) * TILE_BYTES] == 0xAA,
-          "字库图块区之后不该被写");
+    /* 字库（36..130）+ 装饰图块区（131..153，T6 运行时合成）之后不该被写 */
+    CHECK(g_pat[(unsigned)(RENDER_TILE_ICON_WHITE + 1) * TILE_BYTES] == 0xAA,
+          "字库 + 装饰图块区之后不该被写");
 }
 
 /* ---------------------------------------------------------------------------
@@ -265,8 +265,10 @@ static void test_nt_address(void)
           "左上角格应是「左上角形状 + 空」");
     CHECK(g_nt[(BOARD_ROW0 + 14) * 256 + (BOARD_COL0 + 14)]
           == RENDER_TILE(TILE_SHAPE_BOTRIGHT, RENDER_ST_EMPTY), "右下角格应是「右下角形状」");
+    /* T6 起天元画星位点（render_tile_for 优先级：星位 > 空；与 tb_gomoku.v 的
+       T_STAR 断言同口径）*/
     CHECK(g_nt[(BOARD_ROW0 + 7) * 256 + (BOARD_COL0 + 7)]
-          == RENDER_TILE(TILE_SHAPE_INNER, RENDER_ST_EMPTY), "正中天元应是「内部形状 + 空」");
+          == RENDER_TILE_STAR, "正中天元应是星位点");
     /* 棋盘以外不许被碰 */
     CHECK(g_nt[(BOARD_ROW0 - 1) * 256 + BOARD_COL0] == 0xAA, "棋盘上方不该被写");
     CHECK(g_nt[BOARD_ROW0 * 256 + (BOARD_COL0 - 1)] == 0xAA, "棋盘左侧不该被写");

@@ -57,17 +57,22 @@ static void new_game(int level, int human)
     game_init(&g_gm, level, human, BLINK_TICKS);
 }
 
-/* ---- 标题屏多级菜单（任务 T2）的快捷操作 ---- */
-static void cycle_down(int n) { while (n-- > 0) press_short(KEY_DOWN); }
-static void confirm(void)     { press_long(KEY_RIGHT); }   /* 长按任意键 / 短按 → 都算确认 */
-static void go_back(void)     { press_short(KEY_LEFT); }   /* 短按 ← 返回上层 */
+/* ---- 标题屏标准菜单（任务 T6 阶段 1）的快捷操作 ---- */
+static void move_up(void)      { press_short(KEY_UP); }
+static void move_down(void)    { press_short(KEY_DOWN); }
+static void enter(void)        { press_long(KEY_RIGHT); }   /* 长按任意键 = 确认 */
+static void value_next(void)   { press_short(KEY_RIGHT); }  /* 参数项：下一个值 */
+static void value_prev(void)   { press_short(KEY_LEFT); }   /* 参数项：上一个值 */
+static void go_back(void)      { press_short(KEY_LEFT); }   /* 开始对局项：← 返回上一层 */
 
-/* 从标题屏顶层一路确认到开始（human 分支：MODE -> DIFF -> COLOR -> 开始） */
+/* 从主菜单开到人机对局（默认 MAIN 选中 HUMAN）：
+ *   长按进 HUMAN 子菜单（cursor=0 DIFF）→ ↓↓ 到 START → 长按开局。 */
 static void menu_start_human(void)
 {
-    confirm();   /* MODE  -> DIFF */
-    confirm();   /* DIFF  -> COLOR */
-    confirm();   /* COLOR -> 开始 */
+    enter();           /* MAIN(HUMAN) -> HUMAN 子菜单 */
+    move_down();       /* DIFF -> COLOR */
+    move_down();       /* COLOR -> START */
+    enter();           /* 开始对局 */
 }
 
 /* 把光标挪到 (r,c) 再落子 —— 人在这台机器上的"操作" */
@@ -85,7 +90,7 @@ static int human_move(int r, int c, int *ok)
 }
 
 /* ---------------------------------------------------------------------------
- * A. 初始状态 + 菜单导航 / 各层循环
+ * A. 初始状态 + 标准菜单导航 / 各值循环
  * ------------------------------------------------------------------------- */
 static void test_title(void)
 {
@@ -93,44 +98,80 @@ static void test_title(void)
     new_game(AI_NORMAL, GOMOKU_BLACK);
 
     CHECK(g_gm.phase == GAME_TITLE, "开机应在标题屏");
-    CHECK(g_gm.menu_stage == MENU_MODE, "菜单应从顶层 MODE 开始");
+    CHECK(g_gm.menu_page == MENU_PAGE_MAIN, "菜单应从主菜单开始");
+    CHECK(g_gm.menu_cursor == 0, "主菜单默认选中第一项 HUMAN");
     CHECK(g_gm.mode == GAME_MODE_HUMAN, "默认模式应是 HUMAN");
     CHECK(g_gm.cursor_r == GOMOKU_N / 2 && g_gm.cursor_c == GOMOKU_N / 2, "光标初始应在天元");
     CHECK(g_gm.board.stones == 0, "标题屏棋盘应为空");
 
-    /* MODE 层循环：HUMAN <-> AI 只有两档，上下都回绕到对方 */
-    press_short(KEY_DOWN);
-    CHECK(g_gm.mode == GAME_MODE_AI, "↓ 应 HUMAN->AI");
-    press_short(KEY_DOWN);
-    CHECK(g_gm.mode == GAME_MODE_HUMAN, "↓ 应 AI->HUMAN（回绕）");
-    press_short(KEY_UP);
+    /* 主菜单 ↑/↓ 循环 + 选模式：两档，上下回绕，同时改 mode */
+    move_down();
+    CHECK(g_gm.mode == GAME_MODE_AI && g_gm.menu_cursor == 1, "↓ 应 HUMAN->AI（cursor 1）");
+    move_down();
+    CHECK(g_gm.mode == GAME_MODE_HUMAN && g_gm.menu_cursor == 0, "↓ 应 AI->HUMAN（回绕）");
+    move_up();
     CHECK(g_gm.mode == GAME_MODE_AI, "↑ 应 HUMAN->AI（回绕）");
-    press_short(KEY_DOWN);   /* 回到 HUMAN，继续 human 分支的测试 */
+    move_down();
     CHECK(g_gm.mode == GAME_MODE_HUMAN, "回到 HUMAN");
 
-    /* 确认 MODE -> DIFF（human 分支）；难度循环，黑白同步 */
-    confirm();
-    CHECK(g_gm.menu_stage == MENU_H_DIFF, "确认 MODE 应进 DIFF");
-    press_short(KEY_DOWN);
-    CHECK(g_gm.level_black == AI_HARD && g_gm.level_white == AI_HARD, "↓ 应 NORMAL->HARD（黑白同步）");
-    press_short(KEY_DOWN);
-    CHECK(g_gm.level_black == AI_EASY && g_gm.level_white == AI_EASY, "↓ 应 HARD->EASY（回绕）");
-    press_short(KEY_UP);
-    CHECK(g_gm.level_black == AI_HARD, "↑ 应 EASY->HARD（回绕）");
+    /* 长按进 HUMAN 子菜单（cursor 落 0 = DIFF）*/
+    enter();
+    CHECK(g_gm.menu_page == MENU_PAGE_HUMAN && g_gm.menu_cursor == 0, "长按应进 HUMAN 子菜单选中 DIFF");
 
-    /* ← 返回 MODE */
+    /* DIFF 用 ←/→ 改值，黑白同步 */
+    value_next();
+    CHECK(g_gm.level_black == AI_HARD && g_gm.level_white == AI_HARD, "→ 应 NORMAL->HARD（黑白同步）");
+    value_next();
+    CHECK(g_gm.level_black == AI_EASY && g_gm.level_white == AI_EASY, "→ 应 HARD->EASY（回绕）");
+    value_prev();
+    CHECK(g_gm.level_black == AI_HARD && g_gm.level_white == AI_HARD, "← 应 EASY->HARD（回绕）");
+
+    /* 参数项上长按 = 无操作（不应切页/开局）*/
+    enter();
+    CHECK(g_gm.menu_page == MENU_PAGE_HUMAN && g_gm.phase == GAME_TITLE, "参数项上长按应无操作");
+
+    /* ↓ 到 COLOR，用 → 改颜色（黑/白两档，prev==next）*/
+    move_down();
+    CHECK(g_gm.menu_cursor == 1, "↓ 应到 COLOR");
+    value_next();
+    CHECK(g_gm.human == GOMOKU_WHITE, "→ 应 BLACK->WHITE");
+    value_next();
+    CHECK(g_gm.human == GOMOKU_BLACK, "→ 应 WHITE->BLACK（回绕）");
+
+    /* ↓ 到 START；← 返回主菜单（cursor 落回 HUMAN）*/
+    move_down();
+    CHECK(g_gm.menu_cursor == 2, "↓ 应到 START");
     go_back();
-    CHECK(g_gm.menu_stage == MENU_MODE, "← 应回 MODE 层");
+    CHECK(g_gm.menu_page == MENU_PAGE_MAIN && g_gm.menu_cursor == 0, "← 在 START 上应回主菜单选中 HUMAN");
+    CHECK(g_gm.phase == GAME_TITLE, "菜单里转圈不该开始对局");
 
-    /* 确认到 COLOR，颜色循环 */
-    confirm();
-    confirm();
-    CHECK(g_gm.menu_stage == MENU_H_COLOR, "确认 DIFF 应进 COLOR");
-    press_short(KEY_DOWN);
-    CHECK(g_gm.human == GOMOKU_WHITE, "↓ 应 BLACK->WHITE");
-    press_short(KEY_DOWN);
-    CHECK(g_gm.human == GOMOKU_BLACK, "↓ 应 WHITE->BLACK（回绕）");
+    /* ---- AI 子菜单（重新初始化，独立验证双向难度 + 间隔档）---- */
+    new_game(AI_NORMAL, GOMOKU_BLACK);
+    move_down();                 /* MAIN: HUMAN -> AI */
+    enter();                     /* 进 AI 子菜单 */
+    CHECK(g_gm.menu_page == MENU_PAGE_AI && g_gm.menu_cursor == 0, "长按 AI 应进 AI 子菜单选中 BLACK");
 
+    value_next();                /* BLACK: NORMAL -> HARD */
+    CHECK(g_gm.level_black == AI_HARD, "→ 应 BLACK NORMAL->HARD");
+    CHECK(g_gm.level_white == AI_NORMAL, "改黑难度不动白（双向独立）");
+
+    move_down();                 /* -> WHITE */
+    CHECK(g_gm.menu_cursor == 1, "↓ 应到 WHITE");
+    value_next(); value_next();  /* WHITE: NORMAL -> HARD -> EASY */
+    CHECK(g_gm.level_white == AI_EASY, "→→ 应 WHITE NORMAL->HARD->EASY");
+    CHECK(g_gm.level_black == AI_HARD, "改白难度不动黑（双向独立）");
+
+    move_down();                 /* -> STEP */
+    CHECK(g_gm.menu_cursor == 2, "↓ 应到 STEP");
+    value_next();                /* 1000 -> 2000 */
+    CHECK(g_gm.step_ms == 2000, "→ 应 STEP 1000->2000");
+    value_next();                /* 2000 -> 500（回绕）*/
+    CHECK(g_gm.step_ms == 500, "→ 应 STEP 2000->500（回绕）");
+
+    move_down();                 /* -> START */
+    CHECK(g_gm.menu_cursor == 3, "↓ 应到 START");
+    go_back();
+    CHECK(g_gm.menu_page == MENU_PAGE_MAIN && g_gm.menu_cursor == GAME_MODE_AI, "← 在 START 上应回主菜单选中 AI");
     CHECK(g_gm.phase == GAME_TITLE, "菜单里转圈不该开始对局");
 }
 
@@ -283,7 +324,7 @@ static void test_over_and_restart(void)
 
     press_long(KEY_UP);
     CHECK(g_gm.phase == GAME_TITLE, "长按应回标题");
-    CHECK(g_gm.menu_stage == MENU_MODE, "回标题应回菜单顶层");
+    CHECK(g_gm.menu_page == MENU_PAGE_MAIN, "回标题应回主菜单");
     CHECK(g_gm.board.stones == 0,   "回标题应清盘");
     CHECK(g_gm.winner == 0,         "回标题应清胜负");
 
@@ -317,7 +358,7 @@ static void test_blink(void)
 }
 
 /* ---------------------------------------------------------------------------
- * H. AI 对弈（双向独立难度 + 间隔档位）
+ * H. AI 对弈（双向独立难度 + 间隔档位，标准菜单导航）
  * ------------------------------------------------------------------------- */
 static void test_ai_match(void)
 {
@@ -326,25 +367,24 @@ static void test_ai_match(void)
     new_game(AI_EASY, GOMOKU_BLACK);          /* 默认黑白都是 EASY */
     g_gm.demo_delay = 100000u;                /* 每手间隔 100ms（测试加速，宿主按 step_ms 换算）*/
 
-    /* 进 AI 对弈菜单，改黑/白难度与间隔 */
-    press_short(KEY_DOWN);   /* MODE: HUMAN -> AI */
+    /* 进 AI 对弈菜单，用标准菜单改黑/白难度与间隔（←/→ 改值，长按确认）*/
+    move_down();               /* MAIN: HUMAN -> AI */
     CHECK(g_gm.mode == GAME_MODE_AI, "↓ 应进 AI 对弈模式");
-    confirm();               /* -> BLACK AI */
-    CHECK(g_gm.menu_stage == MENU_A_BLACK, "确认 MODE 应进 BLACK AI");
-    press_short(KEY_DOWN);   /* BLACK: EASY -> NORMAL */
+    enter();                   /* -> AI 子菜单（cursor=0 BLACK）*/
+    CHECK(g_gm.menu_page == MENU_PAGE_AI && g_gm.menu_cursor == 0, "长按应进 AI 子菜单选中 BLACK");
+    value_next();              /* BLACK: EASY -> NORMAL */
     CHECK(g_gm.level_black == AI_NORMAL, "黑方难度应 EASY->NORMAL");
-    confirm();               /* -> WHITE AI */
-    CHECK(g_gm.menu_stage == MENU_A_WHITE, "确认 BLACK 应进 WHITE AI");
-    press_short(KEY_DOWN); press_short(KEY_DOWN);  /* WHITE: EASY->NORMAL->HARD */
+    move_down();               /* -> WHITE */
+    value_next(); value_next();  /* WHITE: EASY->NORMAL->HARD */
     CHECK(g_gm.level_white == AI_HARD, "白方难度应升到 HARD");
     CHECK(g_gm.level_black == AI_NORMAL, "黑白难度应相互独立（改白不动黑）");
-    confirm();               /* -> INTERVAL */
-    CHECK(g_gm.menu_stage == MENU_A_INTERVAL, "确认 WHITE 应进 INTERVAL");
-    press_short(KEY_DOWN);   /* 1000 -> 2000 */
+    move_down();               /* -> STEP */
+    value_next();              /* 1000 -> 2000 */
     CHECK(g_gm.step_ms == 2000, "间隔应 1000->2000");
-    press_short(KEY_DOWN);   /* 2000 -> 500（回绕）*/
+    value_next();              /* 2000 -> 500（回绕）*/
     CHECK(g_gm.step_ms == 500, "间隔应 2000->500（回绕）");
-    confirm();               /* INTERVAL -> 开始 */
+    move_down();               /* -> START */
+    enter();                   /* 开始对局 */
 
     CHECK(g_gm.phase == GAME_PLAYING, "AI 对弈应能开始");
     CHECK(g_gm.mode == GAME_MODE_AI, "应处于 AI 对弈模式");
@@ -382,10 +422,10 @@ static void test_ai_match(void)
         CHECK(g_gm.board.stones == before, "AI 对弈短按不该落子/移动");
     }
 
-    /* AI 对弈中长按任意键 = 中途退回标题，且回菜单顶层 */
+    /* AI 对弈中长按任意键 = 中途退回标题，且回主菜单 */
     press_long(KEY_DOWN);
     CHECK(g_gm.phase == GAME_TITLE, "AI 对弈中长按应回标题");
-    CHECK(g_gm.menu_stage == MENU_MODE, "回标题应回菜单顶层");
+    CHECK(g_gm.menu_page == MENU_PAGE_MAIN, "回标题应回主菜单");
     CHECK(g_gm.mode == GAME_MODE_AI, "回标题后模式应保留（可再开）");
 }
 

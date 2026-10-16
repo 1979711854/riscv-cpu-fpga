@@ -52,6 +52,18 @@ void vid_bulk_write(uint8_t region, uint16_t offset, const uint8_t *data, uint16
 #define RENDER_ST_WHITE   2
 #define RENDER_ST_CURSOR  3
 
+/* ---- 阶段 1 新增图块：由 render.c 在 render_init 里【运行时合成】（不写进 tiles.h），
+ *     编号排在字库（36..130）之后，别动 FONT_TILE_BASE。 ----
+ *     最后一手红标 = 棋盘图块 + 右上角红三角；星位 = 内部空格 + 中心点；
+ *     外框横/竖线 = 2px 纯线；图标 = 纯底棋子。外框四角复用棋盘边角图块
+ *     （TILE_OF(shape 5/6/7/8, EMPTY)），不另设编号。 */
+#define RENDER_TILE_LAST_BASE  131   /* 最后一手：131 + shape*2 + (黑?0:白?1)，共 18 */
+#define RENDER_TILE_STAR       149   /* 星位点（天元 + 四小目） */
+#define RENDER_TILE_FRAME_H    150   /* 外框横线 */
+#define RENDER_TILE_FRAME_V    151   /* 外框竖线 */
+#define RENDER_TILE_ICON_BLACK 152   /* 纯底黑子图标 */
+#define RENDER_TILE_ICON_WHITE 153   /* 纯底白子图标 */
+
 /* 交叉点 (r,c) 的网格线形状（0..8）—— 由"四条边有没有线"决定，见 gen_tiles.py */
 uint8_t render_shape(int r, int c);
 
@@ -87,5 +99,17 @@ void render_text(int row, int col, const char *s);
 
 /* 同一行水平居中写一段文字。 */
 void render_text_center(int row, const char *s);
+
+/* ---- 静态装饰（阶段 1）----------------------------------------------------
+ * 都只画【棋盘 15x15 之外的固定区域】，上电各调一次即可；render_full 每帧
+ * 全刷只碰棋盘区，不会覆盖它们。 */
+/* 写一个 nametable 字节（【绝对】行/列 0..29 / 0..39）。给 HUD 图标、坐标轴用。 */
+void render_put(int row, int col, uint8_t tile);
+
+/* 画棋盘外框（一圈 1 图块厚的边框，四角复用棋盘边角图块）。 */
+void render_board_frame(void);
+
+/* 画坐标轴：列 A-O（顶，外框上方）+ 行 1-15（左，外框左侧）。 */
+void render_board_labels(void);
 
 #endif /* GOMOKU_RENDER_H */

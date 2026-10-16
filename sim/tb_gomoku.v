@@ -5,10 +5,11 @@
 // 覆盖什么：**从按键到画面**的整条链，在真 CPU + 真 PPU 上跑固件。
 //
 //   [1] 固件能启动：串口打印出 banner
-//   [2] 上电就把棋盘铺好了：探显存的 nametable，检查四个角/天元的图块号
-//   [3] 按键能开局：注入三次"长按"（标题屏菜单 MODE→DIFF→COLOR 确认到底）-> 串口出现 "start,"
+//   [2] 上电就把棋盘铺好了：探显存的 nametable，检查左上角/天元的图块号
+//       （天元现在是星位点，不再是内部空格）
+//   [3] 按键能开局：长按进 HUMAN 子菜单 + 短按 ↓↓ 到 START + 长按开局 -> 串口出现 "start,"
 //   [4] 落子 + AI 应手：再注入一次长按 -> 串口出现 "AI moved"，
-//       且天元的 nametable 从"空格"变成了"黑子"
+//       天元变成普通黑子，且棋盘上出现 1 颗带红标的最后一手白子（AI 那手）
 //
 // 覆盖不到（只能上板看）：pll_video 锁没锁、OSERDES/TMDS、显示器认不认时序。
 // 所以本测试台 PASS 只说明"喂给 TMDS 之前的画面与交互全对"。
@@ -68,7 +69,6 @@ module tb_gomoku;
         .vid_waddr_d(vid_waddr_d),
         .vid_rdata  (vid_rdata)
     );
-
     // 自证配置（与 tb_rtthread/tb_coremark/tb_riscv 同一格式，见 CLAUDE.md 约定 37）：
     //   t=0 打印本测试台【实际例化进去】的开关，日志首行自带口径。
     // [!] 本测试台【不给 cpu_top 传参】⇒ 这些值就是 rtl/top/cpu_top.v 的 parameter 默认值。
@@ -76,6 +76,7 @@ module tb_gomoku;
     //     想跑 0 档得改 cpu_top.v 的默认值（这也是"板上哪一档、仿真哪一档"对不上时的第一个检查点）。
     initial $display("SIM CONFIG: DUAL_ISSUE=%0d EARLY_LD=%0d LANEB_MEM=%0d LANEB_ST=%0d (来自 cpu_top.v 的默认值)",
                      u_soc.DUAL_ISSUE, u_soc.EARLY_LD, u_soc.LANEB_MEM, u_soc.LANEB_ST);
+
 
     // video_top 那层壳（pll_video / rgb2tmds / OSERDES）是 PDS 专有原语，
     // iverilog 里不存在，所以直接例化 video_core（与 tb_video_bars.v 同理）。
@@ -125,6 +126,9 @@ module tb_gomoku;
     localparam [7:0] T_INNER_EMPTY  = 8'd0;    // shape 0 内部 + state 0 空
     localparam [7:0] T_INNER_BLACK  = 8'd1;    // shape 0 内部 + state 1 黑子
     localparam [7:0] T_TOPLEFT_EMPTY= 8'd20;   // shape 5 左上角 + state 0 空
+    // 阶段 1 运行时合成图块（与 scripts/gomoku/render.h 同号）
+    localparam [7:0] T_STAR         = 8'd149;  // 星位点（天元 + 四小目）
+    localparam [7:0] T_LAST_BLACK   = 8'd131;  // 最后一手（shape 0 内部 + 黑子 + 红标）
 
     // ========================================================================
     // UART TX 解码（同 tb_demo.v / tb_video_bars.v）：字节依次左移进 rxtext，
@@ -218,7 +222,32 @@ module tb_gomoku;
         end
     endtask
 
+    // 短按：产生一次「短按」事件（阶段 1 菜单的 ↑/↓ 移动、←/→ 改值都用它）。
+    // [!] 不能像 press_long 那样只按固定时长 —— 主循环是帧同步的，每帧才采样
+    //     一次按键。短按的合法窗口 = 「去抖认账（约 2 帧）」到「长按阈值（约
+    //     4 帧）」之间，这个窗口只有 1 帧宽，且随 vsync 相位漂移 1 帧 ——
+    //     固定时长必然在某个相位上踩空。所以必须先对齐 vsync，再精确按住
+    //     2 帧松手，保证短按必中。vs 是负极性，negedge vs = vsync 起点 =
+    //     主循环刚采样完那一拍。
+    task press_short;
+        input integer k;
+        begin
+            @(negedge vs);                 // 对齐到 vsync 起点
+            #1000;                         // 越过本帧主循环采样，之后按下
+            key = 8'hFF & ~(8'h01 << k);   // 按下（低有效）
+            @(negedge vs);                 // 帧 1：主循环看到按下沿
+            @(negedge vs);                 // 帧 2：去抖认账（stable 按下）
+            #100_000;                      // 越过帧 2 采样后松手（还没到长按阈值）
+            key = 8'hFF;                   // 松手
+            @(negedge vs);                 // 帧 3：主循环看到松手沿
+            @(negedge vs);                 // 帧 4：去抖认账 -> 短按事件，被 game_tick 消费
+            @(negedge vs);                 // 帧 5：余量，确保事件消费完
+        end
+    endtask
+
     integer i;
+    integer tr, tc;          // 棋盘扫描坐标（最后一手标记计数用）
+    integer last_white_cnt;  // 棋盘上「最后一手白子」的个数
 
     initial begin
         resetn = 1'b0;
@@ -251,20 +280,22 @@ module tb_gomoku;
         end
 
         checks = checks + 1;
-        if (nt_byte(7, 7) !== T_INNER_EMPTY) begin
+        if (nt_byte(7, 7) !== T_STAR) begin
             errors = errors + 1;
-            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（内部空格）",
-                     nt_byte(7, 7), T_INNER_EMPTY);
+            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（星位点）",
+                     nt_byte(7, 7), T_STAR);
         end else begin
-            $display("  [ok]   天元是空格（tile=%0d）—— 标题屏不画光标，符合预期",
+            $display("  [ok]   天元是星位点（tile=%0d）—— 标题屏空盘铺星位，符合预期",
                      nt_byte(7, 7));
         end
 
-        // ---- [3] 三次长按：走完标题屏菜单（MODE→DIFF→COLOR），确认到底开始人机对局 ----
-        //      默认 human 模式 / 人执黑，三次确认即可开局（任务 T2 菜单）。
-        press_long(3);                         // 确认 MODE -> DIFF
-        press_long(3);                         // 确认 DIFF -> COLOR
-        press_long(3);                         // 确认 COLOR -> 开始
+        // ---- [3] 标准菜单导航（阶段 1）----
+        //      默认主菜单选中 HUMAN。长按进 HUMAN 子菜单（选中 DIFF），
+        //      短按 ↓ 两次到 START，再长按开局。
+        press_long(3);                         // 长按：MAIN -> HUMAN 子菜单
+        press_short(3);                        // 短按 ↓：DIFF -> COLOR
+        press_short(3);                        // 短按 ↓：COLOR -> START
+        press_long(3);                         // 长按：START -> 开始对局
         checks = checks + 1;
         if (!has_text("start,")) begin
             errors = errors + 1;
@@ -273,7 +304,7 @@ module tb_gomoku;
             $display("  [ok]   菜单开局成功");
         end
 
-        // ---- [4] 在天元落子，AI 应手 ----
+        // ---- [4] 在天元落子，AI 应手（同步：同一帧内先落人子、再落 AI 子）----
         press_long(2);                         // 光标本来就在天元，直接长按落子
 
         // [!] AI 是在固件主循环里【同步】跑的 —— 落子那一拍 game_tick 里要
@@ -281,13 +312,34 @@ module tb_gomoku;
         //     固件还在搜索的时候（现象：落子日志打出来了，但画面和串口都还没更新）。
         //     实测 4 层搜索在仿真里要约 2 秒，所以这里等【条件】不等时长。
         wait_text("AI mov", 400);
+
+        // 天元 = 普通黑子。注意不是"最后一手标记"：AI 应手后，最后一手已经
+        // 挪到 AI 那手白子上（同步泵在同一帧里先落人子、再落 AI 子）。
         checks = checks + 1;
         if (nt_byte(7, 7) !== T_INNER_BLACK) begin
             errors = errors + 1;
-            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（内部黑子）—— 落子没落到天元",
+            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（普通黑子）—— 落子没落到天元",
                      nt_byte(7, 7), T_INNER_BLACK);
         end else begin
-            $display("  [ok]   天元已落黑子（tile=%0d）", nt_byte(7, 7));
+            $display("  [ok]   天元已落普通黑子（tile=%0d）", nt_byte(7, 7));
+        end
+
+        // 最后一手标记应落在 AI 的白子上：扫全盘，应恰有 1 颗「最后一手」图块，
+        // 且是白子。最后一手 tile 号 = 131 + shape*2 + (黑?0:白?1)，shape 0..8，
+        // 所以黑子落在奇数号 131..147、白子落在偶数号 132..148。
+        last_white_cnt = 0;
+        for (tr = 0; tr < 15; tr = tr + 1)
+            for (tc = 0; tc < 15; tc = tc + 1) begin
+                if (nt_byte(tr, tc) >= 8'd131 && nt_byte(tr, tc) <= 8'd148)
+                    if ((nt_byte(tr, tc) % 2) == 8'd0)   // 偶数号 = 最后一手白子
+                        last_white_cnt = last_white_cnt + 1;
+            end
+        checks = checks + 1;
+        if (last_white_cnt !== 1) begin
+            errors = errors + 1;
+            $display("  [FAIL] 最后一手白子标记数 = %0d，期望 1（AI 应手应带红标）", last_white_cnt);
+        end else begin
+            $display("  [ok]   最后一手标记已落到 AI 白子上（共 1 处）");
         end
 
         checks = checks + 1;

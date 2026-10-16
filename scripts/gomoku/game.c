@@ -32,7 +32,8 @@ void game_init(game_t *gm, int level, int human, uint32_t blink_ticks)
     gm->level_black  = level;
     gm->level_white  = level;
     gm->step_ms      = 1000;
-    gm->menu_stage   = MENU_MODE;
+    gm->menu_page    = MENU_PAGE_MAIN;
+    gm->menu_cursor  = 0;
     gm->demo_delay   = blink_ticks ? blink_ticks : 1;  /* 宿主稍后按 step_ms 覆盖 */
     gm->t_next_ai    = 0;
     gm->winner       = 0;
@@ -154,32 +155,64 @@ static uint32_t step_prev(uint32_t ms)
 static int color_next(int c) { return c == GOMOKU_BLACK ? GOMOKU_WHITE : GOMOKU_BLACK; }
 #define color_prev(c) color_next(c)          /* 黑/白只有两档，prev == next */
 
-static int mode_next(int m) { return m == GAME_MODE_HUMAN ? GAME_MODE_AI : GAME_MODE_HUMAN; }
-#define mode_prev(m) mode_next(m)
+/* ---- 标准菜单（任务 T6 阶段 1）的页内结构 -------------------------------- */
 
-/* ---- 菜单层前进 / 后退 -------------------------------------------------- */
-static menu_stage_t menu_next_stage(const game_t *gm)
+/* 当前页的菜单项数：主 2 / 人机 3 / AI 4。 */
+int game_menu_item_count(const game_t *gm)
 {
-    switch (gm->menu_stage) {
-    case MENU_MODE:       return (gm->mode == GAME_MODE_HUMAN) ? MENU_H_DIFF : MENU_A_BLACK;
-    case MENU_H_DIFF:     return MENU_H_COLOR;
-    case MENU_H_COLOR:    return MENU_DONE;      /* 开始 */
-    case MENU_A_BLACK:    return MENU_A_WHITE;
-    case MENU_A_WHITE:    return MENU_A_INTERVAL;
-    case MENU_A_INTERVAL: return MENU_DONE;      /* 开始 */
-    default:              return MENU_DONE;
-    }
+    return gm->menu_page == MENU_PAGE_MAIN  ? 2 :
+           gm->menu_page == MENU_PAGE_HUMAN ? 3 : 4;
 }
 
-static menu_stage_t menu_prev_stage(const game_t *gm)
+/* 当前选中项是不是「参数项」（能用 ←/→ 改值）。 */
+static int menu_is_value(const game_t *gm)
 {
-    switch (gm->menu_stage) {
-    case MENU_H_DIFF:     return MENU_MODE;
-    case MENU_H_COLOR:    return MENU_H_DIFF;
-    case MENU_A_BLACK:    return MENU_MODE;
-    case MENU_A_WHITE:    return MENU_A_BLACK;
-    case MENU_A_INTERVAL: return MENU_A_WHITE;
-    default:              return MENU_MODE;      /* MENU_MODE / MENU_DONE 不再回退 */
+    return (gm->menu_page == MENU_PAGE_HUMAN && gm->menu_cursor < 2) ||
+           (gm->menu_page == MENU_PAGE_AI    && gm->menu_cursor < 3);
+}
+
+/* 当前选中项是不是「开始对局」。 */
+static int menu_is_start(const game_t *gm)
+{
+    return (gm->menu_page == MENU_PAGE_HUMAN && gm->menu_cursor == 2) ||
+           (gm->menu_page == MENU_PAGE_AI    && gm->menu_cursor == 3);
+}
+
+/* ← 返回上一层：子菜单 → 主菜单（选中项回到刚才的模式）；主菜单无操作。 */
+static void menu_go_back(game_t *gm)
+{
+    if (gm->menu_page == MENU_PAGE_HUMAN) {
+        gm->menu_page   = MENU_PAGE_MAIN;
+        gm->menu_cursor = GAME_MODE_HUMAN;      /* 回到「HUMAN VS AI」这一项 */
+    } else if (gm->menu_page == MENU_PAGE_AI) {
+        gm->menu_page   = MENU_PAGE_MAIN;
+        gm->menu_cursor = GAME_MODE_AI;         /* 回到「AI VS AI」这一项 */
+    }
+    /* 主菜单上 ← 无操作 */
+}
+
+/* 按 (page,cursor) 改当前参数项的值。forward=1 下一个 / 0 上一个。 */
+static void menu_value_step(game_t *gm, int forward)
+{
+    switch (gm->menu_page) {
+    case MENU_PAGE_HUMAN:
+        if (gm->menu_cursor == 0) {              /* 难度：人机黑白同步 */
+            gm->level_black = forward ? level_next(gm->level_black) : level_prev(gm->level_black);
+            gm->level_white = gm->level_black;
+        } else if (gm->menu_cursor == 1) {       /* 执子 */
+            gm->human = forward ? color_next(gm->human) : color_prev(gm->human);
+        }
+        break;
+    case MENU_PAGE_AI:
+        if (gm->menu_cursor == 0)
+            gm->level_black = forward ? level_next(gm->level_black) : level_prev(gm->level_black);
+        else if (gm->menu_cursor == 1)
+            gm->level_white = forward ? level_next(gm->level_white) : level_prev(gm->level_white);
+        else if (gm->menu_cursor == 2)
+            gm->step_ms = forward ? step_next(gm->step_ms) : step_prev(gm->step_ms);
+        break;
+    default:
+        break;
     }
 }
 
@@ -212,53 +245,44 @@ void game_start(game_t *gm, uint32_t now)
 }
 
 /* ---------------------------------------------------------------------------
- * 标题屏：多级菜单（任务 T2）
- *   短按 ↑/↓ 循环当前项；长按任意键 / 短按 → 确认进下一层；短按 ← 返回。
+ * 标题屏：标准竖排菜单（任务 T6 阶段 1）
+ *   短按 ↑/↓ 移动选中项；短按 ←/→ 在参数项上改值；长按任意键确认。
+ *   「开始对局」项上：长按 = 开局，短按 ← = 返回上一层。
  * ------------------------------------------------------------------------- */
 static void tick_title(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask)
 {
-    int up      = (short_mask & (1u << KEY_UP))    != 0;
-    int down    = (short_mask & (1u << KEY_DOWN))  != 0;
-    int left    = (short_mask & (1u << KEY_LEFT))  != 0;
-    int right   = (short_mask & (1u << KEY_RIGHT)) != 0;
-    int confirm = (long_mask != 0) || right;
+    int up    = (short_mask & (1u << KEY_UP))    != 0;
+    int down  = (short_mask & (1u << KEY_DOWN))  != 0;
+    int left  = (short_mask & (1u << KEY_LEFT))  != 0;
+    int right = (short_mask & (1u << KEY_RIGHT)) != 0;
 
-    if (confirm) {
-        menu_stage_t next = menu_next_stage(gm);
-        if (next == MENU_DONE) game_start(gm, now);
-        else                   gm->menu_stage = next;
+    /* 长按任意键 = 确认：主菜单进子菜单；「开始对局」开局；参数项无操作。 */
+    if (long_mask != 0) {
+        if (gm->menu_page == MENU_PAGE_MAIN) {
+            gm->mode        = (gm->menu_cursor == 0) ? GAME_MODE_HUMAN : GAME_MODE_AI;
+            gm->menu_page   = (gm->mode == GAME_MODE_HUMAN) ? MENU_PAGE_HUMAN : MENU_PAGE_AI;
+            gm->menu_cursor = 0;
+        } else if (menu_is_start(gm)) {
+            game_start(gm, now);
+        }
         return;
     }
+
     if (left) {
-        gm->menu_stage = menu_prev_stage(gm);
+        if (menu_is_value(gm)) menu_value_step(gm, 0);   /* 参数项：← 上一个值 */
+        else                   menu_go_back(gm);          /* 开始对局：← 返回上一层 */
+        return;
+    }
+    if (right) {
+        if (menu_is_value(gm)) menu_value_step(gm, 1);   /* 参数项：→ 下一个值 */
         return;
     }
 
     if (up || down) {
-        int inc = down ? 1 : 0;      /* ↑ = 上一项，↓ = 下一项 */
-        switch (gm->menu_stage) {
-        case MENU_MODE:
-            gm->mode = inc ? mode_next(gm->mode) : mode_prev(gm->mode);
-            break;
-        case MENU_H_DIFF:
-            gm->level_black = inc ? level_next(gm->level_black) : level_prev(gm->level_black);
-            gm->level_white = gm->level_black;   /* 人机只有一个难度，两边同步 */
-            break;
-        case MENU_H_COLOR:
-            gm->human = inc ? color_next(gm->human) : color_prev(gm->human);
-            break;
-        case MENU_A_BLACK:
-            gm->level_black = inc ? level_next(gm->level_black) : level_prev(gm->level_black);
-            break;
-        case MENU_A_WHITE:
-            gm->level_white = inc ? level_next(gm->level_white) : level_prev(gm->level_white);
-            break;
-        case MENU_A_INTERVAL:
-            gm->step_ms = inc ? step_next(gm->step_ms) : step_prev(gm->step_ms);
-            break;
-        default:
-            break;
-        }
+        int n   = game_menu_item_count(gm);
+        int inc = down ? 1 : -1;                          /* ↑ = 上一项，↓ = 下一项 */
+        gm->menu_cursor = (gm->menu_cursor + inc + n) % n;
+        if (gm->menu_page == MENU_PAGE_MAIN) gm->mode = gm->menu_cursor;  /* 主菜单移动即选模式 */
     }
 }
 
@@ -276,7 +300,8 @@ static void tick_playing(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t l
             gm->winner = 0;
             gm->ai_pending = 0;
             gm->phase  = GAME_TITLE;
-            gm->menu_stage = MENU_MODE;   /* 回标题菜单也回顶层 */
+            gm->menu_page   = MENU_PAGE_MAIN;   /* 回标题菜单也回主菜单 */
+            gm->menu_cursor = 0;
             return;
         }
         if ((int32_t)(now - gm->t_next_ai) >= 0) {
@@ -329,7 +354,8 @@ static void tick_over(game_t *gm, uint32_t now, uint8_t long_mask)
         gm->winner = 0;
         gm->ai_pending = 0;
         gm->phase  = GAME_TITLE;
-        gm->menu_stage = MENU_MODE;
+        gm->menu_page   = MENU_PAGE_MAIN;
+        gm->menu_cursor = 0;
     }
 }
 

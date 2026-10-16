@@ -156,10 +156,16 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(21046, 21048);
+$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(22028);
+                 # [!] 2026-10-16 T6（队友 GUI 重设计：竖排多级菜单 + 23 个装饰 tile
+                 #     运行时合成）并入后实测：mem.hex 21046 -> 22028 行
+                 #     （10523 -> 11014 字；text 41901 -> 43865 B，T6 只动 scripts/gomoku，
+                 #     跑分档 coremark 固件不引用 gomoku 源码 => 17104 不变）。
+                 #     旧值 21046（85.0051MHz）/ 21048（76.5052MHz）随 T6 作废；
+                 #     76.5 MHz 评估档若要重建需自量。
                   video = @(758); gomoku = @(12552) }
 $expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
-                  rtthread = "10523 字（85.0051MHz）/ 10524 字（76.5052MHz）";
+                  rtthread = "11014 字（T6 后 2026-10-16 实测）";
                   video = "379 字"; gomoku = "6276 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，

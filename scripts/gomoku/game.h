@@ -8,10 +8,10 @@
  *
  * 按键方案（板上只有 4 个用户键 SW4..SW7 = key[0..3]，见 input.h 的论证）：
  *
- *   标题屏（多级菜单，任务 T2）
- *       短按 ↑/↓  循环当前项（到头回绕）
- *       长按任意键 / 短按 →  确认当前项 → 进下一层；最后一层确认 = 开始对局
- *       短按 ←    返回上一层（最顶层无操作）
+ *   标题屏（标准竖排菜单，任务 T6 阶段 1）
+ *       短按 ↑/↓  移动选中项（页内回绕）
+ *       长按任意键  主菜单 = 进入子菜单；子菜单「开始对局」= 开始对局
+ *       短按 ←/→  参数项上改值（回绕）；短按 ← 在「开始对局」上 = 返回上一层
  *   对局中    短按 ←/→/↑/↓ 移动光标   长按任意方向键 在光标处落子
  *   胜负后    长按任意键 回标题
  *   AI 对弈（原演示模式）  双方都是 AI，按 step_ms 间隔落子；长按回标题
@@ -38,16 +38,13 @@ typedef enum {
     GAME_MODE_AI    = 1    /* AI 对弈（原演示模式：双方都是 AI）*/
 } game_mode_t;
 
-/* 标题屏菜单的层（任务 T2）。MENU_DONE 是哨兵，不真正存进 menu_stage。 */
+/* 标题屏菜单的页面（任务 T6 阶段 1：标准菜单）。每页是「选中项下标 + 每项的值」，
+ * 不再是 T2 的「每层一个参数」。交互与每项取值见 game.c 的 tick_title。 */
 typedef enum {
-    MENU_MODE = 0,         /* 模式：人机 / AI */
-    MENU_H_DIFF,           /* 人机：难度 */
-    MENU_H_COLOR,          /* 人机：执子（人执黑先 / 白后）*/
-    MENU_A_BLACK,          /* AI 对弈：黑方难度 */
-    MENU_A_WHITE,          /* AI 对弈：白方难度 */
-    MENU_A_INTERVAL,       /* AI 对弈：每手间隔 */
-    MENU_DONE              /* 哨兵：确认后开始对局 */
-} menu_stage_t;
+    MENU_PAGE_MAIN = 0,    /* 主菜单：HUMAN VS AI / AI VS AI */
+    MENU_PAGE_HUMAN,       /* 人机子菜单：难度 / 执子 / 开始对局 */
+    MENU_PAGE_AI           /* AI 子菜单：黑方 / 白方 / 间隔 / 开始对局 */
+} menu_page_t;
 
 typedef struct {
     gomoku_t     board;
@@ -64,7 +61,8 @@ typedef struct {
     int      level_black;       /* 黑方 AI 难度（AI_EASY / AI_NORMAL / AI_HARD）*/
     int      level_white;       /* 白方 AI 难度 */
     uint32_t step_ms;           /* AI 对弈每手间隔（毫秒）*/
-    int      menu_stage;        /* 标题屏菜单当前层（menu_stage_t）*/
+    int      menu_page;         /* 标题屏菜单当前页（menu_page_t）*/
+    int      menu_cursor;       /* 菜单当前选中项下标（0-based，页内回绕）*/
     int      winner;            /* 0 = 未分胜负 */
 
     /* AI 对弈（原演示模式）：双方都是 AI，每手之间停 demo_delay。 */
@@ -90,7 +88,7 @@ typedef struct {
  *   level        = 黑白双方难度的初始值（人机模式两边同步，AI 对弈里再分别改）
  *   human        = 人机模式下人的初始执子（GOMOKU_BLACK / GOMOKU_WHITE）
  *   blink_ticks  = 光标闪烁半周期（单位与 now 相同）
- * 其余字段给默认值：mode=HUMAN、step_ms=1000、menu_stage=MENU_MODE。 */
+ * 其余字段给默认值：mode=HUMAN、step_ms=1000、menu_page=MENU_PAGE_MAIN、menu_cursor=0。 */
 void game_init(game_t *gm, int level, int human, uint32_t blink_ticks);
 
 /* 推进一拍。
@@ -106,6 +104,9 @@ int game_ai_turn(const game_t *gm);
 /* 现在轮到谁，就按谁的难度取 —— 黑取 level_black、白取 level_white。
  * 供 game_ai_run_sync / RT-Thread 宿主派单时把「这一手是谁的难度」带进 ai_cmd。 */
 int game_ai_level(const game_t *gm);
+
+/* 标准菜单：当前页的菜单项数（主菜单 2 / 人机 3 / AI 4）。供 HUD 与测试枚举。 */
+int game_menu_item_count(const game_t *gm);
 
 /* 按当前 mode/human/难度/step_ms 的配置开始一局（清盘清统计 → 进对局 →
  * AI 对弈停一拍再下第一手、人机且人执白时 AI 先走）。菜单末层确认时调用，
