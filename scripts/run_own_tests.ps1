@@ -64,10 +64,20 @@ if ($srcs.Count -eq 0) { throw "没有找到匹配的 .S 测试" }
 Write-Host "[1/3] 编译并链接 $($srcs.Count) 个测试 ..."
 foreach ($s in $srcs) {
     $elf = Join-Path $build "$($s.BaseName).elf"
-    & $gcc -march=rv32ima_zicsr_zifencei -mabi=ilp32 `
-        -nostdlib -nostartfiles -static -mcmodel=medany `
-        -I $envDir -I (Join-Path $envDir "p") -I $testDir `
-        -T $ld -o $elf $s.FullName
+    # [!] 2026-10-16：ld 的 RWX 警告走 stderr，而本脚本 $ErrorActionPreference="Stop"
+    #    会让它变成终态错误（构建阶段当场死，ELF 其实已生成）。
+    #    修法：汇编期间临时把 EAP 切到 Continue，退出码兜真正的失败。
+    #    **别用 2>$null** —— 实测 PS 5.1 下仍然终态。
+    $eapSave = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $gcc -march=rv32ima_zicsr_zifencei -mabi=ilp32 `
+            -nostdlib -nostartfiles -static -mcmodel=medany `
+            -I $envDir -I (Join-Path $envDir "p") -I $testDir `
+            -T $ld -o $elf $s.FullName
+    } finally {
+        $ErrorActionPreference = $eapSave
+    }
     if ($LASTEXITCODE -ne 0) { throw "$($s.Name) 汇编/链接失败" }
 }
 

@@ -61,7 +61,19 @@ if (-not $SkipBuild) {
         "$port\core_portme.c", "$port\ee_printf.c", "$port\start.S",
         "-o", $elf
     )
-    & riscv-none-elf-gcc @gccArgs
+    # [!] 2026-10-16：riscv-none-elf-ld 会往 stderr 打一行
+    #    `warning: ... has a LOAD segment with RWX permissions`，而本脚本设了
+    #    $ErrorActionPreference="Stop" ⇒ PS 5.1 会把原生命令的 stderr 包装成
+    #    【终态错误】（NativeCommandError），脚本在构建阶段当场死（ELF 其实已生成）。
+    #    修法：调 gcc 期间临时把 EAP 切到 Continue（stderr 变成非终态、照常打印），
+    #    真正的失败由退出码兜。**别用 2>$null** —— 实测 PS 5.1 下仍然终态。
+    $eapSave = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & riscv-none-elf-gcc @gccArgs
+    } finally {
+        $ErrorActionPreference = $eapSave
+    }
     if ($LASTEXITCODE -ne 0) { throw "gcc 编译失败" }
 }
 else { Write-Host "[1/3] 跳过编译（-SkipBuild）" }
