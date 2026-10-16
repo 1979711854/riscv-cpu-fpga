@@ -248,17 +248,24 @@ module tb_gomoku;
 
     // 短按：产生一次「短按」事件（阶段 1 菜单的 ↑/↓ 移动、←/→ 改值都用它）。
     // ------------------------------------------------------------------------
-    // [重点] 按住时长必须按【仿真口径的阈值】倒推，不能按"几帧"拍脑袋：
-    //   `build.ps1 -Sim` 传 `-DINPUT_DEBOUNCE_MS=1 -DINPUT_LONG_MS=5`
-    //   ⇒ 去抖 **1 ms**、长按阈值 **5 ms**；而仿真一帧 = 640×525 @100MHz ≈ **3.4 ms**。
-    //   ⇒ 「按住 1 帧 = 3.4 ms」落在 (1, 5) ms 里 = **合法短按** ✓
-    //      「按住 2 帧 = 6.8 ms」**已越过 5 ms** ⇒ 固件判成【长按】✗
-    // [!] 这里原来就是按 2 帧松手（旧注释"去抖约 2 帧 / 长按约 4 帧"用的是**板载口径**
-    //     10 ms / 600 ms 的数，不是 -Sim 的 1 ms / 5 ms —— 两套口径混用的典型）。
-    //     实测后果：每一次"短按"都被固件当成长按 ⇒ 菜单导航全带偏 ⇒ `tb_gomoku`
-    //     端到端在「菜单确认到底后没等到 start」处 FAIL（2026-10-17 实测，
-    //     证据 `doc/reports/2026-10-17_t6_gomoku_firstrun_fail.txt`）。
-    //   ⇒ **现在按住【恰好 1 帧】再松手。**
+    // [重点] 按住时长是【从 input.c 的去抖逻辑倒推出来的】，不是按"几帧"拍脑袋。
+    //   `-Sim` 口径（`scripts/gomoku/input.h:51`）：去抖 **1 ms**、长按阈值 **5 ms**；
+    //   一帧 ≈ 3.4 ms（640×525 @100MHz）。
+    //   而 `input.c:43-58` 的去抖是【电平稳定】判据，关键在 t_edge 的更新时机：
+    //       if (lvl != raw[k]) { raw= lvl; t_edge = now; }            // 电平变了：记时刻
+    //       if (lvl != stable && (now - t_edge) >= debounce) { …认账… }
+    //   ⇒ **电平刚变的那一拍 `now - t_edge == 0`，永远判不过**；必须等【下一采样拍】
+    //     电平仍是新值（`now - t_edge` = 1 帧）才认账。由此：
+    //       · 按住 **1 帧** → 下一拍已经松手 ⇒ **永远认不了账**，等于没按 ✗
+    //         （2026-10-17 实测验证过：改成 1 帧后台子对按键毫无反应）
+    //       · 按住 **2 帧** → 认账恰好一次；且 `down_at` 从【认账那拍】起算，
+    //         到松手认账只隔 1 帧 = 3.4 ms < 长按 5 ms ⇒ **正是短按** ✓
+    //       · 按住 **3 帧** → 认账后到松手隔 2 帧 = 6.8 ms ≥ 5 ms ⇒ **变长按** ✗
+    //   ⇒ **必须恰好 2 帧**。相位由对齐 vsync 固定：固件在 `video_wait_vblank()`
+    //     返回那拍采样（VIDEO_STATUS bit0 = vsync 脉冲），那就是 `negedge vs`，
+    //     所以"negedge vs 之后 1µs 按下"保证按下沿落在采样拍【之后】。
+    //   [!] 注意长按的计时基准是【认账时刻 down_at】而不是物理按下时刻 —— 这一条
+    //     最容易算错：按 2 帧物理上"按住 6.8ms > 5ms"，但固件量到的是 3.4ms。
     // vs 是负极性，negedge vs = vsync 起点 = 主循环刚采样完那一拍。
     task press_short;
         input integer k;
@@ -266,17 +273,115 @@ module tb_gomoku;
             @(negedge vs);                 // 对齐到 vsync 起点（主循环刚采样完那一拍）
             #1000;                         // 越过本帧采样，之后按下
             key = 8'hFF & ~(8'h01 << k);   // 按下（低有效）
-            @(negedge vs);                 // 帧 1：主循环采样到【按下】（已稳定 3.4ms > 去抖 1ms）
-            key = 8'hFF;                   // 立刻松手 —— 只按 1 帧 ≈3.4ms < 长按 5ms ⇒ 短按
-            @(negedge vs);                 // 帧 2：主循环采样到【松手】
-            @(negedge vs);                 // 帧 3：去抖认账 -> 发出短按事件，被 game_tick 消费
-            @(negedge vs);                 // 帧 4：余量，确保事件消费完
+            @(negedge vs);                 // 帧 1：主循环看到按下沿（t_edge 置此拍 ⇒ elapsed=0，不认账）
+            @(negedge vs);                 // 帧 2：电平仍是按下 ⇒ elapsed=1帧 ≥ 去抖 ⇒ 认账（down_at=此拍）
+            #100_000;                      // 越过帧 2 的采样之后再松手
+            key = 8'hFF;                   // 松手
+            @(negedge vs);                 // 帧 3：看到松手沿
+            @(negedge vs);                 // 帧 4：松手认账 -> 发出短按事件（间隔只 1 帧 ⇒ 不是长按）
+            @(negedge vs);                 // 帧 5：余量，确保 game_tick 消费完
         end
     endtask
 
     integer i;
     integer tr, tc;          // 棋盘扫描坐标（最后一手标记计数用）
     integer last_white_cnt;  // 棋盘上「最后一手白子」的个数
+
+    // [2026-10-17 加] 把收到的串口文本按【收到顺序】打出来。
+    //   为什么需要：固件在状态变化时会打 `menu=` / `mode=` / `you=` / `black=` /
+    //   `start, level=…` 等 —— **这是唯一能看见"固件以为自己在哪一步"的窗口**。
+    //   只报 "没等到 start" 是黑盒结论；看到固件自己打的行才能判断到底是
+    //   "按键没被认成短按/长按" 还是 "菜单项顺序与 tb 假设不符"。
+    //   （用 task 局部 reg，别复用 UART 解码器的 rxb —— 那个正在逐位收字节。）
+    task dump_uart;
+        integer n, j;
+        reg [7:0] db;
+        begin
+            n = (rxcount > 768) ? 768 : rxcount;
+            $display("  --- 已收到 %0d 字节；下面打印最后 %0d 字节（收到顺序）---", rxcount, n);
+            for (j = n - 1; j >= 0; j = j - 1) begin
+                db = rxtext[j*8 +: 8];
+                if      (db == 8'h0D)                $write("<CR>");
+                else if (db == 8'h0A)                $write("%c", 8'h0A);
+                else if (db >= 8'h20 && db < 8'h7F)  $write("%c", db);
+                else                                 $write("<%02h>", db);
+            end
+            $write("\n");
+        end
+    endtask
+
+    // ========================================================================
+    // [2026-10-17 加] **直接读固件内部的按键去抖状态机**（`g_input`，在 .bss）
+    // ------------------------------------------------------------------------
+    // 为什么：只报"没等到 start"是黑盒结论，它区分不出下面三种情况：
+    //     ① 按键压根没被认成短按/长按（激励时序问题）
+    //     ② 按键认了，但菜单项顺序与 tb 的假设不符（tb 问题）
+    //     ③ 别的地方卡住
+    //   `input_t` 就在 RAM 里，按地址读出来就能直接看见固件"以为"发生了什么。
+    // 地址来源：`riscv-none-elf-nm sim/programs/gomoku_sim/gomoku_sim.elf`
+    //     ⇒ `g_input` @ **0x6D7C**，大小 **0x38**。
+    //   存储器是【字寻址】（`mem0[0:16383]`，64KB）⇒ 字下标 = 0x6D7C/4 = **7007**。
+    // 字段偏移（见 `scripts/gomoku/input.h` 的 input_t）：
+    //     raw[4]@0  t_edge[4]@4  stable[4]@20  down_at[4]@24  long_sent[4]@40
+    //     short_latch@44  long_latch@45  debounce_ticks@48  long_ticks@52
+    // [!] `debounce_ticks` / `long_ticks` 是【固件真正编译进去的阈值】—— 它直接验证
+    //     -Sim 口径与 CPU_HZ：若 CPU_HZ 写死 85,005,100 而仿真跑 100MHz，这里会显示
+    //     85005 / 425025（而不是 100000 / 500000）。**这决定 2 帧按住到底算不算长按。**
+    // 层次路径：unified_mem 例化在 mem_bus 里（`u_mem`），mem_bus 在 cpu_top 里（`u_bus`）。
+    // ========================================================================
+    localparam integer GI = 7007;                              // 0x6D7C / 4
+    wire [31:0] gi_raw_w  = u_soc.u_bus.u_mem.mem0[GI + 0];    // raw[0..3]      @0x6D7C
+    wire [31:0] gi_stb_w  = u_soc.u_bus.u_mem.mem0[GI + 5];    // stable[0..3]   @0x6D90
+    wire [31:0] gi_lsn_w  = u_soc.u_bus.u_mem.mem0[GI + 10];   // long_sent[0..3]@0x6DA4
+    wire [31:0] gi_lat_w  = u_soc.u_bus.u_mem.mem0[GI + 11];   // short@0x6DA8 / long@0x6DA9
+    wire [31:0] gi_dbg_t  = u_soc.u_bus.u_mem.mem0[GI + 12];   // debounce_ticks @0x6DAC
+    wire [31:0] gi_lng_t  = u_soc.u_bus.u_mem.mem0[GI + 13];   // long_ticks     @0x6DB0
+
+    // [!] 这几个数组是 `uint8_t x[4]` —— **每个键占一个字节**，不是一位。
+    //   所以要取每字节的 bit0 拼成「按 bit k = 键 k」的 4 位量。
+    //   第一版写成 `word[3:0]`（= 只是【键 0】那一个字节的低 4 位），
+    //   于是永远只看见左键、看不见 tb 按的 **键 3（↓）**，白跑一轮 —— 已修。
+    wire [3:0] gi_raw    = {gi_raw_w[24], gi_raw_w[16], gi_raw_w[8], gi_raw_w[0]};
+    wire [3:0] gi_stable = {gi_stb_w[24], gi_stb_w[16], gi_stb_w[8], gi_stb_w[0]};
+    wire [3:0] gi_lsent  = {gi_lsn_w[24], gi_lsn_w[16], gi_lsn_w[8], gi_lsn_w[0]};
+    wire       gi_short  = gi_lat_w[0];                        // short_latch bit0（键 0）
+    wire       gi_llat   = gi_lat_w[8];                        // long_latch  bit0（键 0）
+    wire [7:0] gi_short8 = gi_lat_w[7:0];                      // 全部 4 键的短按锁存
+    wire [7:0] gi_llat8  = gi_lat_w[15:8];                     // 全部 4 键的长按锁存
+
+    // 一帧 = FRAME_NS ns；100MHz 下 1 tick = 10ns ⇒ 一帧 = FRAME_NS/10 个 tick。
+    `define TICKS_PER_FRAME (FRAME_NS / 10.0)
+
+    reg [31:0] gi_prev;
+    initial begin : g_input_probe
+        gi_prev = 32'hFFFF_FFFF;
+        forever begin
+            @(negedge vs);
+            // 只在【状态真的变了】时打 —— 这样阈值也一定是固件 init 之后的真值。
+            if ({gi_raw, gi_stable, gi_lsent, gi_short8, gi_llat8} !== gi_prev) begin
+                gi_prev = {gi_raw, gi_stable, gi_lsent, gi_short8, gi_llat8};
+                $display("  [输入] t=%0d ns  帧=%0d  raw=%b stable=%b long_sent=%b  short=%b long=%b | 阈值 debounce=%0d ticks（%0.2f 帧） long=%0d ticks（%0.2f 帧）",
+                         $time, prog_f, gi_raw, gi_stable, gi_lsent, gi_short8, gi_llat8,
+                         gi_dbg_t, gi_dbg_t / `TICKS_PER_FRAME,
+                         gi_lng_t, gi_lng_t / `TICKS_PER_FRAME);
+            end
+        end
+    end
+
+    // 每帧无条件快照（只在按键窗口里打，避免刷屏）。
+    //   用途：确认固件到底有没有"看见"按键 —— 若 raw 全程 0000，说明信号没到；
+    //   若 raw 动了而 stable 不动，说明卡在去抖。
+    integer gi_tick;
+    initial begin : g_input_snap
+        gi_tick = 0;
+        forever begin
+            @(negedge vs);
+            gi_tick = gi_tick + 1;
+            if (gi_tick >= 5 && gi_tick <= 45)
+                $display("  [快照] 帧=%0d  raw=%b stable=%b  short=%b long=%b",
+                         gi_tick, gi_raw, gi_stable, gi_short8, gi_llat8);
+        end
+    end
 
     initial begin
         resetn = 1'b0;
@@ -334,6 +439,7 @@ module tb_gomoku;
             //   仿真时间 ≈ 3.3 小时墙钟）才收工。没有这条时，一次"按不准键"的回退要烧掉一整夜
             //   才能读到一行 FAIL。这里直接收尾，把回归反馈从 3.4 h 压到 ~30 min。
             $display("  --- 提前收尾（菜单是后续用例的前置条件）---");
+            dump_uart;                      // 让固件自己说它走到哪一步了
             $display("");
             $display("checks=%0d  errors=%0d", checks, errors);
             $display("=== FAIL ===");
