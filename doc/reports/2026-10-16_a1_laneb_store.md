@@ -112,7 +112,7 @@
 
 > **[!] 2026-10-16 深夜：T3（任务书 v12 §3）已执行 —— 上面的"最大嫌疑"被【证伪】，如实记录：**
 > 按上述写法改写 `core.v` 的 `p_b_rd_ok` 后，同一天两次单综合对照
-> （`pds_shell -run synthesize`，日志 `pds/_t3_baseline.log` = 改前 / `pds/_t3_gated.log` = 改后）：
+> （`pds_shell -run synthesize`，日志 `pds/RV32I_1/_t3_baseline.log` = 改前 / `pds/RV32I_1/_t3_gated.log` = 改后）：
 >
 > | 口径 | 逻辑 LUT | dram | Total |
 > |---|---|---|---|
