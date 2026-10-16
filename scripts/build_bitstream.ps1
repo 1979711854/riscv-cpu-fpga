@@ -197,6 +197,17 @@ if ($cpuTopTxt -notmatch 'parameter\s+LANEB_MEM\s*=\s*(\d+)') {
 }
 $laneBMem = [int]$Matches[1]
 
+# ---- 拟综合的 lane B store 开关（LANEB_ST，A1）：同样从 cpu_top.v 读 ----
+# [!] 与每迭代周期数强相关，且同样是编译期 parameter（PDS 传不了 -D）：
+#       LANEB_ST=0（1 档旧值）=> 217,088 拍 / 391.6 分
+#       LANEB_ST=1（A1，当前生产档）=> 216,695 拍 / 392.3 分
+#     只在 LANEB_MEM=1 时才有意义（core.v 把 store 腿嵌套在 LANEB_MEM 之内）。
+if ($cpuTopTxt -notmatch 'parameter\s+LANEB_ST\s*=\s*(\d+)') {
+    Write-Host "!! 在 cpu_top.v 里找不到 parameter LANEB_ST —— 版本不匹配，停下。" -ForegroundColor Red
+    exit 1
+}
+$laneBSt = [int]$Matches[1]
+
 # ---- -Single：综合【单发射】回退版 ----
 # [!] 和 DEBUG_LED 同一个理由：PDS 综合取 parameter 默认值、命令行传不了 -D 宏，
 #     所以只能"改默认值 → 综合 → 还原"。以前切回退版要【手改 cpu_top.v:52】——
@@ -248,16 +259,22 @@ if ($Cache -or $DCacheOnly) {   # [!] -DCacheOnly 必须【单独可用】：只
 #   四 CRC 逐位不变，板上 391.66 分）⇒ 必须按 LANEB_MEM 分档，否则 1 档会打 0 档的期望值。
 # [2026-10-15 P0 修正] 单发射的**旧文档值 303,140 是 pre-RAS 陈旧值**，实测是 **300,392**
 #   （EARLY_LD=0 同理是 249,982，非 252,730）⇒ 见 论文框架 §0 更新块 3 / CLAUDE.md 四条基线表。
+# [A1] 2026-10-16：lane B 放 store（LANEB_ST=1）再降到 **216,695**（−393 = −0.181%，
+#   四 CRC 逐位不变）；LANEB_ST=0 时逐位回到 217,088（关档等价性判据）。
 $cpiCycles = if ($dualIssue -eq 1) {
-                 if ($laneBMem -eq 1) { 217088 } else { 229597 }
+                 if ($laneBMem -eq 1) { if ($laneBSt -eq 1) { 216695 } else { 217088 } }
+                 else { 229597 }
              } else { 300392 }
 $dualNote  = if ($dualIssue -eq 1) { "双发射（与仿真默认一致）" } else { "单发射（-Single 回退版）" }
-$laneBNote = if ($laneBMem -eq 1) { "1 档：lane B 可放 load（当前生产档）" } else { "0 档：lane B 不放访存" }
+$laneBNote = if ($laneBMem -ne 1) { "0 档：lane B 不放访存" }
+             elseif ($laneBSt -eq 1) { "1 档 + A1：lane B 可放 load/store（当前生产档）" }
+             else { "1 档：lane B 只放 load（A1 关档 = 回退对照）" }
 
 Write-Host ""
 Write-Host "=== 构建【$Variant】版比特流 ===" -ForegroundColor Cyan
 Write-Host "    DUAL_ISSUE = $dualIssue  $dualNote"
 Write-Host "    LANEB_MEM  = $laneBMem  $laneBNote"
+Write-Host "    LANEB_ST   = $laneBSt  （A1：lane B 放 store）"
 if ($dualIssue -ne 1 -and -not $Single) {
     Write-Host "!! 本次将综合【单发射】比特流(DUAL_ISSUE=0)，而仿真脚本默认跑双发射(1)。" -ForegroundColor Yellow
     Write-Host "   要烧回退版请用 -Single（它临时改、结束自动还原）；" -ForegroundColor Yellow
@@ -395,7 +412,7 @@ $md5 = (Get-FileHash $sbit -Algorithm MD5).Hash.Substring(0, 8).ToLower()
 Write-Host ""
 Write-Host "=== 完成 ===" -ForegroundColor Green
 Write-Host "  比特流：$sbit"
-Write-Host "  配置  ：DUAL_ISSUE=$dualIssue LANEB_MEM=$laneBMem [$dualNote]"
+Write-Host "  配置  ：DUAL_ISSUE=$dualIssue LANEB_MEM=$laneBMem LANEB_ST=$laneBSt [$dualNote]"
 Write-Host "  时间  ：$($fi.LastWriteTime)   大小：$([math]::Round($fi.Length/1MB,2)) MB   md5：$md5..."
 Write-Host ""
 Write-Host "接下来：" -ForegroundColor Cyan
@@ -407,7 +424,7 @@ if ($Variant -eq "coremark") {
     $expTicks = $Iter * $cpiCycles
     Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
     Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；单发射 280.4；双发射 0 档 370.2 / 1 档 391.6）"
+    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem，LANEB_ST=$laneBSt；单发射 280.4；双发射 0 档 370.2 / 1 档 rev1027 391.6 / 1 档+A1 392.3）"
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + gomoku 的 render/AI 两条线程："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"

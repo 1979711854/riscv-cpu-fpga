@@ -664,7 +664,8 @@ module coremark_tb;
     //    提前读口上，可以先借 f_mem 免掉）—— f_mem 是它自己在 ID 级算出来的标志。
     wire        a_bad_memld = (u_core.ex_mem_rd != 5'd0) && (u_core.ex_mem_rd == u_core.rs1) &&
                               (u_core.ex_mem_mem_read || u_core.ex_mem_is_amo) && !f_mem;
-    wire        a_bad_store = u_core.id_ex_mem_write;
+    // [lane B 访存 · A1] 与 core.v 的 ld_bad_st 同款（任一 lane 是 store 都挡快通路）。
+    wire        a_bad_store = u_core.id_ex_mem_write || u_core.id_ex_b_mem_write;
     wire        a_bad_amo   = u_core.id_ex_is_amo || u_core.ex_mem_is_amo;
     wire [2:0]  a_code = a_bad_ex    ? 3'd1 :
                          a_bad_memld ? 3'd2 :

@@ -125,9 +125,33 @@ module csr_file (
     //                的关键路径尾段 = if_addr_d → imem_addr → COUT → imem_addr2
     //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
     //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
+    //     2026_1028  [A1] lane B 放 **store**（把 1 档的"lane B 放 load"对称到 store）：
+    //                `parameter LANEB_ST`（默认 1），只在 LANEB_MEM=1 时有效。
+    //                改动面（全在 core.v，control.v 一行未改）：
+    //                  ① 配对白名单加 STORE + 新增 `p_b_rd_ok`——store 的 instr[11:7]
+    //                     是 S 型立即数低 5 位、【不是】rd，所以 `rd_b != 0` 与
+    //                     `rd_a != rd_b` 两条判据只对"真写 rd 的 lane B"生效；
+    //                  ② "每对最多一条访存"由 `p_mem_a && p_mem_b` 完整表述
+    //                     （p_mem_b = ld_b || st_b）⇒ 写口只有一套（mem_bus 单写口）
+    //                     这条硬约束同时被兜住，不需要写仲裁器；
+    //                  ③ 写口三条腿：mem_we / mem_addr / mem_wdata+mem_byte_en
+    //                     （lane B 必须另存 ex_mem_b_wdata —— ex_mem_wdata 是 lane A 的 rs2）；
+    //                  ④ 判据③ `ld_bad_st` 并上 `id_ex_b_mem_write`：lane B 的 store
+    //                     与提前读口是【同一沿】读写，漏了就是"store→load 快通路读旧值"；
+    //                  ⑤ lane B 的未对齐 store 并进异常（mcause=6，mtval=alu_result_b，
+    //                     mepc=lane B 的 PC，与 load 版对称），trap 清 EX/MEM ⇒
+    //                     "既陷异常又改了内存"不会发生；
+    //                  ⑥ lane B 的 store 【不产生任何 stall 子句】（无写回值）。
+    //                判据：LANEB_ST=0 时与 rev1027 **逐位等价**（CoreMark 217,088 +
+    //                四 CRC e9f5/e714/1fd7/8e3a、riscv-tests 49/1/0 + ma_data 哨兵、
+    //                own_tests 7/0）；LANEB_ST=1 时 **216,695 拍（−393 = −0.181%）**、
+    //                四 CRC 逐位不变、riscv-tests 49/1/0、own_tests 7/0（含新增
+    //                `sim/tests/tb_laneb_st.S` 八个 store 定向用例）。
+    //                [!] 收益远小于立项预期（1~3%）—— 因为 lane A 是访存时不能配对、
+    //                且 store 在 CoreMark 里的"可配对窗口"本来就少；实测数拍才是判据。
     //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1027;   // 2026-10-16 P3.5：摘 alu_result_b 腿 + imem_addr2 解耦
+    localparam [31:0] DESIGN_REV = 32'h2026_1028;   // 2026-10-16 A1：lane B 放 store（LANEB_ST=1）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
