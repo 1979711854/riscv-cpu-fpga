@@ -159,6 +159,11 @@ module coremark_tb;
     reg [63:0] c_stall, c_div, c_mul, c_flush;
     reg [63:0] c_fwdex, c_fwdwb, c_mem, c_br_taken, c_jump;
     reg [63:0] c_commit, c_inst_in;
+    // [IPC 口径] 提交【指令条数】：c_commit 是"提交拍数"（v_wb 每拍≤1，双发第二条
+    // 不计），要算与对手对齐的 IPC = instructions/cycles 必须单独数条数
+    // （一对到 WB 记 2、单发记 1）。影子链 vp_* 携带 if_id_pair，推进/清零条件
+    // 与 v_* 逐位同构。纯观测：不参与任何周期逻辑。
+    reg [63:0] c_instr, tc_instr;
     // [A1 可行性] mul 结果被【紧邻的下一条】消费的次数。
     //   判据与 core.v:533 的 load-use 检查同构（ID 级 rs1/rs2 + pair 的 rs1_b/rs2_b）。
     //   意义：把乘法器改成 II=1 后，mul 只占 1 拍 EX、结果要 2 拍后才到 WB，
@@ -245,6 +250,7 @@ module coremark_tb;
     // 影子流水线 valid：逐级镜像 core 的清零/暂停条件，用来数"真正提交的指令数"。
     // 不能直接用 mem_wb_reg_write 计数 —— store/branch/jump 不回写寄存器，会被漏掉。
     reg v_id, v_ex, v_mem, v_wb;
+    reg vp_id, vp_ex, vp_mem, vp_wb;   // 携带 pair 信息的影子链（见 c_instr 声明处）
 
     // 直方图：32 桶 × 5 万拍 = 160 万拍，覆盖 ITER=1 全程
     localparam NH = 32, HBUCKET = 50000;
@@ -359,11 +365,18 @@ module coremark_tb;
             if (prof_on) begin
                 $display("");
                 $display("=== pipeline profile ===");
-                $display("committed instr  : %0d", c_commit);
+                $display("commit slots     : %0d", c_commit);
                 $display("if/id loads      : %0d", c_inst_in);
                 if (c_commit > 0)
-                    $display("CPI              : %f",
+                    $display("CPI (slots)      : %f",
                              cycle_count / (c_commit * 1.0));
+                // [IPC 口径] 指令级 IPC/CPI（双发拍计 2 条）—— 与对手打印的
+                // "Total instructions/Total cycles/IPC" 同口径。
+                $display("committed instr  : %0d", c_instr);
+                if (c_instr > 0)
+                    $display("IPC (instr/cyc)  : %f   CPI (instr): %f",
+                             (c_instr * 1.0) / cycle_count,
+                             cycle_count / (c_instr * 1.0));
                 $display("--- cycle composition ---");
                 $display("load-use stall   : %0d  %f%%", c_stall,
                          (c_stall * 100.0) / cycle_count);
@@ -419,9 +432,14 @@ module coremark_tb;
                 if (t_timer_n >= 1) $display("start_time cycle : %0d", t_timer_cyc[0]);
                 if (t_timer_n >= 2) $display("stop_time  cycle : %0d", t_timer_cyc[1]);
                 $display("region cycles    : %0d", tc_all);
-                $display("region commit    : %0d", tc_commit);
+                $display("region commit    : %0d  (提交拍数，每拍≤1)", tc_commit);
                 if (tc_commit > 0)
                     $display("region CPI       : %f", tc_all / (tc_commit * 1.0));
+                // [IPC 口径] 指令级口径（双发拍计 2）—— 与对手 IPC = instructions/cycles 对齐
+                $display("region instr     : %0d", tc_instr);
+                if (tc_instr > 0)
+                    $display("region IPC       : %f  (= instr/cycles，与对手口径对齐)",
+                             tc_instr / (tc_all * 1.0));
                 if (tc_all > 0) begin
                     $display("region stall     : %0d  %f%%", tc_stall,
                              (tc_stall * 100.0) / tc_all);
@@ -508,6 +526,8 @@ module coremark_tb;
             c_redir <= 64'd0; c_mispred <= 64'd0;
             c_btbpred <= 64'd0; c_btbtrain <= 64'd0;
             c_commit <= 64'd0; c_inst_in <= 64'd0;
+            c_instr <= 64'd0; tc_instr <= 64'd0;
+            vp_id <= 1'b0; vp_ex <= 1'b0; vp_mem <= 1'b0; vp_wb <= 1'b0;
             v_id <= 1'b0; v_ex <= 1'b0; v_mem <= 1'b0; v_wb <= 1'b0;
             pr_ex <= 64'd0; pr_mem <= 64'd0; pr_wb <= 64'd0;
             h_idx <= 0; h_cnt <= 0;
@@ -541,6 +561,15 @@ module coremark_tb;
             v_id  <= (u_core.ex_flush || u_core.ex_mispred) ? 1'b0 :
                      ((!u_core.stall && !u_core.mc_stall) ? 1'b1 : v_id);
             if (v_wb) c_commit <= c_commit + 64'd1;
+            // [IPC 口径] 提交指令条数：vp_* 与 v_* 同构推进、携带 if_id_pair ⇒
+            // 一对到 WB 记 2 条。与 v_* 的唯一差别是 vp_id 取样 if_id_pair 而非常量 1。
+            vp_wb  <= vp_mem;
+            vp_mem <= u_core.mc_stall ? 1'b0 : vp_ex;
+            vp_ex  <= (u_core.ex_flush || u_core.ex_mispred || u_core.stall) ? 1'b0 :
+                      (u_core.mc_stall ? vp_ex : vp_id);
+            vp_id  <= (u_core.ex_flush || u_core.ex_mispred) ? 1'b0 :
+                      ((!u_core.stall && !u_core.mc_stall) ? u_core.if_id_pair : vp_id);
+            if (v_wb) c_instr <= c_instr + (vp_wb ? 64'd2 : 64'd1);
 
             // ---- +PAIRTRACE 影子链：镜像 v_* 的推进/清零，携带 {pc,instr} ----
             pr_wb  <= pr_mem;
@@ -617,6 +646,7 @@ module coremark_tb;
                 if (u_core.fwd_a_wb || u_core.fwd_b_wb) tc_fwdwb <= tc_fwdwb + 64'd1;
                 if (u_core.mem_re || u_core.mem_we)     tc_mem   <= tc_mem + 64'd1;
                 if (v_wb)             tc_commit <= tc_commit + 64'd1;
+                if (v_wb)             tc_instr  <= tc_instr + (vp_wb ? 64'd2 : 64'd1);
                 // ---- [A4] 未归类周期归因 ----
                 if (!v_wb) begin
                     tc_noret <= tc_noret + 64'd1;

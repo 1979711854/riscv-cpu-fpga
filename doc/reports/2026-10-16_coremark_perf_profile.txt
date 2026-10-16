@@ -1,0 +1,135 @@
+﻿SIM CONFIG: DUAL_ISSUE=1 DCACHE_EN=0 ICACHE_EN=0 EARLY_LD=1 BTB_EN=1 LANEB_MEM=1 LANEB_ST=0
+[build] FW=COREMARK RTL=0x20261028
+
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 217088
+Total time (secs): 0
+ERROR! Must execute for at least 10 secs for a valid result!
+Iterations       : 1
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xe714
+Errors detected
+[cache] D hits=0x00000000
+
+[cache] D miss=0x00000000
+
+[cache] I hits=0x00000000
+
+[cache] I miss=0x00000000
+
+
+=== CoreMark finished ===
+iterations   : 1
+total cycles : 1527634
+DCACHE            : off (DCACHE_EN=0)
+ICACHE            : off (ICACHE_EN=0)
+CoreMark/MHz : 0.654607
+
+=== pipeline profile ===
+commit slots     : 1104780
+if/id loads      : 1109815
+CPI (slots)      : 1.382750
+committed instr  : 1485824
+IPC (instr/cyc)  : 0.972631   CPI (instr): 1.028139
+--- cycle composition ---
+load-use stall   : 411526  26.938782%
+div stall        : 2013  0.131772%
+mul executed     : 9496
+br/jmp redirect  : 3268  0.213926%
+pipeline bubbles : 422854  27.680321%
+--- events ---
+taken branches   : 69805
+jumps jal/jalr   : 7513
+  cond branches  : 449360  (bwd 63733, bwd&taken 61356)
+  jal 6063  jalr 1450
+  arrival redirect 76293  mispredict 1763
+  btb pred 44  btb train 1450
+fwd from ex/mem  : 435272
+fwd from mem/wb  : 128600
+mem accesses     : 445199
+--- coremark timed region (start_time -> stop_time) ---
+timer reads seen : 8
+start_time cycle : 11243
+stop_time  cycle : 228331
+region cycles    : 217088
+region commit    : 195094  (提交拍数，每拍≤1)
+region CPI       : 1.112735
+region instr     : 274694
+region IPC       : 1.265358  (= instr/cycles，与对手口径对齐)
+region stall     : 14218  6.549418%
+region div stall : 0  0.000000%
+region mul exec  : 9396
+region mul near  : 108  （紧邻消费，去阻塞后仍停 1 拍）
+region flush     : 2452  1.129496%
+region noretire  : 21994  （v_wb=0）
+  mc_stall 占    : 0
+  load-use 占    : 110
+  冲刷当拍占     : 199
+  冲刷后 3 拍内  : 4009  (= 真分支代价的尾巴)
+  预测重定向后   : 6342  (应为 0：BHT 预测 taken 零代价)
+  停顿后 4 拍内  : 9931  (= load-use 气泡的尾巴)
+  [!] 真正无解释  : 1403  ← A4 要找的就是这个
+      ├ 访存冻结   : 0  (mem_ready_int=0)
+      ├ ID/EX 气泡 : 0  (id_ex_valid=0)
+      └ 其余       : 1403  ← 最难解释的一格
+  --- 七桶之和    : 21994  （必须 = 21994）---
+  其中 IF/ID 空  : 155
+region fwd ex    : 36288
+region fwd wb    : 27007
+region mem acc   : 43228
+--- branch direction (region) ---
+cond branches    : 49048
+  taken          : 18468
+  not taken      : 30580
+  backward       : 13499
+  bwd & taken    : 11307
+  bwd & not-taken: 2192
+  forward        : 35549
+  fwd & taken    : 7161
+--- jumps (region) ---
+  jal            : 4743
+  jalr           : 1374
+  arrival redirect : 24007
+  mispredict     : 1543
+  bwd taken rate : 83.761760%
+--- histogram (bucket = 50000 cycles) ---
+h 0 stall=3682 flush=427 mem=15972 commit=44996
+h 1 stall=1046 flush=590 mem=5411 commit=46840
+h 2 stall=2437 flush=716 mem=7230 commit=45294
+h 3 stall=3422 flush=658 mem=8944 commit=44377
+h 4 stall=10673 flush=230 mem=15333 commit=38773
+h 5 stall=15354 flush=21 mem=15375 commit=34625
+h 6 stall=15193 flush=40 mem=15295 commit=34538
+h 7 stall=15138 flush=24 mem=15248 commit=34425
+h 8 stall=15354 flush=21 mem=15375 commit=34625
+h 9 stall=15279 flush=27 mem=15365 commit=34679
+h 10 stall=15242 flush=23 mem=15404 commit=34731
+h 11 stall=15356 flush=20 mem=15375 commit=34624
+h 12 stall=15353 flush=21 mem=15375 commit=34625
+h 13 stall=15260 flush=25 mem=15349 commit=34644
+h 14 stall=15278 flush=30 mem=15377 commit=34676
+h 15 stall=15205 flush=28 mem=15488 commit=34749
+h 16 stall=15355 flush=20 mem=15375 commit=34625
+h 17 stall=15354 flush=21 mem=15375 commit=34625
+h 18 stall=15354 flush=21 mem=15375 commit=34625
+h 19 stall=15354 flush=21 mem=15375 commit=34625
+h 20 stall=15355 flush=20 mem=15375 commit=34624
+h 21 stall=15354 flush=21 mem=15375 commit=34626
+h 22 stall=15279 flush=26 mem=15380 commit=34686
+h 23 stall=15177 flush=30 mem=15282 commit=34507
+h 24 stall=15149 flush=32 mem=15260 commit=34532
+h 25 stall=15147 flush=31 mem=15258 commit=34534
+h 26 stall=15354 flush=21 mem=15375 commit=34626
+h 27 stall=15148 flush=31 mem=15259 commit=34534
+h 28 stall=15146 flush=32 mem=15257 commit=34535
+h 29 stall=15312 flush=22 mem=15387 commit=34662
+h 30 stall=8416 flush=18 mem=8575 commit=19193
+h 31 stall=0 flush=0 mem=0 commit=0
+sim\tb_coremark.v:504: $finish called at 15276445000 (1ps)
