@@ -96,12 +96,12 @@ module cpu_tb_riscv;
 `endif
 
     // 自证配置：t=0 打印本测试台编译进去的配置，每份日志首行自带口径。
-    // [lane B 访存 · A1] LANEB_ST 没有对应的 -D 宏（本轮它就是 core.v 的
-    //   parameter 默认值，翻档 = 改默认值 + 重跑），所以直接hierarchical 读实例参数 ——
-    //   这样"日志里写的"永远是"实际综合进去的"。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d A_EXT=%0d LANEB_MEM=%0d LANEB_ST=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, AEXT_OUT, LANEBMEM_OUT,
-                     u_core.LANEB_ST);
+    // [!] 2026-10-16 撤档：A1（lane B 放 store，parameter `LANEB_ST`）已判定【不采纳】，
+    //   实现也已从树里退回 —— 完整实现/量化数据/否掉的理由见
+    //   `doc/reports/2026-10-16_a1_laneb_store.md`，提交 `a5d6682` 留在 git 历史里。
+    //   **所以自证行里【不再有 LANEB_ST】；哪天又看到它 = A1 被重新启用了。**
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d A_EXT=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, AEXT_OUT, LANEBMEM_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT),
            .A_EXT(AEXT_OUT), .LANEB_MEM(LANEBMEM_OUT)) u_core (

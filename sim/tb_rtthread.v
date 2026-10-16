@@ -117,9 +117,9 @@ module tb_rtthread;
 
     // 自证配置：t=0 打印本测试台编译进去的开关，每份日志首行自带口径
     //（与 tb_riscv/tb_coremark 同一格式，回归脚本靠它核对，见 CLAUDE.md 约定 37）。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d A_EXT=%0d LANEB_MEM=%0d LANEB_ST=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, AEXT_OUT, LANEBMEM_OUT,
-                     u_soc.LANEB_ST);
+    // [!] 2026-10-16 撤档：A1（`LANEB_ST`）判定【不采纳】并已退回，自证行不再有 LANEB_ST。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d A_EXT=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, AEXT_OUT, LANEBMEM_OUT);
 
     cpu_top #(.DUAL_ISSUE(DUAL_OUT), .DCACHE_EN(DCACHE_OUT),
               .ICACHE_EN(ICACHE_OUT), .EARLY_LD(EARLYLD_OUT),

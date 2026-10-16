@@ -90,15 +90,6 @@ module cpu_top (
     //     仿真侧由 tb_* 的 -DLANEBMEM 显式决定（tb_rtthread 的 SIM CONFIG 自证）。
     parameter LANEB_MEM  = 1;
 
-    // ---- [lane B 访存 · A1] lane B 放 store（透传给 core）。**默认 0 = 不采纳** ----
-    // 0 = 关（交付档口径）：与"lane B 只放 load"【仿真逐位相同】（217,088 + 四 CRC）。
-    // 1 = 开：lane B 可放 store（功能全绿、−0.181% 拍数），但 **LUT +122 且作废了钉住的
-    //     `gplace_seed 5` 余量**（+0.277 → −0.156 ns，85 MHz 下 5 个失败端点）
-    //     ⇒ 2026-10-16 量化评估判定 **本轮不换交付档**。
-    //     完整证据与启用前置条件见 `doc/reports/2026-10-16_a1_laneb_store.md`。
-    // [!] 只在 LANEB_MEM=1 时才有意义（core.v 里 store 腿嵌套在 LANEB_MEM 之内）。
-    parameter LANEB_ST   = 0;
-
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -180,7 +171,7 @@ module cpu_top (
 
     core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE),
            .EARLY_LD(EARLY_LD), .A_EXT(A_EXT),
-           .LANEB_MEM(LANEB_MEM), .LANEB_ST(LANEB_ST)) u_core (
+           .LANEB_MEM(LANEB_MEM)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),

@@ -82,10 +82,10 @@ module coremark_tb;
 `endif
 
     // 自证配置：t=0 打印本测试台编译进去的 DUAL_ISSUE，每份日志首行自带口径。
-    // [lane B 访存 · A1] LANEB_ST 直接读实例参数（它没有 -D 宏，见 tb_riscv.v 的说明）。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d LANEB_MEM=%0d LANEB_ST=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, LANEBMEM_OUT,
-                     u_core.LANEB_ST);
+    // [!] 2026-10-16 撤档：A1（`LANEB_ST`）判定【不采纳】并已退回，自证行不再有 LANEB_ST
+    //   （理由与证据见 tb_riscv.v 同处注释 + `doc/reports/2026-10-16_a1_laneb_store.md`）。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d BTB_EN=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, BTB_OUT, LANEBMEM_OUT);
 
     core #(.DUAL_ISSUE(DUAL_OUT), .EARLY_LD(EARLYLD_OUT), .BTB_EN(BTB_OUT),
            .LANEB_MEM(LANEBMEM_OUT)) u_core (
@@ -753,10 +753,10 @@ module coremark_tb;
     //    提前读口上，可以先借 f_mem 免掉）—— f_mem 是它自己在 ID 级算出来的标志。
     wire        a_bad_memld = (u_core.ex_mem_rd != 5'd0) && (u_core.ex_mem_rd == u_core.rs1) &&
                               (u_core.ex_mem_mem_read || u_core.ex_mem_is_amo) && !f_mem;
-    // [lane B 访存 · A1] 判据③ 的"紧前一条"在双发射下是【两个 lane 都在前】：
-    //   ID 级那条 load 紧跟在 lane B 之后 ⇒ lane B 是 store 时同样要挡住快通路。
-    //   本模型必须与 core.v 的 ld_bad_st 逐位同款，否则 +LDANAL 会报假不等（a_mm 计数）。
-    wire        a_bad_store = u_core.id_ex_mem_write || u_core.id_ex_b_mem_write;
+    // [!] 2026-10-16 撤档：这里原来还并了 `u_core.id_ex_b_mem_write`（A1 的 lane B store）。
+    //   A1 已判定【不采纳】、实现已退回 ⇒ core.v 的 `ld_bad_st` 只剩 lane A
+    //   （`ld_bad_st = id_ex_mem_write`），本模型必须逐位同款，否则 +LDANAL 报假不等。
+    wire        a_bad_store = u_core.id_ex_mem_write;
     wire        a_bad_amo   = u_core.id_ex_is_amo || u_core.ex_mem_is_amo;
     wire [2:0]  a_code = a_bad_ex    ? 3'd1 :
                          a_bad_memld ? 3'd2 :

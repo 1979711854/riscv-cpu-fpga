@@ -74,8 +74,9 @@ module tb_gomoku;
     // [!] 本测试台【不给 cpu_top 传参】⇒ 这些值就是 rtl/top/cpu_top.v 的 parameter 默认值。
     //     2026-10-16 P3 起 LANEB_MEM 默认 1（= 1 档，lane B 放 load）⇒ 本台跑的就是当前生产档；
     //     想跑 0 档得改 cpu_top.v 的默认值（这也是"板上哪一档、仿真哪一档"对不上时的第一个检查点）。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d EARLY_LD=%0d LANEB_MEM=%0d LANEB_ST=%0d (来自 cpu_top.v 的默认值)",
-                     u_soc.DUAL_ISSUE, u_soc.EARLY_LD, u_soc.LANEB_MEM, u_soc.LANEB_ST);
+    // [!] 2026-10-16 撤档：A1（`LANEB_ST`）判定【不采纳】并已退回，自证行不再有 LANEB_ST。
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d EARLY_LD=%0d LANEB_MEM=%0d (来自 cpu_top.v 的默认值)",
+                     u_soc.DUAL_ISSUE, u_soc.EARLY_LD, u_soc.LANEB_MEM);
 
 
     // video_top 那层壳（pll_video / rgb2tmds / OSERDES）是 PDS 专有原语，
