@@ -232,10 +232,47 @@ AMO 释放拍 `mem_ready_int = b_ready && !amo_hold` 的交互有关）。复现
 **分数不变。** P2 是"接线在位、开关没翻"，四条基线的 `Total ticks` 逐位相同：
 
 * @85.0051 MHz：**370.2 分**（229,597 拍/迭代；`1e6/229597 = 4.3555 CoreMark/MHz`）；
-* 板上最近实测：**370.31 分**（`55fae69e`，rev1023，`RTL=0x20261023`）；
-* **LUT / Fmax 本会话未重新综合测量** —— 预计 LUT **略增**（新增 13 bit 级间寄存器 +
-  访存口/前递/异常各处 mux 腿，综合器无法证明它们不可达），PDS 测量是 P4 闸门项
-  （方案 A 盈亏平衡 **82.09 MHz**，已按新计分规则降级为"看掉多少、值不值"）。
+* 板上最近实测：**370.31 分**（`55fae69e`，rev1023，`RTL=0x20261023`）。
+
+### 9.1 PDS 面积/时序实测（2026-10-16 rev1024 构建，vs rev1023 交付档）
+
+**构建口径与 rev1023 交付档逐项一致**（`p2_build_rev1024.log` 自证）：
+`DUAL_ISSUE=1 / A_EXT=0 / LANEB_MEM=0 / EARLY_LD=1 / BTB_EN=1`，CoreMark `ITER=4332`，
+`mem.hex` 17104 行 sha256 校验一致后进 PDS。
+
+| 指标 | rev1023（交付 `55fae69e`） | rev1024（本次构建） | Δ |
+|---|---|---|---|
+| LUT | 7,663 | **7,918** | **+255（+3.3%）** |
+| FF | 3,675 | 3,691 | +16 |
+| DRM / APM / DistRAM | 101.5 / 4 / 572 | 101.5 / 4 / 572 | 0 |
+| CPU 域 WNS @85.0051 MHz | **+0.330 ns**（0 失败端点） | **−0.165 ns**（20 端点，TNS −1.096） | **−0.495 ns** |
+| CPU 域可达 Fmax | 87.4585 MHz | **83.8293 MHz**（最优 seed_2） | −3.63 MHz |
+| 跨域 CPU→pix_clk WNS | −1.048 ns（21 端点） | −1.091 ns（seed_2） | 既有失败项，性质不变 |
+
+口径与取证：
+
+* LUT/FF 取本次构建 Mapping Summary（`p2_build_rev1024.log:960-963`；rev1023 值见
+  `2026-10-15_session_state_p0p1.md` §3 表）。余量增量方向与本节旧预测一致（综合器
+  无法证明新逻辑不可达），幅度 +255 LUT / +16 FF。
+* CPU 域时序取 P&R 多 seed 的 `place_route/seed_*/cpu_top_board.rtr`。**注意：本次构建
+  在 P&R 中途被打断**（log 止于 seed 3/8，仅 seed 0-3 完成，未跑 report_timing /
+  generate_bitstream）⇒ 四 seed 的 CPU 域 Fmax 为 77.67 / 80.44 / **83.83** / 82.97 MHz，
+  表中取最优 seed_2。**seed 间波动达 6 MHz**，−0.495 ns 里有多少是 P2 新增逻辑、
+  多少是 P&R 噪声，要等补跑完整 8 seed + report_timing 才能定量。
+* seed_2 的 CPU 域关键路径**不在** P2 新逻辑上：video palette DRAM 读出 →
+  `vid_rdata` → load 半字符号扩展 mux → `rs2_val` → 分支比较（`slt`）→ `branch_taken`
+  → `b_mem_unaligned` → `if_addr` → imem 地址（16 级逻辑，route 延时占 59%）——
+  本设计的既有路径；余量下降更可能来自 +255 LUT 的布线拥塞。
+* **`.sbit` 未生成**：`pds_shell -run gen_bit_stream` 中断在 P&R，
+  `pds/RV32I_1/generate_bitstream/cpu_top_board.sbit` 未更新；最新交付位流仍是 rev1023 的
+  `bitstreams/coremark_dual_noaext_ms_earlyld_a1_ras_btb_85mhz_rev1023_55fae69e.sbit`。
+  rev1024 位流要在 PDS 补跑完整流程（列为 P4 项）。
+* `.err` 只有 §8 已记录的那行 RWX 链接警告，无新信息。
+
+**对 P3/P4 的意义**：开关没翻就已吃掉 **0.495 ns** 余量 ⇒ `LANEB_MEM=1` 后 85 MHz 档
+大概率守不住（虽然最优 seed 的 83.83 MHz 仍高于方案 A 盈亏平衡 **82.09 MHz**）。按新计分
+规则该闸门已降级为"看掉多少、值不值"，但翻开关后**必须重量时序**（P4 闸门项），
+且补跑时用满 8 seed 再比。
 
 ---
 
