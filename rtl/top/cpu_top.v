@@ -83,6 +83,13 @@ module cpu_top (
     //   与 `sim\tb_amo_int.v` 需要它。
     parameter A_EXT      = 0;
 
+    // ---- [lane B 访存] lane B 放 load（透传给 core）。**默认 1 = 开** ----
+    // 2026-10-16 P3 翻转（此前 P2 阶段为 0）。0 = 关（lane B 只放纯 ALU，逐位回退）；
+    // 1 = 开：lane B 可放 load（每对最多一条访存，lane B 一律走旧通路）。
+    // [!] 与 DUAL_ISSUE 同一套玩法：PDS 命令行传不了 -D，板级靠这个默认值；
+    //     仿真侧由 tb_* 的 -DLANEBMEM 显式决定（tb_rtthread 的 SIM CONFIG 自证）。
+    parameter LANEB_MEM  = 1;
+
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
     wire [13:0] imem_addr;
     wire [31:0] imem_rd;
@@ -163,7 +170,8 @@ module cpu_top (
     );
 
     core #(.DUAL_ISSUE(DUAL_ISSUE), .AGU_PROBE(AGU_PROBE),
-           .EARLY_LD(EARLY_LD), .A_EXT(A_EXT)) u_core (
+           .EARLY_LD(EARLY_LD), .A_EXT(A_EXT),
+           .LANEB_MEM(LANEB_MEM)) u_core (
         .clk         (clk),
         .resetn      (resetn),
         .pc          (pc),

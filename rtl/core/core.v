@@ -32,17 +32,27 @@ module core #(
     parameter A_EXT = 0,
 
     // ---- [lane B 访存] lane B 放 load（任务书方案 A：只放 load，不放 store）----
-    // 0 = 关（**默认**，P2 阶段）：行为与"lane B 只放纯 ALU"【逐位相同】。本阶段新增的
-    //      流水线寄存器、访存口 mux 腿、前递门控全部"接线在位但不可达"——
+    // **1 = 开（默认，2026-10-16 P3 翻转）**：lane B 可放 load，且【顺带收窄
+    //      pair_now 的 M 扩展排除】（p_f7_b 只对 OP_REG 生效，见 pair_now 处说明）。
+    //      PDS/上板本参数走默认值（cpu_top 不传）⇒ 交付位流即 1 档；仿真侧另有
+    //      `-DLANEBMEM` 显式开关（tb 用 localparam 覆盖），保留 0/1 两档对照能力。
+    // 0 = 关（P2 阶段值，仅作回退/对照）：行为与"lane B 只放纯 ALU"【逐位相同】——
+    //      流水线寄存器、访存口 mux 腿、前递门控全部"接线在位但不可达"，
     //      id_ex_b_mem_read 恒 0 ⇒ b_mem_sel / load-use 停顿 / 未对齐异常 /
-    //      WB 解包全部折叠回基线行为。判据 = 四条 CoreMark 基线逐位不变
-    //      （doc/reports/2026-10-15_laneb_mem_plan.md §6 的 P2 行）。
-    // 1 = 开（P3）：lane B 可放 load，且【顺带收窄 pair_now 的 M 扩展排除】
-    //      （p_f7_b 只对 OP_REG 生效，见 pair_now 处的说明）。
+    //      WB 解包全部折叠回基线行为（判据 = 四条 CoreMark 基线逐位不变）。
     // [!] lane B 的 load 一律走【旧通路】（慢路径），永不使用 EARLY_LD 快通路 ——
     //     收益全部来自配对率，不为它加第二根 ld_addr / 第二份 ld_snap / 第 4 份
     //     阵列（任务书 §3；快通路本身收益为 0 却全落在最贵的时序链上）。
-    parameter LANEB_MEM = 0
+    // [!] 本参数同时是 2026-10-16 那 7 处**时序门控**的判据：0 档综合器把
+    //     lane B 的访存消费者整条常量折叠（恢复 rev1023 网表），1 档语义不变。
+    // [!] **1 档的 PDS 实测（2026-10-16 P3）：CPU 域 WNS −0.701 ns / Fmax 80.22 MHz
+    //     @85.0051 MHz ⇒ 85 MHz 生产档过不了 P4 时序闸门**。关键路径是
+    //     video palette DRAM → lane B load 解包(wb_data_b) → lane B ALU(alu_result_b)
+    //     → load_misaligned_b → if_addr_d → imem_addr（16 级）——
+    //     即 P2 任务书预警过的"alu_result_b 锥并进取指 mux"，1 档下它是活逻辑、
+    //     门控折叠不掉。**在摘掉这条腿（P3.5）之前，别用本默认值出 85 MHz 交付位流**；
+    //     交付仍是 rev1023 的 `55fae69e`（0 档口径）。
+    parameter LANEB_MEM = 1
 ) (
     input  wire        clk,
     input  wire        resetn,

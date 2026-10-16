@@ -99,8 +99,19 @@ module csr_file (
     //     2026_1011  分支预测重定向提前到到达级（阶段1：taken 分支省 1 拍气泡）
     //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
     //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
+    //     2026_1025  [P3] lane B 访存**开关翻转**：`parameter LANEB_MEM` 默认 0→1
+    //                （PDS/上板口径），lane B 可以放 load。7 处时序门控保留：
+    //                0 档仍折成常量（rev1023 网表可复现），1 档语义不变。
+    //                功能全绿：CoreMark 217,088 拍（−5.45%，效率 4.3555→4.6064
+    //                CoreMark/MHz）、四 CRC 逐位一致、riscv-tests 49/1/0、own_tests
+    //                6/0（含 R1/R2/R5 定向用例）、RT-Thread 四配置全 PASS。
+    //                [!] **PDS 85 MHz 时序不过**：CPU 域 WNS −0.701 ns / Fmax 80.22 MHz
+    //                （P4 闸门未过）⇒ 交付位流仍是 rev1023 的 55fae69e（0 档）；
+    //                修 fetch 路径上的 `alu_result_b` 锥（P3.5）之前，
+    //                **不要用本默认值出 85 MHz 交付位流**。
+    //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1024;   // 2026-10-15 lane B 访存管道落地（LANEB_MEM=0，P2）
+    localparam [31:0] DESIGN_REV = 32'h2026_1025;   // 2026-10-16 P3：LANEB_MEM 默认翻 1（lane B 放 load）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,

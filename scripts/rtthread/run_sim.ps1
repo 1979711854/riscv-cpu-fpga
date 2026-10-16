@@ -25,6 +25,7 @@
        -ICache       = 追加 -DICACHE（ICACHE_EN=1）
        -Single       = 退回单发射（不传 -DDUAL）
        -NoEarlyLd    = 退回 EARLY_LD=0（不传 -DEARLYLD）
+       -NoLanebMem   = 退回 LANEB_MEM=0（不传 -DLANEBMEM）；**默认【开】** = P3 后的板上口径
        -RxTrace      = 逐字节打 rx + pc（挂死定位用，默认关）
        -PcTrace      = PC 逐拍落盘 rtthread_pctrace.txt（对拍找第一条分叉，默认关）
        -ITrace       = IF/ID 逐拍落盘 rtthread_itrace.txt（看指令/配对/重定向，默认关）
@@ -41,6 +42,7 @@ param(
     [switch]$ICache,     # ICACHE_EN=1（追加 -DICACHE）
     [switch]$Single,     # 退回单发射（不传 -DDUAL）
     [switch]$NoEarlyLd,  # 退回 EARLY_LD=0（不传 -DEARLYLD）
+    [switch]$NoLanebMem, # 退回 LANEB_MEM=0（不传 -DLANEBMEM）；默认【开】= cpu_top/core 的板上默认
     [switch]$RxTrace,    # 逐字节打 rx + pc（挂死定位用；默认关，开了会刷 168 行）
     [switch]$PcTrace,    # PC 逐拍落盘（对拍定位用；默认关，一份约 40MB）
     [switch]$ITrace,     # IF/ID 逐拍落盘（看指令进 ID / 配对 / 重定向；默认关）
@@ -110,6 +112,8 @@ $inc = @("-I", (Join-Path $Repo "rtl\core"), "-I", (Join-Path $Repo "rtl\periph"
 $defs = @()
 if (-not $Single)    { $defs += "-DDUAL" }
 if (-not $NoEarlyLd) { $defs += "-DEARLYLD" }
+# [lane B 访存] 默认开（-DLANEBMEM）—— 与 cpu_top/core 的 LANEB_MEM 默认值一致（P3）。
+if (-not $NoLanebMem) { $defs += "-DLANEBMEM" }
 if ($DCache)         { $defs += "-DDCACHE" }
 if ($ICache)         { $defs += "-DICACHE" }
 # [面积优化] A_EXT 默认关（= 生产档）。只有 -Atomic（rv32ima 硬件原子固件）才开 ——
@@ -126,7 +130,8 @@ $cfgDCache = if ($DCache)    { 1 } else { 0 }
 $cfgICache = if ($ICache)    { 1 } else { 0 }
 $cfgEarly  = if ($NoEarlyLd) { 0 } else { 1 }
 $cfgAext   = if ($Atomic)    { 1 } else { 0 }
-Write-Host "    RTL 配置：SIM CONFIG: DUAL_ISSUE=$cfgDual DCACHE_EN=$cfgDCache ICACHE_EN=$cfgICache EARLY_LD=$cfgEarly A_EXT=$cfgAext" -ForegroundColor Cyan
+$cfgLaneb  = if ($NoLanebMem){ 0 } else { 1 }
+Write-Host "    RTL 配置：SIM CONFIG: DUAL_ISSUE=$cfgDual DCACHE_EN=$cfgDCache ICACHE_EN=$cfgICache EARLY_LD=$cfgEarly A_EXT=$cfgAext LANEB_MEM=$cfgLaneb" -ForegroundColor Cyan
 
 $ivOut = & iverilog -g2012 @defs @inc -s tb_rtthread -o $vvp @srcs 2>&1
 $ivOut | ForEach-Object { Write-Host $_ }

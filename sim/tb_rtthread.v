@@ -106,15 +106,23 @@ module tb_rtthread;
 `else
     localparam AEXT_OUT = 0;
 `endif
+// [lane B 访存] lane B 放 load：默认 0（与 P2 对照口径一致），-DLANEBMEM 才 1。
+//   [!] 2026-10-16 P3 已把 core/cpu_top 的 LANEB_MEM 默认值翻 1 ⇒ 本测试台若
+//   【不传】宏就会与板上口径不一致（跑的是 0 档）。回归脚本默认传 -DLANEBMEM。
+`ifdef LANEBMEM
+    localparam LANEBMEM_OUT = 1;
+`else
+    localparam LANEBMEM_OUT = 0;
+`endif
 
     // 自证配置：t=0 打印本测试台编译进去的开关，每份日志首行自带口径
     //（与 tb_riscv/tb_coremark 同一格式，回归脚本靠它核对，见 CLAUDE.md 约定 37）。
-    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d A_EXT=%0d",
-                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, AEXT_OUT);
+    initial $display("SIM CONFIG: DUAL_ISSUE=%0d DCACHE_EN=%0d ICACHE_EN=%0d EARLY_LD=%0d A_EXT=%0d LANEB_MEM=%0d",
+                     DUAL_OUT, DCACHE_OUT, ICACHE_OUT, EARLYLD_OUT, AEXT_OUT, LANEBMEM_OUT);
 
     cpu_top #(.DUAL_ISSUE(DUAL_OUT), .DCACHE_EN(DCACHE_OUT),
               .ICACHE_EN(ICACHE_OUT), .EARLY_LD(EARLYLD_OUT),
-              .A_EXT(AEXT_OUT)) u_soc (
+              .A_EXT(AEXT_OUT), .LANEB_MEM(LANEBMEM_OUT)) u_soc (
         .clk        (clk),
         .resetn     (resetn),
         .pc         (pc),
