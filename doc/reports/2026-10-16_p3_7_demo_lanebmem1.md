@@ -182,6 +182,8 @@ scripts\capture_seed_timing.ps1 -Parse pds\_capture_p36
 | 8 | 更多 place seed（40 个软顶 ≈ +0.28，判据 +0.3 差 0.023）| 概率很低 | 每 8 个 ≈ 10 min | 无 | ☆ 不值 |
 | 9 | 提频（85.0051 → 87 MHz）| +2.4% 分 | PLL 三处联动 + 重测 | **不值**（Fmax 余量只剩 0.055 MHz）| ☆ 不做 |
 
+| 10 | **ILA 波形取证**（用户要求：**等所有 CPU 优化定版后再抓**）| 答辩/§5 的波形证据 | 半天（插 ILA + 重综合 + 抓取）| 低 | ★ 定版后做 —— **现在别做**（RTL 一改波形就作废）|
+
 ### 7.1 队友新版 app 来的 SOP（20 分钟）
 
 1. **只看 `git diff`，别整包覆盖**：`scripts/gomoku/{board,hw_port,video_port}.c` 里有我们的板级适配（`CPU_HZ`、寄存器映射）。
@@ -216,29 +218,66 @@ scripts\capture_seed_timing.ps1 -Parse pds\_capture_p36
 
 ## 9. 下一会话开场提示词（复制粘贴）
 
+> 用户 2026-10-16 定的下阶段方针：**一边做 CPU 优化（效率 + Fmax），一边写论文正文**；
+> 录屏/照片**等队友新版 app**（现在不能录）；**ILA 波形等所有 CPU 优化定版后**再抓（别提前做，RTL 一改就作废）。
+
 ```
-接 P3.7（HEAD 以 `git log --oneline -1` 为准；P3.7 里程碑提交见本报告 §8）。
-上一会话已收口：演示档切 1 档 —— 位流 e51ac9e5（CPU 域 +0.277 ns / Fmax 87.0549 MHz，同跑分档布局，
-钉 gplace_seed 5），2026-10-16 16:30 上板四条判据全过（日志 doc/board/uart_20261016_163009.txt）；
-gomoku 1 档功能仿真补齐 6/6 PASS（doc/reports/2026-10-16_gomoku_g3_lanebmem1_sim.txt）。
-⇒ 两个交付档现在同为 rev1027 / LANEB_MEM=1（跑分 c6af65be 391.66 / 演示 e51ac9e5）。
+接 P3.7（HEAD 以 `git log --oneline -1` 为准；P3.7 里程碑提交 = a806d8e）。
+现状收口：两个交付档同为 1 档 rev1027 / LANEB_MEM=1 —— 跑分 c6af65be（391.66 分，CPU 域 +0.277 ns /
+Fmax 87.0549 MHz，钉 gplace_seed 5）、演示 e51ac9e5（2026-10-16 16:30 上板四条判据全过，
+日志 doc/board/uart_20261016_163009.txt）；gomoku 1 档功能仿真 6/6 PASS
+（doc/reports/2026-10-16_gomoku_g3_lanebmem1_sim.txt）。⇒ "1 档统一定版"成立。
 
-先读：
-1) doc/reports/2026-10-16_p3_7_demo_lanebmem1.md  ← §7 是"下一步账本"（含队友新版 app 的 SOP）
-2) doc/reports/2026-10-16_handoff_p3_6.md（上一条线）
-3) doc/paper/论文框架_v1_20261012.md §0/§0.1   ← 全项目唯一数字口径
+本会话主线 = 两条并行推进（一条卡在 PDS/仿真上时就切另一条）：
+(A) CPU 优化：**效率（主分，唯一主战场）优先，其次 Fmax（指标 2）**；
+(B) 论文正文：先写不依赖未来结果、也不依赖队友新版的章节。
+**明确不做**：录屏/照片（等队友新版 app，见下文 SOP）；ILA 波形（等所有 RTL 优化定版后再抓）。
 
-本会话建议目标（按优先级，做完一个就落盘）：
-(A) 论文与评审材料：§3 微架构章按 1 档口径重写 + 表 6 补 lane B 一级 + **录像/照片（至今为零）**；
-(B) 若队友的五子棋新版到了 → 按 §7.1 的 SOP 整合（守接口面 / expectLines / 重出 / 四条判据），
-    绝不烧他给的 .sbit；
-(C) 若还有余力且想吃主分：效率侧（lane B 放 store / 配对率）—— 唯一主战场，但要全量回归。
+先读（按顺序）：
+1) doc/reports/2026-10-16_p3_7_demo_lanebmem1.md   ← §7 下一步账本（含优化候选表 + §7.1 队友 SOP）
+2) doc/reports/2026-10-16_handoff_p3_6.md          ← 上一条线 + §6 坑
+3) doc/reports/2026-10-16_p3_6_margin_plan.md      ← 关键路径三处瓶颈的全量数据
+4) doc/paper/论文框架_v1_20261012.md §0/§0.1（唯一数字口径）+ §3（章节提纲）+ §4（图表空位）+ §5（完稿前置）
+5) doc/skills/riscv-cpu-fpga/SKILL.md §1（口径锚）+ §8（避坑）
+
+(A) CPU 优化 —— 建议顺序（每条都走"先仿真对拍 → 再 PDS → 再全量回归 → 再上板"）
+ A1【效率，收益最大】**lane B 放 store**（把 1 档的"lane B 放 load"对称到 store）。落点已探明（全在
+    rtl/core/core.v）：lane B control 译码白名单 545-547；配对白名单/判据 810-812（p_opcode_b_ok）、
+    756-757（p_ld_b 只有 load）、814-828（p_rd_b != 5'd0 等）；写口三条腿都缺 lane B ——
+    335（mem_we）、1538-1564（mem_wdata / mem_byte_en）、353 地址 mux 已有 B 腿但只对读；
+    974（ld_bad_st = id_ex_mem_write）要并上 lane B 那一支，否则 store→load 快通路会读旧值。
+    硬约束：**每对至多一条访存**（827 的 !(p_mem_a && p_ld_b) 要改成同时禁 p_mem_b），
+    且 dmem 只有一套写口（rtl/bus/mem_bus.v:52-55）⇒ 同拍不可能两条 store。
+    预期 **+1~3%（先仿真数拍数，别拍脑袋）**；风险中（写口/前递/ld_bad_st 判据，错了是静默错值）
+    ⇒ 必须 riscv-tests 49/1/0 + own_tests 6 + CoreMark 四 CRC 与 baseline 逐位一致 + rtthread/gomoku 端到端。
+ A2【效率】**配对率扩展**：core.v:814-828。**先统计** CoreMark 里"因规则被拒的相邻指令对"占比（跑仿真加计数器），
+    再决定放宽哪条 —— 每条放宽都要有等价性论证，别盲动。
+ A3【效率】BTB 扩容（任务书 P1-3 建议 256→1024/4096）：硬编码在 core.v:638-640 / 776 / 1360（BTB 无参数），
+    RAS_DEPTH=16 在 core.v:619。先估面积/Fmax 代价再决定（LUT 现 7,753 = 4.85%）。
+ A4【Fmax，指标 2】只做确定性最高的那条：摘 **1.76 ns 跨模块投放线**（lane B load 数据源打一拍，
+    见 margin_plan 的"关键路径三处瓶颈"）。注意访存延迟 +1 拍会改写每迭代周期数 ⇒ **217,088 要重测**，
+    并同步三处口径。① 定向窄 region **不做**（上限 +0.02~0.05 ns，29% die 已有确定性负面前科）。
+ A5【收口】任何 RTL 改动 ⇒ **DESIGN_REV 递增**；成功后 **两颗位流都要重出**（coremark + rtthread，
+    都用 build_bitstream.ps1 唯一入口，.pds 保持钉 gplace_seed 5）+ **两颗都重新上板**（跑分四条判据 /
+    演示四条判据）+ 五处口径同步 + bitstreams/README 登记 + 旧档降为历史参照。
+
+(B) 论文正文（与 (A) 并行；建议先在"等 PDS/等仿真"的空档写）
+ 顺序：§3.3 第 3 章 微架构（重心：双发射配对规则、lane B 访存管道、RAS/BTB、EARLY_LD —— 把
+ "设计—收益—代价"讲成闭环，含 0 档→1 档 +5.76% 这一级的完整链路）→ §3.6 第 6 章 性能分析
+ （按 §0.1 的 1 档口径：391.66 / 4.6064 / Fmax 87.0549 / LUT 7,753 = 4.85%，**三个口径必须同时给**，
+ 主动讲"1 升 2 降"）→ §3.5 第 5 章 验证（riscv-tests 49/1/0 + own_tests 6 + 四 CRC 逐位 + 板级四条判据，
+ 每一条都有可引用的日志）→ §3.1/3.2/3.4/3.8。
+ §3.7 应用演示章 + §4 的照片/波形空位 **留到队友新版 app 与 ILA 之后**（现在别填）。
+ 铁律：论文里每个数字都要能在 §0/§0.1 找到同口径来源；改数字 = 五处同步。
+
+队友新版 app 到的 SOP（本次先别准备录屏）：见本报告 §7.1 —— 只看 git diff / 守 gomoku_run 等接口面 /
+.text 变了同步 expectLines / 重出 + 重上板 / **绝不烧他给的 .sbit**。RTL 没动 ⇒ CPU 域仍 +0.277 ns。
 
 纪律与坑：
-- 数字口径 = 论文框架 §0/§0.1 + CLAUDE.md 提交档表 + bitstreams/README + 板级 README + SKILL §1，改数字多处同步
-  （SKILL §1 已改成"只留锚"，别再把整张表复制过去）。
-- 钉 gplace_seed（单 seed）时 P&R 阶段不出 .rtr，报告要从 report_timing 收（工具 capture_seed_timing.ps1 已兜底）。
-- 想拿多布局分布：把 .pds 的 gplace_seed 换回 gplace_times 8，只在流程空闲时改，跑完复核。
-- .sbit 的 md5 不是布局指纹；引用位流给"md5 + 来源报告 + 日志时间"。
-- 交付纪律：上板前重跑 build_bitstream.ps1（唯一入口）；长仿真按实测估时（本机 168 ms 仿真时间 ≈ 24 min 墙钟）。
+- 钉 gplace_seed（单 seed）时 P&R 阶段不出 .rtr ⇒ 用 scripts\capture_seed_timing.ps1 收（会从 report_timing 兜底）。
+- 想拿多布局分布：把 .pds 的 gplace_seed 换回 gplace_times 8，只在流程空闲时改、跑完复核。
+- 改 .ps1 必须保持 UTF-8 BOM（PS 5.1 否则按 GBK 读中文注释）。
+- 长仿真按实测估时：本机 168 ms 仿真时间 ≈ 24 min 墙钟（iverilog 慢，后台 vvp 只拿到 ~7% 一核）。
+- .sbit 的 md5 不是布局指纹；引用位流给"md5 + 来源报告 + 日志时间"三件套。
+- 交付纪律：上板前重跑 build_bitstream.ps1（唯一入口，含 mem.hex sha256/行数守卫）；commit 不 push。
 ```
