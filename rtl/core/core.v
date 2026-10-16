@@ -836,7 +836,14 @@ module core #(
     //     14 位宽里做，本身不错，但一旦接收端也是窄的就会截位 —— 见端口声明处的
     //     [!]。这里写全宽是让"谁在哪个宽度上算"一目了然，两边一起改不难。
     //     DUAL_ISSUE=0 时它在核内没有任何消费者，综合会连同 A2 口的读结果一起裁掉。
-    assign imem_addr2 = imem_addr + 14'd1;
+    // [!] 2026-10-16 P3.5(B)：必须从 `fetch_addr[15:2]` 直接算，**不要**写成
+    //     `imem_addr + 14'd1` —— 后者把这条 14 位加法【串】在 imem_addr 之后：
+    //     关键路径多一级 LUT + 一条进 BRAM 的长线（P3.5(A) 后的实测路径：
+    //     if_addr_d → imem_addr → N247_1_8/COUT → imem_addr2[11] → DRM ADB0，
+    //     尾段 0.299 + 0.157 + 1.166 ns）。两式逐位等价（都是 14 位模 2^14 加法，
+    //     `imem_addr` 恒 = `fetch_addr[15:2]`），改写只是把"两个平级加法器"的
+    //     自由度还给综合器，语义零变化。
+    assign imem_addr2 = fetch_addr[15:2] + 14'd1;
 
     // ================= ID/EX =================
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
@@ -1391,7 +1398,18 @@ module core #(
     //   [!] lane B 是 load 时 lane A 只可能是 ALU/branch/jal/jalr/CSR/SYSTEM
     //   （pair_now 排掉 p_mem_a）—— 这些在"先陷异常、mret 后整对重放"下都幂等，
     //   安全性论证见 EX/MEM 段 lane B 锁存处的注释。
-    wire [1:0] b_addr_low = alu_result_b[1:0];
+    //   [P3.5 2026-10-16] 未对齐判定只用到地址低 2 位 ⇒ 改用 2 位窄加法，
+    //   把 32 位 `alu_result_b` 加法器锥从取指路径上摘掉（P3 的 PDS 关键路径 16 级：
+    //   vid_rdata → wb_data_b → b_alu_a → u_alu_b(32 位加法器) → alu_result_b[0]
+    //   → load_misaligned_b → if_addr_d → imem_addr → imem_addr2 → BRAM）。
+    //   等价性（严格）：OP_LOAD 的译码是 alu_a_sel=0 / alu_b_sel=1 / alu_op=ADD
+    //   （control.v 的 OP_LOAD 分支不写 alu_op，取 always 块默认值 5'd0）
+    //   ⇒ b_alu_a=rs1_val_b、b_alu_b=id_ex_b_imm ⇒ alu_result_b ≡ rs1_val_b+id_ex_b_imm；
+    //   低 2 位模 4 加法与全 32 位加法逐位相同（进位不跨出 bit1）。
+    //   且 b_mem_unaligned 只经 load_misaligned_b（已 AND id_ex_b_mem_read）被使用
+    //   ⇒ 只在 lane B 是 load 时有意义，替换不改变任何可观测行为。
+    //   [!] 下方 exc_tval 仍用全 32 位 alu_result_b：它进 CSR 寄存器，不在取指路径。
+    wire [1:0] b_addr_low = rs1_val_b[1:0] + id_ex_b_imm[1:0];
     wire b_mem_unaligned = (id_ex_b_funct3[1:0] == 2'b01) ? b_addr_low[0] :
                            (id_ex_b_funct3[1:0] == 2'b10) ? |b_addr_low : 1'b0;
     wire load_misaligned_b = (LANEB_MEM != 0) && id_ex_b_mem_read && b_mem_unaligned;

@@ -82,6 +82,23 @@
 > 含两处对任务书的勘误（`p_f7_b` 收窄门控在 `LANEB_MEM`；(H) 的 `trap_pc` 原写法会让中断
 > 把 `mepc` 写成 lane B 的 PC）。`DESIGN_REV → 0x2026_1024`。全文：
 > `doc/reports/2026-10-16_session_state_p2.md`。**P3（翻 `LANEB_MEM=1`）是下一个里程碑。**
+>
+> **[!] 2026-10-16 已推进（P3 + P3.5：lane B 放 load → 85 MHz 重新收敛）**：
+> **P3**（`parameter LANEB_MEM` 默认 0→1，`DESIGN_REV → 0x2026_1025`）：功能全绿 —— CoreMark
+> **217,088** 拍 = **4.6064 CoreMark/MHz**（原 229,597/4.3555 ⇒ **+5.76%**）、四 CRC
+> `e9f5/e714/1fd7/8e3a` 逐位一致、riscv-tests **49/1/0**×4 组、own_tests **6/0**、RT-Thread 四配置
+> 全 PASS。但 **PDS 85 MHz 时序不过**：CPU 域 WNS **−0.701 ns** / Fmax 80.22 MHz / LUT 8,029
+> （关键路径 = lane B 的 `alu_result_b` 32 位加法器锥并进取指 mux）⇒ **交付位流当时不变**（rev1023 `55fae69e`）。
+> **P3.5**（摘腿，`DESIGN_REV → 0x2026_1027`）：[A] `b_addr_low = rs1_val_b[1:0] + id_ex_b_imm[1:0]`
+> （lane B 未对齐判定改 2 位窄加法）+ [B] `imem_addr2 = fetch_addr[15:2] + 14'd1`（解耦第二取指地址
+> 加法），两处**严格等价**（[A]：`OP_LOAD ⇒ alu_a_sel=0/alu_b_sel=1/alu_op=ADD`，且 `b_mem_unaligned`
+> 只经 `load_misaligned_b` 使用；[B]：`imem_addr ≡ fetch_addr[15:2]`，同为模 2^14 加法）⇒ 功能判据与
+> P3 逐位相同（217,088 + 四 CRC、own_tests 6/0、riscv-tests 49/1/0、RT-Thread 四配置 PASS）。
+> **[OK] PDS 85 MHz 收敛**：CPU 域 **WNS +0.014 ns / 0 失败端点（19,083）/ Fmax 85.1064 MHz /
+> LUT 7,753**（位流 md5 **`9b58e84c`**，**未上板**）。
+> ⚠ **余量很薄**（rev1023 是 +0.330 ns），上板前建议再做一轮降余量优化或换布局；跨域
+> CPU→`pix_clk` **−1.074 ns / 21 端点**是既有伪影（2026-10-04 报告即 −1.283），**别当回归**。
+> 全文：`doc/reports/2026-10-16_session_state_p3_5.md`（+ 交接 `..._handoff_p3.md`）。
 
 ### 【提交档声明】（2026-10-15 更新 —— 论文/答辩/交付一律按这张表说话）
 
@@ -92,6 +109,7 @@
 |---|---|---|---|---|
 | **★ 提交档（跑分）** | **`55fae69e`** | 双发射 + `EARLY_LD` + **B1-RAS/BTB**，Cache 全关，**A 扩展默认关** | **85.0051 MHz** | **370.31 分**（ITER=4332，`Total ticks 994,412,748` = 11.6980 s，229,550.9 拍/迭代，四 CRC 与仿真逐位一致，`RTL=0x20261023`，日志 `doc/board/uart_20261015_234123.txt`）|
 | 前一档（历史参照） | `f64b977` | 同上但 A 扩展还在 | 85.0051 MHz | 370.23 分（ITER=4332，`Total ticks 994,412,748`，日志 `doc/board/uart_20261014_233933.txt`；与上一行 ticks 逐位相同，0.08 分差是秒表抖动）|
+| **候选档（P3.5，未上板）** | `9b58e84c` | 双发射 + `EARLY_LD` + B1-RAS/BTB + **`LANEB_MEM=1`（lane B 放 load）**，Cache 全关，A 扩展默认关 | 85.0051 MHz | **待上板**：预期 **391.6 分**（ITER=4332 ⇒ 板上 ≈11.06 s）、效率 **4.6064 CoreMark/MHz**（+5.76%）；PDS CPU 域 **+0.014 ns MET（余量薄，19,083 端点）**，`RTL=0x20261027` |
 | 再前一档 | `bcd8fdd2` | 双发射 + `EARLY_LD`，Cache 全关 | 85.0051 MHz | 365.93 分（ITER=4280，`Total ticks 994,229,330` = 11.6961 s）|
 | **★ 提交档（演示）** | **`1e2075e6`** | 同 `55fae69e` RTL（rev1023）+ RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 接 HDMI 真按键下完一局（2026-10-15 23:34 上板，`D18` 常亮）|
 | 前一档（演示，历史参照） | `8894cdcb` | rev1022 + RT-Thread 五子棋固件 | 85.0051 MHz | render/AI 两线程 + `[hb]` 无断 + 邮箱往返真通、对局正常 |

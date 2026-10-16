@@ -109,9 +109,25 @@ module csr_file (
     //                （P4 闸门未过）⇒ 交付位流仍是 rev1023 的 55fae69e（0 档）；
     //                修 fetch 路径上的 `alu_result_b` 锥（P3.5）之前，
     //                **不要用本默认值出 85 MHz 交付位流**。
+    //     2026_1026  [P3.5] lane B 未对齐判定改 2 位窄加法（core.v 的
+    //                `b_addr_low = rs1_val_b[1:0] + id_ex_b_imm[1:0]`）：把 32 位
+    //                `alu_result_b` 加法器锥从取指路径（load_misaligned_b →
+    //                if_addr_d → imem_addr）上摘掉，目标 = 收回 85 MHz 时序。
+    //                严格等价（OP_LOAD ⇒ alu_a_sel=0/alu_b_sel=1/alu_op=ADD，
+    //                且该信号只经 load_misaligned_b 使用）；exc_tval 不用窄值
+    //                （它进 CSR 寄存器、不在取指路径）。CoreMark 语义判据同 1025。
+    //                单独实测（[A]）：CPU 域 WNS −0.701 → **−0.345 ns**、Fmax
+    //                80.22 → 82.58 MHz、LUT 8,029 → 7,763（位流 md5 a3a4d5a7；
+    //                时序仍不过 ⇒ 未上板）。功能判据同 1025（CoreMark 217,088 +
+    //                四 CRC 逐位一致、riscv-tests 49/1/0、own_tests 6/0）。
+    //     2026_1027  [P3.5(B)] `imem_addr2 = fetch_addr[15:2] + 14'd1`：把第二取指
+    //                地址那条 14 位加法从 `imem_addr` 之后【解耦】出来（[A] 之后
+    //                的关键路径尾段 = if_addr_d → imem_addr → COUT → imem_addr2
+    //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
+    //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
     //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1025;   // 2026-10-16 P3：LANEB_MEM 默认翻 1（lane B 放 load）
+    localparam [31:0] DESIGN_REV = 32'h2026_1027;   // 2026-10-16 P3.5：摘 alu_result_b 腿 + imem_addr2 解耦
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
