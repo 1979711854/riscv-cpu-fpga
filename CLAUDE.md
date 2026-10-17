@@ -14,7 +14,9 @@
   > CPU 域 **+0.304 ns / 0 失败端点 / Fmax 78.3269**、LUT **7,740**、`All Constraints Met`，
   > 板上双路径（默认五子棋 / 按住 SW6 进 CoreMark）已验证。**唯一数字源** `doc/reports/2026-10-17_delivery_rev1028.md`。
   > **候选 rev1029 `c642c0ac`**（减 LUT 支线 `feat/lut`，LUT 7,740→6,932、指标③ +11.7%、拍数逐位不变、已上板）**尚未合并**；
-  > 性能线 `feat/perf-opt`（P1+P3a 主分 +4.8%）**时序判死**，只作技术储备。
+  > 性能线 P1+P3a（主分 +4.8%）**时序判死**：旧网表 −0.318 ns；**减 LUT 后重测仍 −0.449（最优 seed −0.259）**
+  > ⇒ ① 的天花板就是 4.6075。两条实验分支已归档为 **tag `archive/perf-opt` / `archive/lut-perf`**（分支已删），
+  > 证据分别在 `2026-10-17_p1_ab_bypass.md` 与 `2026-10-17_lut_perf_cross.md`。
   > ⇒ 本节其余处写的 **85.0051 MHz / `c6af65be` / 391.66 分 / LUT 7,753** 全是 **2026-10-16 的历史口径**，
   > 只作对照，**不要再往交付页/PPT 搬**。分支地图与合并纪律见 `doc/reports/2026-10-17_rev1029_入口.md`。
 - 设计内容：**RV32I + M 扩展的 5 级流水线 CPU，顺序双发射**（forwarding 前递 + load-use 停顿 + 多拍除法器；2026-10-06 起 `DUAL_ISSUE=1`），集成 UART/GPIO，跑 riscv-tests 与 **CoreMark v1.0**（要求运行 ≥10s）
