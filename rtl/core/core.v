@@ -784,7 +784,11 @@ module core #(
     //   取指环（pair_now → fetch_addr → BRAM 地址）反而少一级逻辑。
     wire p_alu_a     = (p_op_a == 7'b0110011) || (p_op_a == 7'b0010011) ||
                        (p_op_a == 7'b0010111);
-    wire p_ab_bypass = p_alu_a && !p_muldiv_a;
+    //   [!] **B 是 load 时不做 A→B 旁路**（`!p_ld_b`）：load 的基址会经
+    //   `rs1_val_b → 地址加法器 → load_misaligned_b → if_addr_d` 直通取指环，
+    //   那正是 P3.5 时代的最差路径。trace 上这类依赖每迭代只有 ~36 条（≈0.1% 拍），
+    //   为它把取指环拉长 0.5 ns 完全不值 —— 让它们退回"源冲突就不配对"的老规则。
+    wire p_ab_bypass = p_alu_a && !p_muldiv_a && !p_ld_b;
 
     wire p_branch = (p_op_a == 7'b1100011);
     wire p_jump   = (p_op_a == 7'b1101111);
@@ -1228,7 +1232,11 @@ module core #(
     //   [!] 这条链是 `reg → A 的 ALU → B 的 ALU → B 的结果寄存器`（两级 ALU），
     //   不在取指环上；但它是本设计第一次让 EX 内部出现**同拍串联**，
     //   出流前必须看 PDS 报告里 lane B 的 `alu_result_b` 锥有没有变长。
-    wire        ab_bypass  = id_ex_reg_write && (id_ex_rd != 5'd0) && (id_ex_wb_sel == 2'b00);
+    //   [!] `!id_ex_b_mem_read`：与 pair_now 的 `p_ab_bypass && !p_ld_b` 逐位同源 ——
+    //   lane B 是 load 时绝不旁路（否则 `alu_result` 会串进地址锥 → `load_misaligned_b`
+    //   → `if_addr_d`，直接把取指环拉长）。两处任何一处漏掉都会变成静默错值。
+    wire        ab_bypass  = id_ex_reg_write && (id_ex_rd != 5'd0) &&
+                             (id_ex_wb_sel == 2'b00) && !id_ex_b_mem_read;
     wire        fwd_ba_ab  = ab_bypass && (id_ex_rd == id_ex_b_rs1);
     wire        fwd_bb_ab  = ab_bypass && (id_ex_rd == id_ex_b_rs2);
 

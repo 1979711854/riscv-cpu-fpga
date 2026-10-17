@@ -126,6 +126,9 @@ module csr_file (
     //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
     //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
     //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
+    //     2026_1031  [P1b] A→B 旁路收窄：lane B 是 load 时不再旁路（`p_ld_b`/`mem_read`）。
+    //                那条锥是 `alu_result → 地址加法 → load_misaligned_b → if_addr_d`
+    //                （P3.5 时代的最差路径），而 trace 上这类依赖每迭代只有 ~36 条。
     //     2026_1030  [P3a] lane B 放 JAL（无条件跳转：目标确定、无预测、无冲刷）：
     //                到达级算出 target 并让下一组取指改道；链接值走 wb_sel_b=10；
     //                RAS 的 call 压栈补一路来自 lane B（`ex_is_call_b`）。
@@ -140,7 +143,7 @@ module csr_file (
     //                MMIO）；快通路 load 的 RAM 判定同步放宽到 0x0~0x1FFEF。
     //                语义上周期数不变（BRAM 仍是 1 拍读），时序需重扫 seed。
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1030;   // 2026-10-17 P3a：lane B 放 JAL（取指改道 + RAS call）
+    localparam [31:0] DESIGN_REV = 32'h2026_1031;   // 2026-10-17 P1b：A→B 旁路收窄（lane B 是 load 时不旁路）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
