@@ -332,3 +332,95 @@ scripts\build_bitstream.ps1 combined        # boot + CoreMark(ITER=3900) + RT-Th
 scripts\run_combined_sim.ps1                # 两条路径的仿真判据（ITER=1）
 powershell -File scripts\capture_seed_timing.ps1 -Parse pds\RV32I_1\report_timing\cpu_top_board.rtr
 ```
+---
+
+## rev1029 · **单一位流**（boot selector + CoreMark + RT-Thread）· `c642c0ac` · 2026-10-17
+
+> 相对 rev1028 **只改资源占用（减 LUT）**，功能、拍数、CRC 一字未动：
+> `uart_tx` TX FIFO 1024→512、BTB 256→32 项、BHT tag 24→8 位。
+> 分支 `feat/lut`；逐轮记录与失败记录见 `doc/reports/2026-10-17_lut_rounds.md`，
+> 答辩数字唯一源见 `doc/reports/2026-10-17_delivery_rev1029.md`。
+
+### 文件
+
+| 项 | 值 |
+|---|---|
+| md5 | **`c642c0ac603fcdc677941ae8f0241a7e`**（9,188,552 B，2026-10-17 23:27:50） |
+| 归档文件 | `lut_combined_76mhz_seed10_c642c0ac.sbit` + 同名 `_timing.rtr`（`.sbit` 仍被 `.gitignore` 排除，本地留档） |
+| 板上日志 | `doc/board/uart_20261017_233638.txt` |
+
+### 配置（一眼确认装的是哪一版 RTL）
+
+| 项 | 值 |
+|---|---|
+| 变体 | `combined`（boot 17 字 + CoreMark 8,552 字 + RT-Thread 11,141 字 = 19,710 字 / 39,420 行） |
+| 参数 | `DUAL_ISSUE=1`、`LANEB_MEM=1`、`DCACHE_EN=ICACHE_EN=0` |
+| 布局 | 钉 `gplace_seed 10` |
+| 时钟 | 76.5052 MHz（PLL `STATIC_RATIO0 = 15.0`），请求周期 13.0710 ns |
+| banner 自证 | `[build] FW=… RTL=0x20261028` |
+
+> [!] **本轮没有递增 `DESIGN_REV`**：rev1028 与 rev1029 都打印 `0x20261028`，banner **分不出新旧**。
+> 2026-10-17 23:33 就是因此烧错一颗（见本文末「烧错流」）。判身份只能靠 **md5 + 固件内嵌时间戳**：
+> rev1029 的 RT-Thread banner 是 `build Oct 17 2026 23:19:50`，rev1028 是更早的时间。
+> 待定项：是否把 `DESIGN_REV` 升到 `0x2026_1029`（要重综合 + 重烧 + 重过板测，数字不变）。
+
+### 时序（只认 `Path Group: clk|u_pll/u_gpll/CLKOUT0_Inferred` 那一行）
+
+| 项 | rev1029 | rev1028 | Δ |
+|---|---|---|---|
+| CPU 域 WNS | **+0.311 ns** | +0.304 ns | +0.007 |
+| 失败端点 / 总端点 | **0 / 16,670** | 0 / 21,135 | −4,465 |
+| Fmax | **78.3699 MHz** | 78.3269 MHz | +0.043 |
+| 约束总判 | `All Constraints Met` | 同 | — |
+
+seed 只采了 8 / 10 / 16 三点（+0.147 / **+0.311** / +0.069），seed 10 仍最优，未换 seed。
+
+### 资源（逻辑口径，`run.log` 的 `Total LUTs`）
+
+| 项 | rev1029 | rev1028 | Δ |
+|---|---|---|---|
+| **Total LUTs** | **6,932**（4.34%） | 7,740（4.84%） | **−808（−10.4%）** |
+| └ LUTs as logic | 6,744 | 7,168 | −424 |
+| └ LUTs as dram（LUT-RAM） | 188 | 572 | −384 |
+| FF | 3,466 | 3,692 | −226 |
+| DRM | 165.5 | 165.5 | 0 |
+
+> [!] 仍按老规矩：只引 `Total LUTs`（logic + LUT-RAM）；日志末尾 `Device Utilization Summary` 的
+> `CLMA + CLMS` 是**物理站点口径**，不许混用。
+
+### 板上实测（2026-10-17 23:36，`doc/board/uart_20261017_233638.txt`）
+
+| 路径 | 现象 |
+|---|---|
+| 默认复位 | `[boot] heap = 4840` → render/ai 两条线程 → `menu=HUMAN`；串口有 `[!] vblank timeout`（与 rev1028 同，已定性良性，**待一次 HDMI 实拍**） |
+| 按住 SW6 + SW3 | `Total ticks 846,440,591` → 每迭代 217,036 拍 → 经典分 352.5 / 主分 4.6075，四 CRC `e9f5 e714 1fd7 8e3a` 全对 |
+
+`Total ticks` 与 rev1028 **逐位相同** ⇒ 减 LUT 零 CPI 代价，指标③ 的收益是板上闭环的。
+
+### 与备份档的关系
+
+| 位流 | 状态 |
+|---|---|
+| `c642c0ac`（本档） | **rev1029 候选交付位流**：跑分 + 应用同一颗（合并进交付线前仍以 `b45941d6` 为准） |
+| `b45941d6`（rev1028） | **前一档 / 当前交付线唯一交付位流**：除 LUT/③/Fmax 外数字相同 |
+| `bacbcaee`（`feat/perf-opt` P1+P3a） | 技术储备：板上 207,094 拍/迭代（主分 4.8287），但 WNS **−0.318 ns**，**勿交付** |
+| `c6af65be` / `5909a2d0`（@85.0051） | 历史备份：单路径，不满足 R99 |
+| `bcd8fdd2` / `8894cdcb` / `f64b977` / `176e0028` | 历史档，仅作对照 |
+
+### 烧错流记录（2026-10-17 23:33，`doc/board/uart_20261017_233332.txt`）
+
+同一晚先烧的一颗**不是本档**：`RTL=0x20261030`、`Total ticks 807,669,047`（每迭代 207,094）、
+`Iterations 3900`，四 CRC 仍全对 —— 那是 `feat/perf-opt` 的 `bacbcaee`（P1+P3a）。
+判据三条独立：`RTL=` 值、每迭代拍数、md5。**教训：烧板前核 md5，上电核 banner。**
+
+### 复现
+
+```powershell
+cd D:\_lut                                  # feat/lut 工作树
+scripts\build_bitstream.ps1 combined -Iter 3900
+powershell -File scripts\capture_seed_timing.ps1 -Parse pds\RV32I_1\report_timing\cpu_top_board.rtr
+python scripts\lut_breakdown.py pds\RV32I_1\synthesize\cpu_top_board_syn.vm --depth 2
+```
+
+> 注：**本文件是 UTF-8（无 BOM，CRLF）**，此前交接单误记为 GBK。用 UTF-8 工具直接编辑是安全的；
+> 不要为它做 GBK 转码（会真的写坏）。
