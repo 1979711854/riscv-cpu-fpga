@@ -16,7 +16,7 @@ bus/      总线
           addr_map.vh     地址映射单点定义（RTL 侧唯一真相）
           mem_bus.v       存储总线：唯一的地址译码处 + 读数据 mux
 periph/   外设
-          uart_tx.v   UART 发送（1024 深 FIFO）
+          uart_tx.v   UART 发送（512 深 FIFO）
           uart_rx.v   UART 接收（16 深 FIFO，读弹出）
           gpio.v      8 位 LED 输出 + 8 位按键输入
 top/      cpu_top.v   SoC 顶层，只做连线（仿真用）

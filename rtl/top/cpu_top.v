@@ -204,7 +204,7 @@ module cpu_top (
     // 外设
     // ------------------------------------------------------------------
     // UART 发送：兼容区 0xFFFC 与外设区 0x8000_0008 共用（见 mem_bus 的 uart_tx_we）。
-    // uart_tx 内含 1024 深 FIFO，短时间连续写不会丢字符。
+    // uart_tx 内含 512 深 FIFO，短时间连续写不会丢字符。
     uart_tx #(.DIV(UART_DIV)) u_uart_tx (
         .clk     (clk),
         .resetn  (resetn),
