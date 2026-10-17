@@ -100,6 +100,19 @@ void render_text(int row, int col, const char *s);
 /* 同一行水平居中写一段文字。 */
 void render_text_center(int row, const char *s);
 
+/* [2026-10-17] 幂等写：内容（含列）没变就跳过这一行的写。
+ *   `slot` 是调用方给的固定编号 0..5，同一槽位要一直对应同一行；换行就换槽位。
+ *   用途 = HUD 每帧重画时避免"内容没变也在重写"导致的闪烁。
+ *   **`render_clear()` 会调用 `render_dedup_reset()` 作废缓存**，所以整屏重画后
+ *   第一次写一定会落地，不会出现"同一行永远空白"。 */
+void render_text_dedup(int slot, int row, int col, const char *s);
+
+/* 作废所有幂等写缓存（整屏被抹平/切屏后必须调，否则旧缓存会吃掉新内容）。 */
+void render_dedup_reset(void);
+
+/* 居中版的幂等写。 */
+void render_text_dedup_center(int slot, int row, const char *s);
+
 /* ---- 静态装饰（阶段 1）----------------------------------------------------
  * 都只画【棋盘 15x15 之外的固定区域】，上电各调一次即可；render_full 每帧
  * 全刷只碰棋盘区，不会覆盖它们。 */

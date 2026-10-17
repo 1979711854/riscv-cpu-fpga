@@ -221,8 +221,20 @@ static void render_menu(void)
     for (i = 0; i < 4; i++) {
         int row = 1 + i;
         if (i < n) {
-            render_text(row, 14, menu_item_text(&g_game, i));
-            if (i == g_game.menu_cursor) render_put(row, 11, RENDER_TILE_ICON_BLACK);
+            {
+                /* [2026-10-17] 原来写死 `render_text(row, 14, …)` —— 菜单项长短不一
+                 * （"HUMAN VS AI" 11 字 / "AI VS AI" 8 字）却都从第 14 列起，
+                 * 整块偏左、右边参差不齐。用户反馈"居左对齐不好看"。
+                 * 现在【每项按自己的长度居中】，选中图标跟着文字起点走（左移 2 列）。 */
+                const char *s   = menu_item_text(&g_game, i);
+                int         len = 0;
+                int         col;
+                while (s[len] != '\0' && len < SCREEN_COLS) len++;
+                col = (SCREEN_COLS - len) / 2;
+                render_text(row, col, s);
+                if (i == g_game.menu_cursor)
+                    render_put(row, (col >= 2 ? col - 2 : 0), RENDER_TILE_ICON_BLACK);
+            }
         } else {
             render_text(row, 0, "");
         }
@@ -250,34 +262,40 @@ static void draw_hud(void)
      *     （2026-10-10 板上实踩。这和"同一行内的残字"是同类问题的另一种形态。）
      *     行 28 不用在这里清：它马上会被下面的 AI 统计整行覆写。 */
     render_text(0,  0, "");          /* 标题屏的 "GOMOKU" */
-    render_text(3,  0, "");
-    render_text(4,  0, "");
-    render_text(27, 0, "");
-    render_text(24, 0, "");          /* 上一局的胜负横幅 */
+    render_text(27, 0, "");          /* 标题屏底部的操作提示 */
+    /* [2026-10-17] 下面几行改用【幂等写】，且必须与后面 HUD 用【同一批槽位】。
+     * [!] 若这里用普通 render_text、而下面 HUD 用 render_text_dedup，
+     *     缓存就和实际屏幕对不上 ⇒ 下一帧 HUD 以为"没变"而跳过 ⇒ 该行永远空白。
+     *     槽位约定：0=行1  1=行2  2=行3  3=行4  4=行28  5=行24(胜负横幅)。 */
+    render_text_dedup(2, 3,  0, "");
+    render_text_dedup(3, 4,  0, "");
+    render_text_dedup(5, 24, 0, "");  /* 上一局的胜负横幅 */
 
     /* 顶部：轮次（棋子图标 + 文字）+ 难度（任务 T6 阶段 1 加图标）。
      *   人机：一行难度（黑白同步）；AI 对弈：黑/白/间隔三行。
      *   [!] render_text 会整行铺空格，所以图标必须在 render_text 之后用 render_put 盖上。 */
     if (g_game.mode == GAME_MODE_AI) {
-        render_text(1, 5, "AI VS AI");
+        render_text_dedup(0, 1, 5, "AI VS AI");
         render_put(1, 1, RENDER_TILE_ICON_BLACK);
         render_put(1, 3, RENDER_TILE_ICON_WHITE);
         p = line; p = buf_append(p, "BLACK AI: "); p = buf_append(p, level_name(g_game.level_black));
-        render_text(2, 1, line);
+        render_text_dedup(1, 2, 1, line);
         p = line; p = buf_append(p, "WHITE AI: "); p = buf_append(p, level_name(g_game.level_white));
-        render_text(3, 1, line);
+        render_text_dedup(2, 3, 1, line);
         p = line; p = buf_append(p, "STEP: ");
         p = u32_to_str(p, g_game.step_ms);
         p = buf_append(p, "MS");
-        render_text(4, 1, line);
+        /* ★ 这一行就是用户反馈"闪烁"的那行：AI 对弈时每帧都在重画，而内容几秒才
+         *   变一次 ⇒ 换成幂等写，内容不变就【不写】，闪烁消失。 */
+        render_text_dedup(3, 4, 1, line);
     } else {
         int who = g_game.board.turn;
-        render_text(1, 3, who == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
+        render_text_dedup(0, 1, 3, who == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
         render_put(1, 1, who == GOMOKU_BLACK ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
         p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level_black));
-        render_text(2, 1, line);
-        render_text(3, 1, "");
-        render_text(4, 1, "");
+        render_text_dedup(1, 2, 1, line);
+        render_text_dedup(2, 3, 1, "");
+        render_text_dedup(3, 4, 1, "");
     }
 
     /* 底部：AI 统计（最有展示价值的一行）*/
@@ -288,13 +306,13 @@ static void draw_hud(void)
     p = buf_append(p, " ");
     p = u32_to_str(p, g_game.ai_ms);
     p = buf_append(p, "MS");
-    render_text(28, 1, line);
+    render_text_dedup(4, 28, 1, line);
 
     /* 胜负横幅 */
     if (g_game.phase == GAME_OVER) {
         const char *msg = g_game.winner == GOMOKU_BLACK ? "BLACK WINS" :
                           g_game.winner == GOMOKU_WHITE ? "WHITE WINS" : "DRAW";
-        render_text_center(24, msg);
+        render_text_dedup_center(5, 24, msg);
     }
 }
 

@@ -140,6 +140,9 @@ void render_clear(void)
     for (c = 0; c < SCREEN_COLS; c++) row[c] = (uint8_t)FONT_TILE_BASE;
     for (r = 0; r < SCREEN_ROWS; r++)
         vid_bulk_write(VID_REGION_NT, (uint16_t)(r * 256), row, (uint16_t)SCREEN_COLS);
+    /* [!] 整屏被抹平了 ⇒ 幂等写的缓存必须作废，否则下次 render_text_dedup
+     *     会认为"内容没变"而跳过，那一行就【永远空白】。 */
+    render_dedup_reset();
 }
 
 /* ---------------------------------------------------------------------------
@@ -183,30 +186,30 @@ void render_board_labels(void)
 /* ---------------------------------------------------------------------------
  * HUD 文字
  * ------------------------------------------------------------------------- */
-void render_text(int row, int col, const char *s)
+/* ---------------------------------------------------------------------------
+ * 把 (col, s) 摊成【整行】图块索引：先铺满空格，再把文字盖上去。
+ * [!] 必须整行铺，不能"只写字符串本身" —— 那样会留下上一次的残字，而且【左端也留】：
+ *     2026-10-07 板上实踩，标题屏从 "LEVEL: NORMAL"(13 字) 切到 "LEVEL: EASY"(11 字)，
+ *     居中起点由列 13 变成 14、终点由 25 变成 24，两端各留一个 'L'
+ *     ⇒ 屏幕显示成 "LLEVEL: EASYL"。（第一版只补了行尾，测试当场抓出左端还漏。）
+ * ------------------------------------------------------------------------- */
+static void build_line(uint8_t *line, int col, const char *s)
 {
-    /* [!] 整行一次写完：先铺满空格，再把文字盖上去。
-     *     不能"只写字符串本身" —— 那样会留下上一次的残字，而且【左端也留】：
-     *     2026-10-07 板上实踩，标题屏从 "LEVEL: NORMAL"(13 字) 切到 "LEVEL: EASY"(11 字)，
-     *     render_text_center 的居中起点由列 13 变成列 14、终点由 25 变成 24，
-     *     两端各留一个 'L' ⇒ 屏幕显示成 "LLEVEL: EASYL"。
-     *     （第一版只补了行尾，测试当场抓出左端还漏 —— 所以改成整行写。）
-     *     底部 AI 统计行同理：节点数 1287 -> 812 时字符串变短会留残字。
-     *     顺带：整行一次 vid_bulk_write 比逐字符写快得多。 */
-    uint8_t line[SCREEN_COLS];
-    int     i;
-
+    int i;
     for (i = 0; i < SCREEN_COLS; i++) line[i] = (uint8_t)FONT_TILE_BASE;
-
     i = 0;
     while (s[i] != '\0' && col + i < SCREEN_COLS) {
         int ch = (int)(unsigned char)s[i];
-        if (col + i >= 0)
-            line[col + i] = glyph_tile(ch);
-        /* 范围外 / 越界字符保持空格（line 已铺满） */
+        if (col + i >= 0) line[col + i] = glyph_tile(ch);
         i++;
     }
+}
 
+void render_text(int row, int col, const char *s)
+{
+    /* 整行一次 vid_bulk_write 比逐字符写快得多。 */
+    uint8_t line[SCREEN_COLS];
+    build_line(line, col, s);
     vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256), line, (uint16_t)SCREEN_COLS);
 }
 
@@ -215,6 +218,64 @@ void render_text_center(int row, const char *s)
     int len = 0;
     while (s[len] != '\0' && len < SCREEN_COLS) len++;
     render_text(row, (SCREEN_COLS - len) / 2, s);
+}
+
+/* ---------------------------------------------------------------------------
+ * [2026-10-17 加] **幂等写**：内容没变就不写。
+ * ---------------------------------------------------------------------------
+ * 为什么需要：`draw_hud()` 是【每帧】调的，而 `render_text` 每次都整行重铺
+ *   ～40 个图块（哪怕内容一模一样）。写的时候若已经出了 vblank 窗口，屏上就
+ *   看得见这一行在闪 —— 2026-10-17 用户实测反馈："AI VS AI 下 STEP 那行字有闪烁"。
+ *   （其它 HUD 行内容平时不变、所以看不出；AI 对弈时每帧都在推进，最容易暴露。）
+ *
+ * 用法：`slot` 由调用方给一个【固定编号】(0..RENDER_DEDUP_SLOTS-1)，同一槽位永远
+ *   对应同一行；换行/换内容时**换槽位**，别复用 —— 否则会拿旧内容当基准比。
+ *   `col` 一并参与比较（同一个 slot 换列也算变化）。
+ *
+ * RAM 代价：RENDER_DEDUP_SLOTS × SCREEN_COLS 字节（6×40 = 240 B），
+ *   只给会频繁重画的 HUD 行用，不是全局缓存。
+ * ------------------------------------------------------------------------- */
+#define RENDER_DEDUP_SLOTS 6
+static uint8_t dedup_cache[RENDER_DEDUP_SLOTS][SCREEN_COLS + 1];   /* +1 存 col */
+static uint8_t dedup_valid;
+
+void render_text_dedup(int slot, int row, int col, const char *s)
+{
+    uint8_t line[SCREEN_COLS];
+    int     i;
+
+    if (slot < 0 || slot >= RENDER_DEDUP_SLOTS) {      /* 槽位越界就别缓存，老老实实写 */
+        render_text(row, col, s);
+        return;
+    }
+
+    build_line(line, col, s);
+
+    if (dedup_valid & (uint8_t)(1u << slot)) {
+        if (dedup_cache[slot][SCREEN_COLS] == (uint8_t)col) {
+            for (i = 0; i < SCREEN_COLS; i++)
+                if (dedup_cache[slot][i] != line[i]) break;
+            if (i == SCREEN_COLS) return;              /* 整行一字不差 ⇒ 跳过这次写 */
+        }
+    }
+
+    for (i = 0; i < SCREEN_COLS; i++) dedup_cache[slot][i] = line[i];
+    dedup_cache[slot][SCREEN_COLS] = (uint8_t)col;
+    dedup_valid |= (uint8_t)(1u << slot);
+
+    vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256), line, (uint16_t)SCREEN_COLS);
+}
+
+void render_dedup_reset(void)
+{
+    dedup_valid = 0;
+}
+
+void render_text_dedup_center(int slot, int row, const char *s)
+{
+    int len = 0;
+    while (s[len] != '\0' && len < SCREEN_COLS) len++;
+    render_text_dedup(slot, row, (SCREEN_COLS - len) / 2, s);
 }
 
 /* ---- 阶段 1 合成图块：在 render_init 里现算，不占固件 .rodata ---------------
