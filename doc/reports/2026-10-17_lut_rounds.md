@@ -265,7 +265,7 @@ python scripts\lut_breakdown.py pds\RV32I_1\synthesize\cpu_top_board_syn.vm --de
 | 镜像 | `mem.hex` **39,420 行**（boot 17 + CoreMark 8,552 + RT-Thread 11,141，与 `b45941d6` 同布局） |
 | 归档 | `pds/RV32I_1/bitstreams/lut_combined_76mhz_seed10_c642c0ac.sbit` + 同名 `_timing.rtr`（本地，`.sbit` 不进库） |
 | seed 证据 | `bitstreams/lut_seedsweep_seed{8,16}_timing.rtr` |
-| 状态 | **只在 `feat/lut`，未上板、未进交付页** |
+| 状态 | ✅ **已上板验证**（`doc/board/uart_20261017_233638.txt`，`RTL=0x20261028` / `846,440,591` 拍 / 四 CRC 全对）；交付页见 `2026-10-17_delivery_rev1029.md` |
 
 ### 11.3 上板验收清单（照抄执行，全部过了才能改交付页）
 
@@ -322,7 +322,22 @@ Correct operation validated
 四 CRC 全对、`Correct operation validated`。但同一颗流 **WNS −0.318 ns**，任何 seed 都出不了收敛域，
 所以只能作为"CPI 优化已实现、时序受限不能交付"的技术储备写进附录。
 
-### 12.3 下一步（唯一待办）
+### 12.3 第二次上板：候选流通过（2026-10-17 23:36:38）
 
-烧 `c642c0ac` → banner 见 `RTL=0x20261028` → CoreMark 期望 `846,440,591` / 四 CRC 不变 → 五子棋 + HDMI 正常。
-全过之后才允许改 `delivery_rev1028.md`。
+烧 `c642c0ac` 后 `doc/board/uart_20261017_233638.txt`：
+
+| 判据 | 期望 | 实测 | 结论 |
+|---|---|---|---|
+| banner `RTL=` | 0x20261028 | **0x20261028** | ✅ 烧对了 |
+| `Total ticks` | 846,440,591 | **846,440,591** | ✅ **与 rev1028 逐位相同** |
+| 四 CRC | e9f5 / e714 / 1fd7 / 8e3a | 全对 + `Correct operation validated` | ✅ |
+| 每迭代 / 时长 / 经典分 / 主分 | 217,036 / 11.0638 s / 352.5 / 4.6075 | 同 | ✅ 与 rev1028 一致 |
+| 五子棋路径 | banner + menu | `heap 4840`、`menu=HUMAN`、`mode=HUMAN`、`step=1000ms` | ✅ 启动正常（**整局未下**） |
+| HDMI | 画面正常 | 串口有 `[!] vblank timeout` | ⚠ 与 rev1028 相同（已定性良性，需一次实拍） |
+
+⇒ **指标③ 的收益这次是板上闭环的**：LUT −808 而拍数一个都没变。
+交付页已换为 `2026-10-17_delivery_rev1029.md`，`rev1028` 页顶部标了"已被取代"。
+
+**仍未做**：五子棋整局、HDMI 实拍、ILA `.fic`（必须与 `c642c0ac` 同源）、演示视频；
+以及是否把 `DESIGN_REV` 升到 `0x2026_1029` —— 现在新旧两颗流都打印 `0x20261028`，
+**光看 banner 分不出 rev1028 与 rev1029**（本次已经因此烧错过一次），升 rev 要重综合+重烧一次，功能与数字都不变。
