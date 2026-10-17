@@ -35,8 +35,9 @@ barebones_clock(void)
  * [重点] 仿真 / 远程 FPGA 平台：固定 27MHz。
  * 填错不会报错，但 CoreMark 会算出错误的秒数 —— 判 valid 时按这个值卡。
  * [!] 这个常量【必须】与 PDS 时序报告里的实际频率一致（不用标称值）。
- *     历史：27e6 → 45e6 → 49,892,700 → 62,030,900 → 85,005,100。 */
-#define EE_TICKS_PER_SEC           85005100
+ *     历史：27e6 → 45e6 → 49,892,700 → 62,030,900 → 85,005,100 → 76,505,200
+ *     （2026-10-17 128KB 版在 85 MHz 收不住，降频档改 RATIO0=15.0）。 */
+#define EE_TICKS_PER_SEC           76505200
 
 static CORETIMETYPE start_time_val, stop_time_val;
 

@@ -30,13 +30,14 @@
 // ----------------------------------------------------------------------------
 //   * 仿真：测试台例化的是 cpu_top（不是本文件），不传 UART_DIV → 234（27MHz），
 //     周期数与风险分析口径全部按 27MHz。本文件**不参与仿真**。
-//   * 上板：PLL 27MHz→85.0051MHz，UART_DIV 传 738，CoreMark 的 EE_TICKS_PER_SEC=85005100。
-//   * 因此 **板上的 CoreMark 时长 = Total ticks ÷ 85,005,100**
-//     （不再是 ÷62,030,900，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
+//   * 上板：PLL 27MHz→76.5052MHz，UART_DIV 传 664，CoreMark 的 EE_TICKS_PER_SEC=76505200。
+//     （2026-10-17 128KB 版在 85 MHz 收敛不了，STATIC_RATIO0 13.5→15.0。）
+//   * 因此 **板上的 CoreMark 时长 = Total ticks ÷ 76,505,200**
+//     （不再是 ÷85,005,100，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
 //   * PLL 输出时钟约束由 PDS 从 IP 自动推导（`.fdc` 里只有 27MHz 的
-//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 85.0051 MHz）。
+//     `create_clock ... -period 37.037` 输入约束，综合报告会显示 76.5052 MHz）。
 //   * 频率来历：VCO = 27 ÷ RATIOI(1) × RATIOM(2) × RATIOF(21.25) = 1147.5 MHz，
-//     CLKOUT0 = VCO ÷ STATIC_RATIO0(13.5) = 85.0 MHz。
+//     CLKOUT0 = VCO ÷ STATIC_RATIO0(15.0) = 76.5 MHz。
 //     改频率只需改 ipcore/pll/pll.idf 的 STATIC_RATIO0 再跑
 //     `ip_generate.exe -i pll.idf`（**可命令行完成，不必开 GUI**）。
 //     [重点] 改完必须同步 4 处常量：本文件的 UART_DIV、
@@ -106,7 +107,7 @@ module cpu_top_board #(
     wire [13:0] vid_waddr_d;
     wire [31:0] vid_rdata;
 
-    cpu_top #(.UART_DIV(10'd738)) u_soc (   // 85.0051MHz → 115200 波特（85,005,100/115200 = 737.9）
+    cpu_top #(.UART_DIV(10'd664)) u_soc (   // 76.5052MHz → 115200 波特（76,505,200/115200 = 664.1）
         .clk      (clk_sys),
         .resetn   (sys_resetn),
 

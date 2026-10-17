@@ -24,7 +24,7 @@
  * [!] 改频率时本文件容易被漏掉（早期文档只列了 3 处常量，没算上这里）。
  *     完整清单见 rtl/top/cpu_top_board.v 头部注释。 */
 #ifndef BOARD_SYSTEM_CLOCK_HZ
-#define BOARD_SYSTEM_CLOCK_HZ       85005100u
+#define BOARD_SYSTEM_CLOCK_HZ       76505200u
 #endif
 
 /* ---- 外设 MMIO（字地址，直接读写）-------------------------------------- */
