@@ -158,6 +158,10 @@ module core #(
     //   因为 fetch_addr 直接由它组合算出（见下），lane A/B 无需队列即可自对齐：
     //   A2 口恒取 lane A 的相邻字，正好就是 lane B。
     wire        pair_now;
+    // [P3a] lane B 放 JAL：`fetch_addr`（下面几十行）就要消费它们，故先声明后赋值。
+    wire        p_jal_b;
+    wire [31:0] p_imm_b;          // lane B 的立即数（到达级 imm_gen 的输出）
+    wire [31:0] p_jal_target_b;   // = (if_addr_d+4) + imm_B
 
     // ---- 异常 / 中断 ----
     wire        trap;           // 本拍在 EX 级发生异常或中断（最高优先级重定向）
@@ -411,11 +415,18 @@ module core #(
     //   指令，A/B 两槽于是每拍天然对齐，不需要取指队列去吸收可变宽度弹出。
     //   代价是 pair→fetch_addr 组合路径（BRAM 出 → 译码 → pair → 本 mux → BRAM 地址），
     //   无环路（中间隔 BRAM 寄存器），正是 Stage B/C 要测的 Fmax 风险点。
+    // [P3a] `pair_now && p_jal_b` 那一腿：lane B 是 jal 时，本组两条一起发射，
+    //   下一条未消费的指令【不是】if_addr_d+8，而是 jal 的目标。
+    //   位置必须在 stall/mem_ready 那一腿**之后** —— 冻结期取指必须退回 if_addr_d
+    //   重发（承重，见上面 [!]），B-jal 改道只在流水线真前进的那拍生效。
+    //   优先级低于 p_redirect 是安全的：A 被预测 taken 时 pair_now 恒 0（上面门控），
+    //   所以两条腿不可能同拍成立（`pair_now` 在条件里就是这条互斥的保险）。
     wire [31:0] fetch_addr = trap                ? trap_target :
                              ex_flush            ? ex_target :
                              ex_mispred          ? ex_mispred_target :
                              p_redirect          ? p_target :
                              (stall_int || mc_stall || !mem_ready_int) ? if_addr_d :
+                             (pair_now && p_jal_b) ? p_jal_target_b :
                              if_addr_d + 32'd4 + (pair_now ? 32'd4 : 32'd0);
     // （pair_now 的实际赋值在下面到达级预测/stall 之后 —— 它要引用 p_pred_taken。）
 
@@ -777,6 +788,13 @@ module core #(
 
     wire p_branch = (p_op_a == 7'b1100011);
     wire p_jump   = (p_op_a == 7'b1101111);
+    // [P3a] lane B 是 JAL：无条件跳转、目标 = (if_addr_d+4) + imm_B 完全由取指给出。
+    //   **不需要预测、也不需要 EX 校验/冲刷** —— 这是"B 放控制指令"里唯一
+    //   零风险的一档：jal 的目标是架构常量，不存在"预测对方向、目标算错"。
+    //   它只多出两件事：① 下一组取指改道到 target；② 链接值 = B_pc+4 = if_addr_d+8
+    //   （wb_sel_b=2'b10 已经由 control_b 给出，`wb_data_b` 直接算 mem_wb_b_pc+4）。
+    assign p_jal_b  = (p_op_b == 7'b1101111);
+    assign p_jal_target_b = if_addr_d + 32'd4 + p_imm_b;
     wire [7:0] bht_idx_p   = if_addr_d[9:2];
     wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[31:8]);
     wire       bht_taken_p = bht_ctr[bht_idx_p][1];
@@ -808,6 +826,11 @@ module core #(
     //   "动态预测（保守版）"那一段（mem_ready 那条承重逻辑）。
     wire [31:0] p_imm;
     imm_gen u_imm_p (.instr(imem_rd), .imm(p_imm));
+    // [P3a] lane B 放 JAL 需要它自己的立即数（目标 = (if_addr_d+4) + imm_B）。
+    //   到达级就得算出来 —— 不能等 ID/EX 的 imm_b（那要晚一拍）。
+    //   （`p_imm_b` 的声明在文件顶部，与 `p_jal_b / p_jal_target_b` 一起，
+    //     因为 fetch_addr 比这里更早就消费它们。）
+    imm_gen u_imm_pb (.instr(imem_rd2), .imm(p_imm_b));
     // [B1-RAS] 目标折进【已有的 p_target 腿】：RAS 命中时取栈顶，否则保持 pc+imm。
     // [B1-BTB] 再加一档：RAS 不中但 BTB 中时取 BTB 里的目标。优先级 RAS > BTB > PC+imm。
     //   [!] 绝不新增 fetch_addr 的腿（那是 Fmax 第一风险点，同当年 MRET 的处理）。
@@ -824,16 +847,20 @@ module core #(
     //     pairtrace 实测会多配 ~927 对（229,597 拍会变）⇒ 破坏 P2"基线逐位不变"
     //     的判据。故 0 档保持原判据（逐位回退）、1 档用收窄判据；模型 ④ 档
     //     （pair_analyze.py）早已按收窄后的规则算，P3 两件事一起生效。
-    wire p_f7_b_ok = (LANEB_MEM != 0) ? !((p_op_b == 7'b0110011) && (p_f7_b == 7'b0000001))
-                                      : (p_f7_b != 7'b0000001);
+    wire p_f7_b_ok = p_jal_b ? 1'b1 :
+                     ((LANEB_MEM != 0) ? !((p_op_b == 7'b0110011) && (p_f7_b == 7'b0000001))
+                                       : (p_f7_b != 7'b0000001));
     wire p_opcode_b_ok = (p_op_b == 7'b0110011) || (p_op_b == 7'b0010011) ||
                          (p_op_b == 7'b0110111) || (p_op_b == 7'b0010111) ||
-                         ((LANEB_MEM != 0) && p_ld_b);
+                         ((LANEB_MEM != 0) && p_ld_b) ||
+                         p_jal_b;                        // [P3a] lane B 放 JAL
 
     assign pair_now = (DUAL_ISSUE != 0) &&
                       (imem_rd != 32'd0) && (imem_rd2 != 32'd0) && !p_pred_taken &&
                       !p_muldiv_a && !p_amo_a &&
-                      p_opcode_b_ok && p_f7_b_ok && (p_rd_b != 5'd0) &&
+                      // [P3a] `(p_rd_b != 5'd0)` 对 JAL 不适用：`j label` 就是
+                      //   `jal x0,label`（rd=0），它照样占一个发射槽、照样要占拍。
+                      p_opcode_b_ok && p_f7_b_ok && (p_jal_b || (p_rd_b != 5'd0)) &&
                       // [lane B 访存] 每对最多一条访存（任务书 §2 的前提）：lane A/B
                       // 同对同拍锁存 ⇒ 任一拍 MEM 级至多一条访存 ⇒ 访存口一次 2 路
                       // mux 就够，不需要仲裁器/ready 握手。LANEB_MEM=0 时 lane B 是
@@ -853,7 +880,11 @@ module core #(
                       //   ③ `p_rd_a != p_rd_b`（同址写回）**整条删除**：regfile 是
                       //      4 读 2 写，写口 B 在 A 之后写 ⇒ 同址时 B 赢，正好等于
                       //      "B 更年轻、它的值才是最终值"。删掉顺带省一级比较器。
-                      (p_ab_bypass || ((p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b)));
+                      //   [P3a] `p_jal_b` 直接短路：JAL 的 instr[19:15]/[24:20] 是
+                      //      立即数位，不是 rs1/rs2 —— 拿它们比 rd_a 只会随机杀掉配对
+                      //      （性能问题，不是正确性问题，但白丢收益）。
+                      (p_jal_b || p_ab_bypass ||
+                       ((p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b)));
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
     // 跳转时当拍旁路到目标（见上面 fetch_addr 的说明）。
@@ -1375,8 +1406,8 @@ module core #(
     // 判定用【EX 级寄存器】id_ex_*（EX 级指令就是 ID/EX 里那条）：
     //   call = (jal | jalr) 且 rd∈{x1(ra),x5(t0)} —— 写链接寄存器的跳转即调用
     //   ret  = jalr 且 rd=x0 且 rs1∈{x1,x5}
-    //   lane B 永远不是控制指令（p_opcode_b_ok 只放 ALU 类）⇒ 不存在"同拍两条控制指令"，
-    //   push/pop 只由 lane A 驱动。
+    //   [P3a] lane B 现在可以是 **JAL**（只能是 jal：条件分支/jalr 还没放），
+    //   所以 call 可能来自 lane B —— 见下面的 `ex_is_call_b`。
     //   只有【提交到 EX】的指令才更新栈：EX 是顺序的，能冲刷某条指令的只有比它更老、
     //   已在 EX 的分支/跳转；更年轻的指令在到达 EX 之前就被清 ⇒ 到达 EX = 在正确路径上
     //   ⇒ 无需影子栈/回滚。
@@ -1384,6 +1415,19 @@ module core #(
                       ((id_ex_rd == 5'd1) || (id_ex_rd == 5'd5));
     wire ex_is_ret  = id_ex_jump_reg && (id_ex_rd == 5'd0) &&
                       ((id_ex_rs1 == 5'd1) || (id_ex_rs1 == 5'd5));
+    // [P3a] lane B 的 jal 也可能是 call（rd = ra/t0）。**必须一起压栈**：
+    //   否则配进 lane B 的那批 call 之后，所有 ret 都会丢预测（EX 级冲刷 2~3 拍/次），
+    //   足以把配对赚到的拍数吃回去。
+    //   [!] 判据用 `wb_sel==2'b10` + rd∈{1,5}：wb_sel=2'b10 只有 jal/jalr 两种，
+    //   而 P3a 的 lane B 只可能是 jal ⇒ 不会误判。**不能**照 lane A 那样用
+    //   `id_ex_b_jump` —— 这个标志没进 ID/EX 寄存器（lane B 只带 ALU/访存/wb 字段）。
+    //   [!] 同拍 A、B 都是 call 时**只压 A**（栈只有一个写口）。丢一次压栈只影响
+    //   预测率、不影响正确性：RAS 是纯预测器，EX 级 §7 目标校验永远兜底。
+    //   [!] `&& !ex_flush`：lane A 冲刷那拍 lane B 一起被杀（EX/MEM 的
+    //   `ex_mem_b_reg_write && !ex_flush` 同款），被杀的 call 不得压栈。
+    wire ex_is_call_b = id_ex_b_valid && id_ex_b_reg_write && !ex_flush &&
+                        (id_ex_b_wb_sel == 2'b10) &&
+                        ((id_ex_b_rd == 5'd1) || (id_ex_b_rd == 5'd5));
     // [!] 更新必须与"这条指令离开 EX / 提交到 EX/MEM"同拍 = mem_ready_int && !mc_stall && !trap。
     //   门控 mem_ready_int 是硬要求：冻结期 ID/EX【保持】，不门控会把同一条 call/ret 每拍
     //   重复 push/pop（与根因 #1/#2 同族）。mc_stall 期 ID/EX 保持、EX/MEM 被清 ⇒ 不计提交；
@@ -1395,6 +1439,9 @@ module core #(
         end else if (ras_upd_en) begin
             if (ex_is_call && (ras_sp != RAS_DEPTH)) begin   // 满则饱和丢弃（罕见，只影响预测率）
                 ras_mem[ras_sp[3:0]] <= id_ex_pc + 32'd4;
+                ras_sp               <= ras_sp + 5'd1;
+            end else if (ex_is_call_b && (ras_sp != RAS_DEPTH)) begin   // [P3a] lane B 的 call
+                ras_mem[ras_sp[3:0]] <= id_ex_b_pc + 32'd4;
                 ras_sp               <= ras_sp + 5'd1;
             end else if (ex_is_ret && !ras_empty) begin
                 ras_sp <= ras_sp - 5'd1;
