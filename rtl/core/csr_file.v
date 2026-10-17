@@ -126,6 +126,9 @@ module csr_file (
     //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
     //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
     //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
+    //     2026_1030  [P3a] lane B 放 JAL（无条件跳转：目标确定、无预测、无冲刷）：
+    //                到达级算出 target 并让下一组取指改道；链接值走 wb_sel_b=10；
+    //                RAS 的 call 压栈补一路来自 lane B（`ex_is_call_b`）。
     //     2026_1029  [P1] lane A→lane B 同拍旁路 + 放开同对 rd_a==rd_b：
     //                pair_now 去掉 rs1_b/rs2_b/rd_b 三条"不许耦合"判据里的两条半，
     //                EX 段 lane B 的两个源加一路最高优先级的 `alu_result`。
@@ -137,7 +140,7 @@ module csr_file (
     //                MMIO）；快通路 load 的 RAM 判定同步放宽到 0x0~0x1FFEF。
     //                语义上周期数不变（BRAM 仍是 1 拍读），时序需重扫 seed。
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1029;   // 2026-10-17 P1：A→B 同拍旁路 + 放开同对同址写回
+    localparam [31:0] DESIGN_REV = 32'h2026_1030;   // 2026-10-17 P3a：lane B 放 JAL（取指改道 + RAS call）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
