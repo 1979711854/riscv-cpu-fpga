@@ -1,0 +1,122 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-17 18:54:44
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 17 2026 18:04:44
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 4840 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 17 2026 18:04:44
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 4840 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[!] vblank timeout -- video not running (check D18 video_locked)
+[hb] alive, uptime 5000 ticks
+menu=HUMAN
+[hb] alive, uptime 10000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 17 2026 18:04:44
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 4840 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+[hb] alive, uptime 15000 ticks
+menu=HUMAN
+[build] FW=COREMARK RTL=0x20261028
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 846440591
+Total time (secs): 11
+Iterations/Sec   : 354
+Iterations       : 3900
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xbd59
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x00000000
+[cache] D miss=0x00000000
+[cache] I hits=0x00000000
+[cache] I miss=0x00000000
+# 结束于 2026-10-17 18:55:44，共 120 行
