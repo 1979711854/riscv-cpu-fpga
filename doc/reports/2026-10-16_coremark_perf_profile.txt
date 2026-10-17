@@ -1,5 +1,8 @@
 ﻿SIM CONFIG: DUAL_ISSUE=1 DCACHE_EN=0 ICACHE_EN=0 EARLY_LD=1 BTB_EN=1 LANEB_MEM=1 LANEB_ST=0
 [build] FW=COREMARK RTL=0x20261028
+; [!] 2026-10-17 归档说明：本文件是 rev1028（交付档 RTL=0x20261028）的原始剖析转储，
+;     217,088 拍是**交付基线**。`feat/perf-opt` 分支已把它降到 207,611 拍（RTL=0x20261031），
+;     但该分支时序不收敛、不进交付 —— 见 doc/reports/2026-10-17_p1_ab_bypass.md。
 
 2K performance run parameters for coremark.
 CoreMark Size    : 666
