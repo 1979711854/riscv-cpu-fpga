@@ -519,7 +519,9 @@ module core #(
     wire [31:0] rdata1, rdata2;
     wire [31:0] rdata1_b, rdata2_b;
     // [双发射] 4 读 2 写寄存器堆。lane A = 现有单发射通路；lane B = 第二槽。
-    //   写口 B 在 A 之后写，所以同址（理论上不会，pairable_b 排掉 rd_a==rd_b）B 赢。
+    //   写口 B 在 A 之后写，所以同址（[P1] 现在**允许**同对 rd_a==rd_b）B 赢 ——
+    //   正好等于"B 更年轻、它的值才是最终值"。这条是 P1 删掉 `p_rd_a != p_rd_b`
+    //   判据的**唯一依据**，改 regfile 写序会立刻让 WAW 配对变成静默错值。
     //   DUAL_ISSUE=0 时 pair_now 恒 0 ⇒ lane B 恒气泡，B 侧端口无消费者，综合裁掉。
     regfile u_regfile (
         .clk(clk), .resetn(resetn),
@@ -733,7 +735,9 @@ module core #(
     //   不产生 branch/jump/mem/csr/sys，所以 B **永远不碰**重定向、陷阱、BHT、
     //   访存、乘除单元，控制/重定向逻辑一个门都不加（只多驱动 1 份寄存器）。
     //   排除 M 扩展（funct7=1）是因为 mul/div 走共享多拍单元。
-    //   rd_a 与 rs1_b/rs2_b/rd_b 相等：同拍无 A→B 旁路，且同址写回语义会打架。
+    //   [P1 2026-10-17] 原规则里"rd_a 与 rs1_b/rs2_b/rd_b 一律不许相等"已放宽：
+    //   A 是纯 ALU 时结果在 EX 同拍可得（A→B 旁路），同址写回由 regfile
+    //   "B 后写 ⇒ B 赢"兜住。详见本段末尾 pair_now 的说明。
     wire [6:0] p_op_a  = imem_rd[6:0];
     wire [6:0] p_f7_a  = imem_rd[31:25];
     wire [4:0] p_rd_a  = imem_rd[11:7];
@@ -766,6 +770,21 @@ module core #(
     // [lane B 访存] lane A / lane B 的访存属性（任务书 §4B）
     wire p_mem_a = (p_op_a == 7'b0000011) || (p_op_a == 7'b0100011);   // load / store
     wire p_ld_b  = (p_op_b == 7'b0000011);                             // 只放 load
+
+    // [P1 · A→B 同拍旁路] lane A 是否能在 EX 同拍把结果送给 lane B。
+    //   白名单 = **写回值骑在 `alu_result` 上**的三类：
+    //     OP / OP_IMM（wb_sel=00，ALU 结果）、AUIPC（wb_sel=00，pc+imm）。
+    //   [!] **LUI 不能进这个白名单**：它 wb_sel=2'b11，写回值取 `id_ex_imm`
+    //       而 `alu_result` 那拍不是它（见 control.v 的 wb_sel 编码）。放进来会
+    //       出现"配了对、B 却拿到陈旧寄存器值"的静默错值 —— 这类判据必须与
+    //       EX 段 `ab_bypass` 的 `wb_sel==00` **逐位同源**。
+    //   load 也不在白名单：数据要到 MEM/WB 才回来 —— 这类依赖仍由 stall 处理
+    //   （见 hazard 段），A 是 load 时 pair_now 仍按"源冲突就不配对"走。
+    //   [!] 本判据是**放宽**不是收紧：去掉的是三条 5 位比较器里的两条，
+    //   取指环（pair_now → fetch_addr → BRAM 地址）反而少一级逻辑。
+    wire p_alu_a     = (p_op_a == 7'b0110011) || (p_op_a == 7'b0010011) ||
+                       (p_op_a == 7'b0010111);
+    wire p_ab_bypass = p_alu_a && !p_muldiv_a;
 
     wire p_branch = (p_op_a == 7'b1100011);
     wire p_jump   = (p_op_a == 7'b1101111);
@@ -836,7 +855,16 @@ module core #(
                       // → fetch_addr 的组合路径上（Fmax 第一风险点）。门控后 0 档
                       // 折成常量删除该腿 ⇒ 恢复 rev1023 网表；1 档语义不变。
                       !(p_mem_a && p_ld_b && (LANEB_MEM != 0)) &&
-                      (p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b) && (p_rd_a != p_rd_b);
+                      // [P1 · A→B 同拍旁路] 原先这里有三个"同对不许有寄存器耦合"的
+                      //   条件，本版按数据通路能力放宽：
+                      //   ① `p_rd_a != p_rs1_b` / ② `p_rd_a != p_rs2_b`：A 是纯 ALU 时
+                      //      结果在 EX 同拍可得，B 的两个源直接从 `alu_result` 取
+                      //      （见 EX 段 `fwd_ba_ab/fwd_bb_ab`）。A 不是纯 ALU
+                      //      （load / mul / jal / CSR…）时仍然完全不配对，语义与旧版一致。
+                      //   ③ `p_rd_a != p_rd_b`（同址写回）**整条删除**：regfile 是
+                      //      4 读 2 写，写口 B 在 A 之后写 ⇒ 同址时 B 赢，正好等于
+                      //      "B 更年轻、它的值才是最终值"。删掉顺带省一级比较器。
+                      (p_ab_bypass || ((p_rd_a != p_rs1_b) && (p_rd_a != p_rs2_b)));
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
     // 跳转时当拍旁路到目标（见上面 fetch_addr 的说明）。
@@ -1128,6 +1156,28 @@ module core #(
     wire [31:0] alu_raw;
     alu u_alu (.a(alu_a), .b(alu_b), .alu_op(id_ex_alu_op), .result(alu_raw));
 
+    // ------------------------------------------------------------------
+    // EX 结果四选一：CSR 读 > 多拍除法 > 多拍乘法 > ALU
+    //   * CSR 读值【骑在这里】才能白拿前递与写回通路 —— 对下游而言它就是
+    //     "EX 算出来的结果"，不需要任何额外旁路。
+    //   * 多拍单元的结果同理骑在这里：它们在 done 那一拍给出组合输出，
+    //     所以对前递网络和 EX/MEM 而言与"单拍 ALU 结果"没有区别。
+    //   * [!] 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
+    //     `id_ex_is_div`，误触发除法停顿 → mc_stall 永不释放 → 死锁。
+    //     所以 CSR 用**独立的** id_ex_is_csr 标志，alu_op 保持 0。
+    //   * [!] `id_ex_is_mul` 判的是 10..13，与 14..17 的除法**不重叠**，
+    //     两者也互斥（同一条指令不可能既是 mul 又是 div）。
+    //   * [P1] 本赋值上移到 lane B 的 EX **之前**：lane B 的 A→B 同拍旁路要用它
+    //     （iverilog 先声明后使用）。依赖的 csr_rdata / div_result / mul_result /
+    //     alu_raw / id_ex_is_div 全部在此行之前已声明，语义与位置无关。
+    // ------------------------------------------------------------------
+    // 多拍除法（DIV/DIVU/REM/REMU）：alu_op 14..17 ⇒ 由迭代除法器接管。
+    //   [P1] 声明上移：`alu_result` 的四选一要用它（下面 div_start 只消费）。
+    wire id_ex_is_div = (id_ex_alu_op >= 5'd14);
+    wire [31:0] alu_result = id_ex_is_csr ? csr_rdata :
+                             id_ex_is_div ? div_result :
+                             id_ex_is_mul ? mul_result : alu_raw;
+
     // ---- lane B 的 EX：ALU +（LANEB_MEM=1 时）load ----
     // lane B 操作数 1（id_ex_b_rs1）
     // [lane B 访存] 同 fwd_a_exb：排除 lane B load 的地址前递（R1）。
@@ -1146,12 +1196,30 @@ module core #(
     wire fwd_bb_wbb = mem_wb_b_reg_write && (mem_wb_b_rd != 5'd0) && (mem_wb_b_rd == id_ex_b_rs2);
     wire fwd_bb_wb  = mem_wb_reg_write && (mem_wb_rd != 5'd0) && (mem_wb_rd == id_ex_b_rs2);
 
-    wire [31:0] rs1_val_b = ld_fwd_ba ? ld_early_val :         // [任务 C] 快通路 load
+    // [P1 · A→B 同拍旁路] lane A 与 lane B 同处 EX 时，A 的 ALU 结果这一拍就能用。
+    //   `ab_bypass` 的三个条件缺一不可：
+    //     ① A 写非 x0 寄存器（否则 B 的源与它无关）；
+    //     ② A 的写回值就骑在 `alu_result` 上（`wb_sel==00`）。**必须是 00**：
+    //        wb_sel=01 是 load（数据在 MEM/WB 才回来）、10 是 jal/jalr 的链接值
+    //        （走 `ex_mem_pc+4`）、11 是 LUI（`id_ex_imm`）⇒ 三者都不能旁路。
+    //        ALU / OP_IMM / AUIPC / CSR 是 00，与 pair_now 的 `p_ab_bypass`
+    //        白名单（OP / OP_IMM / AUIPC）一致；CSR 不进配对，保守收窄。
+    //     ③ **优先级最高** —— A 比 EX/MEM、MEM/WB 里的指令都年轻。
+    //   [!] 这条链是 `reg → A 的 ALU → B 的 ALU → B 的结果寄存器`（两级 ALU），
+    //   不在取指环上；但它是本设计第一次让 EX 内部出现**同拍串联**，
+    //   出流前必须看 PDS 报告里 lane B 的 `alu_result_b` 锥有没有变长。
+    wire        ab_bypass  = id_ex_reg_write && (id_ex_rd != 5'd0) && (id_ex_wb_sel == 2'b00);
+    wire        fwd_ba_ab  = ab_bypass && (id_ex_rd == id_ex_b_rs1);
+    wire        fwd_bb_ab  = ab_bypass && (id_ex_rd == id_ex_b_rs2);
+
+    wire [31:0] rs1_val_b = fwd_ba_ab ? alu_result :            // [P1] A→B 同拍旁路
+                            ld_fwd_ba ? ld_early_val :         // [任务 C] 快通路 load
                             fwd_ba_exb ? ex_mem_forward_val_b :
                             fwd_ba_ex  ? ex_mem_forward_val :
                             fwd_ba_wbb ? wb_data_b :
                             fwd_ba_wb  ? wb_data : id_ex_b_rdata1;
-    wire [31:0] rs2_val_b = ld_fwd_bb ? ld_early_val :         // [任务 C] 快通路 load
+    wire [31:0] rs2_val_b = fwd_bb_ab ? alu_result :            // [P1] A→B 同拍旁路
+                            ld_fwd_bb ? ld_early_val :         // [任务 C] 快通路 load
                             fwd_bb_exb ? ex_mem_forward_val_b :
                             fwd_bb_ex  ? ex_mem_forward_val :
                             fwd_bb_wbb ? wb_data_b :
@@ -1163,7 +1231,7 @@ module core #(
     alu u_alu_b (.a(b_alu_a), .b(b_alu_b), .alu_op(id_ex_b_alu_op), .result(alu_result_b));
 
     // 多拍除法：DIV/DIVU/REM/REMU 由迭代除法器接管（单拍组合除法会拖垮 Fmax）
-    wire id_ex_is_div = (id_ex_alu_op >= 5'd14);
+    // （`id_ex_is_div` 的声明已上移到 `alu_result` 之前 —— 见该处的 [P1] 说明。）
     wire div_start    = id_ex_is_div && !div_busy;
     // （div_result / div_busy / div_done 声明已提前到文件顶部）
     divider u_divider (
@@ -1202,21 +1270,7 @@ module core #(
         .busy(mul_busy),
         .done(mul_done)
     );
-    // ------------------------------------------------------------------
-    // EX 结果四选一：CSR 读 > 多拍除法 > 多拍乘法 > ALU
-    //   * CSR 读值【骑在这里】才能白拿前递与写回通路 —— 对下游而言它就是
-    //     "EX 算出来的结果"，不需要任何额外旁路。
-    //   * 多拍单元的结果同理骑在这里：它们在 done 那一拍给出组合输出，
-    //     所以对前递网络和 EX/MEM 而言与"单拍 ALU 结果"没有区别。
-    //   * [!] 绝不能用 `alu_op >= 14` 去编码 CSR 读 —— 那会撞上下面的
-    //     `id_ex_is_div`，误触发除法停顿 → mc_stall 永不释放 → 死锁。
-    //     所以 CSR 用**独立的** id_ex_is_csr 标志，alu_op 保持 0。
-    //   * [!] `id_ex_is_mul` 判的是 10..13，与 14..17 的除法**不重叠**，
-    //     两者也互斥（同一条指令不可能既是 mul 又是 div）。
-    // ------------------------------------------------------------------
-    wire [31:0] alu_result = id_ex_is_csr ? csr_rdata :
-                             id_ex_is_div ? div_result :
-                             id_ex_is_mul ? mul_result : alu_raw;
+    // （`alu_result` 的赋值已上移到 lane B 的 EX 之前 —— P1 的 A→B 旁路要用它。）
     // 访存地址 = base + offset，恒为 ADD（load/store 的 alu_op 固定为 0，
     // 见 control.v 的 OP_LOAD / OP_STORE —— 它们不写 alu_op，保持 default 的 0）。
     // 单独用一个加法器产生地址，把 32×32 乘法器从
