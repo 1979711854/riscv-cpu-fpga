@@ -18,7 +18,7 @@
 | 工作树 | 主工作树 `d:\riscv-cpu-fpga_merged`（仍在 `feat/mem128k`，**干净**）；`D:\_lut`（= `feat/lut`）；`D:\_lut_base`（detached，干净基线用） |
 | 候选位流 | `D:\_lut\pds\RV32I_1\generate_bitstream\cpu_top_board.sbit`，md5 **`c642c0ac603fcdc677941ae8f0241a7e`**（9,188,552 B，2026-10-17 23:27:50） |
 | 归档副本 | `D:\_lut\pds\RV32I_1\bitstreams\lut_combined_76mhz_seed10_c642c0ac.sbit`（+ 同名 `_timing.rtr`；`.sbit` 被 gitignore） |
-| 状态 | **未上板**。所有"减 LUT 后仍正确"的结论目前只有仿真 + PDS 报告支撑 |
+| 状态 | **仍未上板**。2026-10-17 23:33 那份板上日志（`Total ticks 807,669,047`）来自**另一颗位流** `bacbcaee`（perf-opt 的 P1+P3a 档），**不是** `c642c0ac` —— 判据见 §8 |
 
 ---
 
@@ -73,7 +73,8 @@
 4. **深层 LUT-RAM 的真实成本 ≈ RAM 单元 × 2**：256 深的表每位要"4×RAM64X1 + 16:1 mux + 译码"，mux/译码会变成逻辑 LUT。缩深度比缩宽度贵（L3 的 128 项版就是因此多掉 804 拍）。
 5. **改 BHT/BTB 必须两侧同改**（`*_hit_p` / `*_hit_w` 或 `*_idx_p` / `*_idx_w`），只改一侧 = 静默错预测（拍数暴涨、CRC 仍对）。
 6. **别再 git checkout `pds/RV32I_1/RV32I_1.pds`**（会把 `gplace_seed` 退回 5）；改 seed 用文本替换该行。
-7. 旧 12 条（`2026-10-17_handoff_next_session.md` §5）继续有效：固件冻结窗口、Fmax 只认 CPU 域那一行、分数口径 352.5/4.6075、资源两个口径、PS 5.1 的 BOM/EAP、同一 PDS 工程不能并发等。
+7. **烧之前先核 `md5`，上电先核 banner 的 `RTL=`**：`generate_bitstream\cpu_top_board.sbit` 只代表"最后一次综合的那版"。本次已实际踩中——2026-10-17 23:33 的板上日志是主干工作树里 perf-opt 的 `bacbcaee`（`RTL=0x20261030` / WNS −0.318），不是候选流 `c642c0ac`（`RTL=0x20261028`）。详见 §8。
+8. 旧 12 条（`2026-10-17_handoff_next_session.md` §5）继续有效：固件冻结窗口、Fmax 只认 CPU 域那一行、分数口径 352.5/4.6075、资源两个口径、PS 5.1 的 BOM/EAP、同一 PDS 工程不能并发等。
 
 ---
 
@@ -114,3 +115,45 @@ powershell -File scripts\run_riscv_tests.ps1 -EarlyLd -LanebMem        # 49/1/0
    ```
    `D:\_lut` 里有两处未提交的构建副产物：`pds/RV32I_1/RV32I_1.pds`（时间戳）、`pds/RV32I_1/mem.hex`（固件内嵌版本串 2 行，行数仍 39,420）—— 随工作树删除即可。
 3. **seed 继续扫**：只跑了 8/10/16 三点。若之后想追指标②，可再扫 5/24 等（每点 10 分钟），但按现在数据期望很低。
+
+---
+
+## 8. 上板记录：2026-10-17 23:33 的日志**不属于本候选流**（重要）
+
+`doc/board/uart_20261017_233332.txt` 抓到的是：
+
+```
+[build] FW=COREMARK RTL=0x20261030      <-- [!] 不是 0x20261028
+Total ticks      : 807669047            <-- 每迭代 207,094
+[0]crcfinal      : 0xbd59               <-- 与 c642c0ac 无关
+Correct operation validated
+```
+
+**证据链（三条独立判据同时指向同一颗流）**：
+
+| 判据 | 板测日志 | 主干工作树里那颗 `bacbcaee` | 本候选流 `c642c0ac` |
+|---|---|---|---|
+| `mimpid` 的 `RTL=` | **0x20261030** | 0x20261030（perf-opt P3a 起的 rev） | **0x20261028** |
+| 每迭代拍数 | **207,094** | 207,155（仿真，P1+P3a） | **217,088** |
+| 其他 | — | WNS **−0.318** / Fmax 74.69 / LUT 8,133 | WNS **+0.311** / 78.37 / LUT 6,932 |
+
+⇒ 烧的是 **`d:\riscv-cpu-fpga_merged\pds\RV32I_1\generate_bitstream\cpu_top_board.sbit`（md5 `bacbcaee…`，20:05:16）**，
+即性能线**已判死**（时序不收敛）的那颗 P1+P3a 位流；`D:\_lut` 下 23:27:50 出的 `c642c0ac` **没被烧过**。
+
+**这次日志唯一能用的结论**（可写进报告附录，必须标"非交付"）：
+P1/P3a 的 CPI 收益在板上是真的 —— 807,669,047 拍 = 10.5571 s，经典分 **369.4**、主分 **4.8287 CoreMark/MHz**，
+四 CRC 全对；但那张网表 **WNS −0.318 ns（11 个 seed 上都出不了收敛域）**，所以只能作技术储备。
+
+**教训（已并入 §5 陷阱）**：
+`generate_bitstream\cpu_top_board.sbit` 这个名字只代表"最后一次综合的那版"，
+主工作树里现在躺着的是 perf-opt 的产物。**烧之前必须对两件事**：
+① `md5`（本次应为 `c642c0ac603fcdc677941ae8f0241a7e`）；
+② 上电后串口 banner 的 **`RTL=0x20261028`** —— 这一行是最便宜、最不会骗人的自证。
+
+### 8.1 待办（顺序）
+
+1. 烧 `D:\_lut\pds\RV32I_1\generate_bitstream\cpu_top_board.sbit`（`c642c0ac`，23:27:50）；
+2. 上电先看 banner：`RTL=0x20261028` 才算对；
+3. 按住 SW6 + SW3 跑 CoreMark，期望 **`Total ticks 846,440,591`**（±0）、四 CRC `e9f5/e714/1fd7/8e3a`；
+4. 松开 SW6 复位进五子棋，确认 heap 4840 / `[hb] alive` / HDMI 正常；
+5. 过了再动交付页。

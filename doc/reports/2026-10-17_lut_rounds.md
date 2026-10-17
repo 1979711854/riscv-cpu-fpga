@@ -271,6 +271,8 @@ python scripts\lut_breakdown.py pds\RV32I_1\synthesize\cpu_top_board_syn.vm --de
 
 ```powershell
 # 1) 烧 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit（= c642c0ac，别再点旧路径）
+#    [!] 烧前必查：md5 必须是 c642c0ac603fcdc677941ae8f0241a7e、时间 23:27:50；
+#        上电后串口 banner 必须打印 RTL=0x20261028（本分支 rev）。两条任一不符就是烧错流。
 # 2) 默认复位 -> 五子棋：串口应见 heap 4840 / [hb] alive，HDMI 棋盘正常
 # 3) 按住 SW6 + 按 SW3 复位 -> CoreMark
 scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
@@ -288,3 +290,39 @@ scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
 过了之后要同步更新的地方：`2026-10-17_delivery_rev1028.md`（LUT 7,740→6,932、③ 0.595→0.6647、
 口径 B 45.54→50.85、Fmax 78.3269→78.3699、位流 md5 与归档名）、`bitstreams/README.md`
 （新增 rev1029 章节）、`CLAUDE.md` 约定 27 的四项常量（若涉及）、以及 ILA `.fic` 与演示视频（绑定新流重做）。
+
+---
+
+## 12. 上板记录（截至 2026-10-17 23:34）：候选流**尚未上板**
+
+### 12.1 23:33 那份日志是别人
+
+`doc/board/uart_20261017_233332.txt`：
+
+```
+[build] FW=COREMARK RTL=0x20261030       <-- [!] 本分支应为 0x20261028
+Total ticks      : 807669047             <-- 207,094 拍/迭代，不是 217,088
+[0]crcfinal      : 0xbd59
+Correct operation validated
+```
+
+三条独立判据同时指向**主干工作树里那颗 perf-opt 位流**（`bacbcaee…`，20:05:16）：
+
+| 判据 | 板测 | `bacbcaee`（perf-opt P1+P3a） | `c642c0ac`（本候选） |
+|---|---|---|---|
+| banner `RTL=` | 0x20261030 | 0x20261030 | **0x20261028** |
+| 拍/迭代 | 207,094 | 207,155（仿真） | **217,088** |
+| PDS | — | WNS **−0.318** / 74.69 / LUT 8,133 | WNS **+0.311** / 78.37 / LUT 6,932 |
+
+⇒ **本文件的指标③ 结论仍未获得板上证据**；`c642c0ac` 一次都没跑过。
+
+### 12.2 这次日志的附带价值（附录可用，必须标"非交付"）
+
+性能线（P1+P3a）在板上被证实：**807,669,047 拍 = 10.5571 s ⇒ 经典分 369.4、主分 4.8287 CoreMark/MHz**，
+四 CRC 全对、`Correct operation validated`。但同一颗流 **WNS −0.318 ns**，任何 seed 都出不了收敛域，
+所以只能作为"CPI 优化已实现、时序受限不能交付"的技术储备写进附录。
+
+### 12.3 下一步（唯一待办）
+
+烧 `c642c0ac` → banner 见 `RTL=0x20261028` → CoreMark 期望 `846,440,591` / 四 CRC 不变 → 五子棋 + HDMI 正常。
+全过之后才允许改 `delivery_rev1028.md`。
