@@ -140,7 +140,7 @@ module csr_file (
     //                MMIO）；快通路 load 的 RAM 判定同步放宽到 0x0~0x1FFEF。
     //                语义上周期数不变（BRAM 仍是 1 拍读），时序需重扫 seed。
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1030;   // 2026-10-17 P3a：lane B 放 JAL（取指改道 + RAS call）
+    localparam [31:0] DESIGN_REV = 32'h2026_1032;   // 2026-10-17 交叉实验：feat/lut（LUT -808）+ P1/P3a（CPI -4.58%）
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
