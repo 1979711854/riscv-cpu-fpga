@@ -48,7 +48,7 @@ scripts\build_bitstream.ps1 combined -Iter 3900     # 9 min 21 s
 
 ⇒ **CPI 收益与"减 LUT"完全兼容**：两个改动的功能面不打架。
 
-### 2.2 时序 / 资源（PDS，76.5052 MHz，`gplace_seed 10`）
+### 2.2 时序 / 资源（PDS，76.5052 MHz，`gplace_seed 10`，**后来扫到 seed 5 更好，见 §2.3**）
 
 | 项 | `feat/lut`（c642c0ac） | 本次 `feat/lut-perf` | Δ |
 |---|---|---|---|
@@ -60,6 +60,23 @@ scripts\build_bitstream.ps1 combined -Iter 3900     # 9 min 21 s
 | 约束总判 | All Constraints Met | **Some Constraints Violated** | — |
 
 位流 md5 **`a76bd290d692ca4cd202369873285b7a`**（8.76 MB，2026-10-18 00:07:49）—— **不上板**。
+
+### 2.3 seed 采样（4 个点，赌 0.449 的结果）
+
+`gplace_seed` 逐个改（文本替换，**不要 `git checkout` 该 `.pds`**），每次完整 `gen_bit_stream` 约 10 min：
+
+| seed | WNS（CPU 域 Slow） | failEP | totalEP | Fmax | 判定 |
+|---|---|---|---|---|---|
+| **5** | **−0.259** | — | 16,960 | **75.0188** | ✅ **本区间最优，但仍差 0.259** |
+| 10 | −0.449 | 176 | 16,949 | 73.9645 | 差 |
+| 8 | −0.613 | — | 16,956 | 73.0780 | 差 |
+| 16 | −0.674 | — | 16,940 | 72.7537 | 差 |
+
+**排序与旧网表完全一致**（旧网表 40 seed 的最优也是 seed 5，其次 10、8、16）⇒ 布局质量是**设计形状**决定的，
+换网表后"哪个 seed 好"高度可复用，**靠扫 seed 补 0.449 ns 不现实**：本区间最优点仍差 0.259，
+而 40 seed 在旧网表上的全距只有 0.26 ns。
+
+⇒ **种子路到此为止**（共 4 次出流 ≈ 40 min 机器）。.pds 已复原为 `gplace_seed 10`（保持与本报告 §2.2 一致）。
 
 ---
 
