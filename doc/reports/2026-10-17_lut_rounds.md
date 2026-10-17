@@ -233,3 +233,58 @@ python scripts\lut_breakdown.py pds\RV32I_1\synthesize\cpu_top_board_syn.vm --de
 2. `pds_shell.exe` 的 `-run <step>` 会**重跑前面所有步骤**；只要 ΔLUT 时用 `-run dev_map`（约 1 分钟），别等完整 `gen_bit_stream`。
 3. `run_coremark.ps1` 默认**不打印 `region cycles`**，必须再手动跑一次 `+PROF`；`total cycles`（1,528,658）与 `region cycles`（217,088）是两个口径，别混。
 4. 新工作树里 `rtl/video/*`、`rtl/core/{ila_probes.vh,rvc_expand.v}` 与旧工作树存在 **CRLF/LF** 差异（`git status` 不报），MD5 不同但内容等价，不影响综合。
+
+---
+
+## 11. seed 扫描与候选交付流（2026-10-17 深夜）
+
+### 11.1 为什么还要扫 seed
+
+旧的"seed 10 是 40 个 seed 最优"**只对旧网表成立**。本次网表少了 808 LUT、端点从 21,135 降到 16,670，
+布局自由度变了，必须重新采样一次才能确认 seed 10 是否仍然合适。
+
+| seed | WNS | Fmax | failEP | totalEP | 判定 |
+|---|---|---|---|---|---|
+| 8 | +0.147 | 77.3754 | 0 | 16,681 | 不如 10 |
+| **10** | **+0.311** | **78.3699** | 0 | 16,670 | ✅ **仍最优，保持** |
+| 16 | +0.069 | 76.9112 | 0 | 16,718 | 不如 10 |
+
+结论：三个采样点极差 0.242 ns，**seed 10 在两个不同网表上都赢** ⇒ **不换 seed**，
+继续扫的边际收益低（每点 10 分钟），机器时间留给上板验证。
+三个 `.rtr` 已归档（见 §11.2），`RV32I_1.pds` 的 `gplace_seed` 已复原为 **10**。
+
+### 11.2 候选交付位流身份（**未上板**）
+
+| 项 | 值 |
+|---|---|
+| md5 | **`c642c0ac603fcdc677941ae8f0241a7e`** |
+| 尺寸 / 时间 | 9,188,552 B / 2026-10-17 23:27:50 |
+| 配置 | `seed 10`、`DUAL_ISSUE=1`、`LANEB_MEM=1`、`combined`、`ITER=3900` |
+| 时序 | **+0.311 ns / 0 失败端点 / Fmax 78.3699 / totalEP 16,670** |
+| 资源 | **LUT 6,932**（logic 6,744 + LUT-RAM 188）/ FF 3,466 / DRM 165.5 |
+| 镜像 | `mem.hex` **39,420 行**（boot 17 + CoreMark 8,552 + RT-Thread 11,141，与 `b45941d6` 同布局） |
+| 归档 | `pds/RV32I_1/bitstreams/lut_combined_76mhz_seed10_c642c0ac.sbit` + 同名 `_timing.rtr`（本地，`.sbit` 不进库） |
+| seed 证据 | `bitstreams/lut_seedsweep_seed{8,16}_timing.rtr` |
+| 状态 | **只在 `feat/lut`，未上板、未进交付页** |
+
+### 11.3 上板验收清单（照抄执行，全部过了才能改交付页）
+
+```powershell
+# 1) 烧 pds\RV32I_1\generate_bitstream\cpu_top_board.sbit（= c642c0ac，别再点旧路径）
+# 2) 默认复位 -> 五子棋：串口应见 heap 4840 / [hb] alive，HDMI 棋盘正常
+# 3) 按住 SW6 + 按 SW3 复位 -> CoreMark
+scripts\serial_monitor.ps1 -Port COM4 -Seconds 60
+```
+
+| # | 判据 | 期望值 | 备注 |
+|---|---|---|---|
+| 1 | `Total ticks` | **846,440,591**（±0，与 `b45941d6` 逐位相同） | 拍数在仿真里逐位不变，板上应复现 |
+| 2 | 四 CRC | `e9f5 / e714 / 1fd7 / 8e3a` | 任一不同 = 固件/镜像不对 |
+| 3 | 时长 | 11.0638 s（≥10 s 硬要求） | 频率没变，ITER 仍是 3900 |
+| 4 | 五子棋可玩 | AI 能落子、串口有节点数 | 预测器缩表只影响命中率，不应可见 |
+| 5 | HDMI | 画面正常、无 `[!] vblank timeout` | 视频侧 RTL 未改 |
+| 6 | LED | `led[0]` 常亮（pll_locked） | 首个上板判据 |
+
+过了之后要同步更新的地方：`2026-10-17_delivery_rev1028.md`（LUT 7,740→6,932、③ 0.595→0.6647、
+口径 B 45.54→50.85、Fmax 78.3269→78.3699、位流 md5 与归档名）、`bitstreams/README.md`
+（新增 rev1029 章节）、`CLAUDE.md` 约定 27 的四项常量（若涉及）、以及 ILA `.fic` 与演示视频（绑定新流重做）。
