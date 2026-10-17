@@ -7,6 +7,12 @@
   > 远程 FPGA 平台**没有 PLL、固定 27MHz** —— 那是另一套口径，回那边要改回
   > `EE_TICKS_PER_SEC`/`CPU_HZ`=27e6 并重新生成固件（见 `scripts/demo/addr_map.h` 注释）。
   > **仿真也是 27MHz**（测试台例化 `cpu_top`，不传 `UART_DIV`）。三处口径别混。
+  > **[!] 2026-10-17 分支状态（`feat/mem128k`，未合并）**：统一存储器扩到 **128KB**（15 位字地址、
+  > 兼容区加 `!addr[16]`）后 **85.0051MHz 收敛不了**（8 seed 最好 −0.796 ns），已按 `STATIC_RATIO0` 15.0
+  > 降到 **76.5052MHz**：CPU 域 **+0.304 ns / 0 失败端点 / Fmax 78.33 / All Constraints Met**，
+  > 位流 `6074c89c`（**未上板**；回归已全绿：riscv-tests 49/1/0、own_tests 8/0、CoreMark 217,088 拍）。
+  > 上行 85.0051MHz 的交付档口径（`c6af65be`）**暂不改**，
+  > 合并后按五处同步统一改。入口见 `doc/reports/2026-10-17_handoff_mem128k_cpu.md`。
 - 设计内容：**RV32I + M 扩展的 5 级流水线 CPU，顺序双发射**（forwarding 前递 + load-use 停顿 + 多拍除法器；2026-10-06 起 `DUAL_ISSUE=1`），集成 UART/GPIO，跑 riscv-tests 与 **CoreMark v1.0**（要求运行 ≥10s）
 - 可选加分项：2 路组相联 I/D Cache、BTB 动态分支预测 + 完整异常/中断、边缘 AI 加速
 
