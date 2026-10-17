@@ -498,7 +498,11 @@ if ($Variant -eq "coremark" -or $Variant -eq "combined") {
     $expTicks = $Iter * $cpiCycles
     Write-Host " [重点] 板上时钟 $eeTicks Hz（$([math]::Round($eeTicks / 1e6, 4)) MHz，读自 core_portme.c），期望 Total ticks ≈ $expTicks"
     Write-Host "       -> /$eeTicks = $([math]::Round($expTicks / $eeTicks, 4)) s"
-    Write-Host "       主分预期：$([math]::Round($eeTicks / $cpiCycles, 4)) CoreMark/MHz（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；与频率无关）"
+    # [!] 两个口径别混（2026-10-17 修）：经典分 = Iterations ÷ 秒数 = 时钟 ÷ 每迭代拍数；
+    #     主分 = 经典分 ÷ MHz。eeTicks/cpiCycles 是【经典分】，不是 CoreMark/MHz。
+    $score  = $eeTicks / $cpiCycles
+    $perMhz = $score / ($eeTicks / 1e6)
+    Write-Host "       分数预期：经典分 $([math]::Round($score, 1)) / 主分 $([math]::Round($perMhz, 4)) CoreMark/MHz（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；主分与频率无关）"
     if ($Variant -eq "combined") {
         Write-Host ""
         Write-Host " [单一位流] 复位后由 boot selector 选路（key[2] = 丝印 SW6，低有效）："
