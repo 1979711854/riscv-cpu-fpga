@@ -22,21 +22,21 @@ module unified_mem #(
     parameter EARLY_LD = 0
 ) (
     // ---- A1 口：取指 1（只读，同步读 1 拍）----
-    input  wire [13:0] a_addr,
+    input  wire [14:0] a_addr,
     output reg  [31:0] a_rd_data,
     input  wire        a_clk,
     input  wire        a_rst,
 
     // ---- A2 口：取指 2（只读，同步读 1 拍）----
-    input  wire [13:0] a2_addr,
+    input  wire [14:0] a2_addr,
     output reg  [31:0] a2_rd_data,
 
     // ---- C 口：任务 C 的提前 load 读口（只读，同步读 1 拍；EARLY_LD=1 时有意义）----
-    input  wire [13:0] ld_addr,
+    input  wire [14:0] ld_addr,
     output reg  [31:0] ld_rd_data,
 
     // ---- B 口：访存（读写，按字节写，同步读 1 拍）----
-    input  wire [13:0] b_addr,
+    input  wire [14:0] b_addr,
     input  wire [31:0] b_wr_data,
     input  wire        b_wr_en,
     input  wire [3:0]  b_byte_en,
@@ -49,9 +49,9 @@ module unified_mem #(
     // 加 +MEMWAIT=n 后每 n+1 拍才拉高一次，用来【验证】core.v 的停顿逻辑真的生效。
     output reg         b_ready
 );
-    reg [31:0] mem0 [0:16383];
-    reg [31:0] mem1 [0:16383];
-    reg [31:0] mem2 [0:16383];   // [任务 C] C 口阵列（提前 load 读；EARLY_LD=0 时不用）
+    reg [31:0] mem0 [0:32767];
+    reg [31:0] mem1 [0:32767];
+    reg [31:0] mem2 [0:32767];   // [任务 C] C 口阵列（提前 load 读；EARLY_LD=0 时不用）
     reg [1023:0] hexpath;
     integer i;
 
@@ -63,7 +63,7 @@ module unified_mem #(
 
     initial begin
         // 必须先清零：未初始化地址读出 X，会让比较类测试莫名失败
-        for (i = 0; i < 16384; i = i + 1) mem0[i] = 32'd0;
+        for (i = 0; i < 32768; i = i + 1) mem0[i] = 32'd0;
         if ($value$plusargs("IMEM=%s", hexpath)) begin
             // 显式给了 IMEM 就认它是主镜像（可以是 elf2mem.py 出的 mem.hex
             // 完整镜像，也可以是拆分的 imem.hex）；再给了 DMEM 才叠一份上去。
@@ -75,7 +75,7 @@ module unified_mem #(
             $readmemh("programs/dmem.hex", mem0);
         end
         // mem1/mem2 是 mem0 的镜像（rtl 侧写口广播，几份永远相同）
-        for (i = 0; i < 16384; i = i + 1) begin
+        for (i = 0; i < 32768; i = i + 1) begin
             mem1[i] = mem0[i];
             mem2[i] = mem0[i];
         end

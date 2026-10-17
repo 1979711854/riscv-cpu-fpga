@@ -16,16 +16,16 @@ module tb_debug_trap;
     reg         resetn;
     wire [31:0] pc;
 
-    wire [13:0] imem_addr;     // 与 core / mem_bus 的端口同宽（64KB = 16384 word），别改窄
+    wire [14:0] imem_addr;     // 与 core / mem_bus 的端口同宽（128KB = 32768 word），别改窄
     wire [31:0] imem_rd;
-    wire [13:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（64KB），别改窄
+    wire [14:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（128KB），别改窄
     wire [31:0] imem_rd2;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
     wire [3:0]  mem_byte_en;
     wire        mem_we, mem_re;
     // [任务 C] 提前 load 读口（C 口）
-    wire [13:0] ld_addr;
+    wire [14:0] ld_addr;
     wire [31:0] ld_rdata;
 
     // 接真实的定时器中断（来自 mem_bus 的 CLINT）—— 测中断必须接。

@@ -34,9 +34,9 @@ module mem_bus (
     // ---- 取指口（直通统一存储器的 A1/A2 口，不做任何仲裁/缓冲）----
     // A2 是双发射的第二取指读口：与 A1 同拍、同延迟，读 unified_mem 的复制阵列。
     // 单发射（DUAL_ISSUE=0）时 core 仍驱动它、但结果被丢弃，行为逐位不变。
-    input  wire [13:0] imem_addr,
+    input  wire [14:0] imem_addr,
     output wire [31:0] imem_rd,
-    input  wire [13:0] imem_addr2,   // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
+    input  wire [14:0] imem_addr2,   // 与 imem_addr 同宽（128KB = 32768 word），别改窄 —— 见 core.v 端口注释
     output wire [31:0] imem_rd2,
 
     // ---- [任务 C] 提前 load 读口（C 口，只读、同步读 1 拍）----
@@ -45,7 +45,7 @@ module mem_bus (
     // （外设/视频/兼容区一律走旧通路）。所以这里直连 unified_mem 的第三份阵列即可。
     // [!] 它【绕过 D-Cache】—— 快通路 load 直接读真存储器，因此永远比 Cache 更新，
     //     功能上安全（写通路本来就是写通到 BRAM）。
-    input  wire [13:0] ld_addr,
+    input  wire [14:0] ld_addr,
     output wire [31:0] ld_rdata,
 
     // ---- 访存口（来自 core 的 MEM 级）----
@@ -166,8 +166,12 @@ module mem_bus (
     // ------------------------------------------------------------------
     // 地址译码（只在这里做一次）
     // ------------------------------------------------------------------
-    wire legacy_hit = (mem_addr[31:16] == 16'd0) && (mem_addr[15:4] == 12'hFFF);
-    wire ram_hit    = (mem_addr[31:16] == 16'd0) && !legacy_hit;  // 0x0~0xFFFF 挖掉兼容区
+    // 128KB：RAM = 0x0~0x1FFFF；兼容区只挖低 64KB 的 0xFFF0~0xFFFF。
+    // [!] 0x1FFF0 的 `addr[15:4]` 也是 0xFFF，必须用 `!addr[16]` 区分，
+    //     否则 0x1FFF0 会被误判成兼容区 MMIO（它正好在 RT-Thread 栈顶附近）。
+    wire legacy_hit = (mem_addr[31:17] == 15'd0) && !mem_addr[16] &&
+                      (mem_addr[15:4] == 12'hFFF);
+    wire ram_hit    = (mem_addr[31:17] == 15'd0) && !legacy_hit;  // 0x0~0x1FFFF 挖掉兼容区
 
     // 高半区（addr[31]=1）一分为二，分界线在 addr[16]：
     //   addr[17:16] == 2'b00 → 外设区 0x8000_0000~0x8000_FFFF
@@ -213,7 +217,7 @@ module mem_bus (
     //   指令与数据共用一块，所以 store 写进去的东西，后续取指能读到 ——
     //   这正是 fence_i（自修改代码）能通过的原因。
     // ------------------------------------------------------------------
-    wire [13:0] ram_word = mem_addr[15:2];
+    wire [14:0] ram_word = mem_addr[16:2];
     wire [31:0] ram_rdata;
     wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 

@@ -52,13 +52,13 @@
 // ============================================================================
 module cache_i #(
     parameter IDX_BITS = 9,         // set 索引位宽 → 512 组（4KB/侧；16KB 用 11）
-    parameter TAG_BITS = 5          // tag 位宽 = 14 − IDX_BITS（IDX=9 → 5）
+    parameter TAG_BITS = 6          // tag 位宽 = 15 − IDX_BITS（IDX=9 → 6）
 ) (
     input  wire        clk,
     input  wire        resetn,
 
     // ---- 取指口 A1（每个周期都在取指，所以没有 req）----
-    input  wire [13:0] word,        // = imem_addr（fetch_addr[15:2]）
+    input  wire [14:0] word,        // = imem_addr（fetch_addr[16:2]）
     input  wire [31:0] bram_rdata,  // 后端 BRAM 的 A1 读数据（T+1 有效）
 
     // ---- 输出 ----
@@ -74,7 +74,7 @@ module cache_i #(
     // 地址切片
     // ------------------------------------------------------------------
     wire [IDX_BITS-1:0] idx      = word[IDX_BITS-1:0];
-    wire [TAG_BITS-1:0] addr_tag = word[13:IDX_BITS];
+    wire [TAG_BITS-1:0] addr_tag = word[14:IDX_BITS];
 
     // ------------------------------------------------------------------
     // 复位清扫：2048 拍逐个把 tag 阵列的有效位清 0（理由同 cache_d.v）
@@ -93,7 +93,7 @@ module cache_i #(
     end
 
     // ------------------------------------------------------------------
-    // tag 阵列（组合读 → LUTRAM；每项 5 位 = {valid, recent, tag[2:0]}）
+    // tag 阵列（组合读 → LUTRAM；每项 {valid, recent, tag[TAG_BITS-1:0]}）
     // ------------------------------------------------------------------
     reg [TAG_BITS+1:0] tag0 [0:NSET-1];
     reg [TAG_BITS+1:0] tag1 [0:NSET-1];

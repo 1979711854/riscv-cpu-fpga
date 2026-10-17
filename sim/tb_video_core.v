@@ -86,11 +86,11 @@ module tb_video_core;
     mem_bus u_bus (
         .clk          (clk_sys),
         .resetn       (rstn_sys),
-        .imem_addr    (14'd0),   // 取指口宽度 = 64KB 的 word 索引；本测试台不用取指，只求不报宽度警告
+        .imem_addr    (15'd0),   // 取指口宽度 = 128KB 的 word 索引；本测试台不用取指，只求不报宽度警告
         .imem_rd      (),
-        .imem_addr2   (14'd0),
+        .imem_addr2   (15'd0),
         .imem_rd2     (),
-        .ld_addr      (14'd0),   // [任务 C] 提前 load 读口：本测试台不用，只求不悬空
+        .ld_addr      (15'd0),   // [任务 C] 提前 load 读口：本测试台不用，只求不悬空
         .ld_rdata     (),
         .mem_addr     (d_addr),
         .mem_wdata    (d_wdata),

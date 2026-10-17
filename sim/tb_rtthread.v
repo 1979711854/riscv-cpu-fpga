@@ -427,9 +427,10 @@ module tb_rtthread;
             ck_addr <= tb_rtthread.u_soc.u_core.mem_addr;
             ck_f3   <= tb_rtthread.u_soc.u_core.ex_mem_funct3;
             ck_low  <= tb_rtthread.u_soc.u_core.mem_addr[1:0];
-            ck_word <= tb_rtthread.u_soc.u_bus.u_mem.mem0[tb_rtthread.u_soc.u_core.mem_addr[15:2]];
-            ck_ram  <= (tb_rtthread.u_soc.u_core.mem_addr[31:16] == 16'd0) &&
-                       (tb_rtthread.u_soc.u_core.mem_addr[15:4] != 12'hFFF);
+            ck_word <= tb_rtthread.u_soc.u_bus.u_mem.mem0[tb_rtthread.u_soc.u_core.mem_addr[16:2]];
+            ck_ram  <= (tb_rtthread.u_soc.u_core.mem_addr[31:17] == 15'd0) &&
+                       !((tb_rtthread.u_soc.u_core.mem_addr[16] == 1'b0) &&
+                         (tb_rtthread.u_soc.u_core.mem_addr[15:4] == 12'hFFF));
         end
         ck_vld_r <= ck_vld;
         ck_pc_r  <= ck_pc;

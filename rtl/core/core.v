@@ -67,18 +67,18 @@ module core #(
     // 该 load 的 MEM 级，于是紧跟其后的指令在 EX 级就能前递到它，不用停一拍。
     // 后端是 unified_mem 里【第三份数组 mem2】（写口同样广播），所以它与 B 口
     // （store/AMO/旧通路 load 在用）不争端口。
-    output wire [13:0] ld_addr,       // word 索引
+    output wire [14:0] ld_addr,       // word 索引（15 位 = 32768 word = 128KB）
     input  wire [31:0] ld_rdata,      // 同步读 1 拍延迟
 
     // ---- 取指口（A1 口）----
     // 契约：同步读、恰好 1 拍延迟（第 T 拍给地址 → 第 T+1 拍出数据）、只读、
     // 且【不做任何仲裁/冲突检测】。本模块的 stall/flush 补偿逻辑依赖 A 口
     // 每拍都能独立工作，加仲裁会直接破坏取指时序。
-    output wire [13:0] imem_addr,     // word 索引；注意是 stall mux 之后的值
+    output wire [14:0] imem_addr,     // word 索引；注意是 stall mux 之后的值（128KB = 32768 word）
     input  wire [31:0] imem_rd,       // 同步读 1 拍延迟
     // ---- 取指口（A2 口，双发射第二读口）----
     // 与 A1 同拍、同延迟，读 unified_mem 的复制阵列。DUAL_ISSUE=0 时被丢弃。
-    // [!] 宽度必须与 imem_addr **一致**（14 位 = 16384 word = 64KB）。
+    // [!] 宽度必须与 imem_addr **一致**（15 位 = 32768 word = 128KB）。
     //     2026-10-10 实查：存储器扩到 64KB 时漏了这里，它还是 32KB 时代的
     //     13 位，而 `imem_addr + 1` 是在 14 位宽里算的 → **赋给 13 位线时丢掉
     //     最高位** → imem_addr2 在 8192 word（字节 0x8000）处回绕。
@@ -86,7 +86,7 @@ module core #(
     //     （pair_now 判据用的就是 imem_rd2），会执行错指令。
     //     当时没炸只是因为没有程序的代码大过 32KB —— 而扩容的全部意义就是
     //     让代码能大过它。别再把这两根线的宽度写成不一样的。
-    output wire [13:0] imem_addr2,
+    output wire [14:0] imem_addr2,
     input  wire [31:0] imem_rd2,
 
     // ---- 访存口（MEM 级）----
@@ -829,21 +829,20 @@ module core #(
 
     // 取指地址：stall 时退一格到在途指令 if_addr_d 让同步读重新锁存正确数据，
     // 跳转时当拍旁路到目标（见上面 fetch_addr 的说明）。
-    assign imem_addr = fetch_addr[15:2];   // 64KB = 16384 word
+    assign imem_addr = fetch_addr[16:2];   // 128KB = 32768 word
 
     // 第二取指地址：固定指向下一个 word。
-    // [!] 常量必须写 `14'd1`（与 imem_addr 同宽）。写成 `13'd1` 的话加法仍在
-    //     14 位宽里做，本身不错，但一旦接收端也是窄的就会截位 —— 见端口声明处的
-    //     [!]。这里写全宽是让"谁在哪个宽度上算"一目了然，两边一起改不难。
+    // [!] 常量必须写 `15'd1`（与 imem_addr 同宽）。写成窄常量的话，一旦接收端
+    //     也是窄的就会截位 —— 见端口声明处的 [!]。这里写全宽是让"谁在哪个宽度上算"
+    //     一目了然，两边一起改不难。
     //     DUAL_ISSUE=0 时它在核内没有任何消费者，综合会连同 A2 口的读结果一起裁掉。
-    // [!] 2026-10-16 P3.5(B)：必须从 `fetch_addr[15:2]` 直接算，**不要**写成
-    //     `imem_addr + 14'd1` —— 后者把这条 14 位加法【串】在 imem_addr 之后：
+    // [!] 2026-10-16 P3.5(B)：必须从 `fetch_addr[16:2]` 直接算，**不要**写成
+    //     `imem_addr + 15'd1` —— 后者把这条 15 位加法【串】在 imem_addr 之后：
     //     关键路径多一级 LUT + 一条进 BRAM 的长线（P3.5(A) 后的实测路径：
-    //     if_addr_d → imem_addr → N247_1_8/COUT → imem_addr2[11] → DRM ADB0，
-    //     尾段 0.299 + 0.157 + 1.166 ns）。两式逐位等价（都是 14 位模 2^14 加法，
-    //     `imem_addr` 恒 = `fetch_addr[15:2]`），改写只是把"两个平级加法器"的
-    //     自由度还给综合器，语义零变化。
-    assign imem_addr2 = fetch_addr[15:2] + 14'd1;
+    //     if_addr_d → imem_addr → N247_1_8/COUT → imem_addr2[11] → DRM ADB0）。
+    //     两式逐位等价（都是 15 位模 2^15 加法，`imem_addr` 恒 = `fetch_addr[16:2]`），
+    //     改写只是把"两个平级加法器"的自由度还给综合器，语义零变化。
+    assign imem_addr2 = fetch_addr[16:2] + 15'd1;
 
     // ================= ID/EX =================
     // （级间寄存器声明已提前到文件顶部，避免 forward reference）
@@ -969,8 +968,11 @@ module core #(
     //   注意：EX/MEM 里那条是【字快通路 load】时不算拿不到 —— 它的数据这一拍就在
     //   ld_early_data 上（上面 ld_base 的第一路）。旧通路 load、byte/half 快通路 load、
     //   AMO 都仍然算拿不到（数据还没回来 / 要解包，见 ld_f_ld 处的说明）。
-    wire ld_bad_ram  = !((ld_id_addr[31:16] == 16'd0) &&
-                         (ld_id_addr[15:4] != 12'hFFF));                      // 判据②
+    // 128KB：RAM = 0x0~0x1FFEF；兼容区只挖低 64KB 的 0xFFF0~0xFFFF
+    // （0x1FFF0 的 addr[15:4] 也是 0xFFF，必须用 addr[16] 区分，见 mem_bus.v）
+    wire ld_bad_ram  = !((ld_id_addr[31:17] == 15'd0) &&
+                         !((ld_id_addr[16] == 1'b0) &&
+                           (ld_id_addr[15:4] == 12'hFFF)));                   // 判据②
     wire ld_bad_st   = id_ex_mem_write;                                       // 判据③
     wire ld_bad_amo  = id_ex_is_amo || ex_mem_is_amo;                         // 判据④
 
@@ -978,7 +980,7 @@ module core #(
                      !ld_bad_base && !ld_bad_ram && !ld_bad_st && !ld_bad_amo;
 
     // 提前读口地址：由 ID/EX 驱动（= 该 load 的 EX 级）。非快通路时指 0（无用）。
-    assign ld_addr = id_ex_ld_fast ? id_ex_ld_addr[15:2] : 14'd0;
+    assign ld_addr = id_ex_ld_fast ? id_ex_ld_addr[16:2] : 15'd0;
 
     // 快通路 load 的数据：正常取实时 ld_rdata；访存冻结期间取快照（理由同 WB 段）
     assign ld_early_data = (EARLY_LD != 0 && ld_snap_en) ? ld_snap : ld_rdata;
@@ -1672,7 +1674,7 @@ module core #(
     // 跳转那一拍 fetch_addr 被旁路，此后 pc_r 与"已发出的地址"相差 4。
     //
     // stall / mc_stall 时：pc_r 与 if_addr_d 都【保持不动】，同时上面
-    // fetch_addr 的 mux 把取指地址【退回 if_addr_d[14:2]】—— 也就是重读上一拍
+    // fetch_addr 的 mux 把取指地址【退回 if_addr_d[16:2]】—— 也就是重读上一拍
     // 已经读过一遍的同一个 word，让它落在 imem_rd 上、在 stall 结束那一拍被
     // if_id 采走，从而拿到 (pc, 指令) 同址的一对。
     //

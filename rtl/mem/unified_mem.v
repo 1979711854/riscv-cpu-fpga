@@ -44,13 +44,13 @@ module unified_mem #(
     parameter EARLY_LD = 0
 ) (
     // ---- A1 口：取指 1（只读）----
-    input  wire [13:0] a_addr,
+    input  wire [14:0] a_addr,
     output reg  [31:0] a_rd_data,
     input  wire        a_clk,
     input  wire        a_rst,
 
     // ---- A2 口：取指 2（只读，双发射第二读口；与 A1 同域，共用 a_clk/a_rst）----
-    input  wire [13:0] a2_addr,
+    input  wire [14:0] a2_addr,
     output reg  [31:0] a2_rd_data,
 
     // ---- C 口：任务 C 的"提前 load 读口"（只读，与 A1/A2 同域、同延迟）----
@@ -58,11 +58,11 @@ module unified_mem #(
     // MEM 级）回来。再做一份阵列的理由与 A2 完全一样：BRAM 只有 2 个物理端口，
     // 而 A1 取指、B 访存已经用掉了它们，且 B 口的读/写地址是同一根 —— store 在
     // MEM 级占据 B 口时，load 的提前读没法共用。写口同样【广播】到三份阵列。
-    input  wire [13:0] ld_addr,
+    input  wire [14:0] ld_addr,
     output reg  [31:0] ld_rd_data,
 
     // ---- B 口：访存（读写）----
-    input  wire [13:0] b_addr,
+    input  wire [14:0] b_addr,
     input  wire [31:0] b_wr_data,
     input  wire        b_wr_en,
     input  wire [3:0]  b_byte_en,
@@ -78,10 +78,10 @@ module unified_mem #(
 );
 
     assign b_ready = 1'b1;
-    // 16384 word = 64KB（每份）。若要扩容，必须同步改 mem_bus 与 core 里的 [15:2]
+    // 32768 word = 128KB（每份）。若要再扩容，必须同步改 mem_bus 与 core 里的 [16:2]
     // 切片，否则高位被静默截断。
-    (* syn_ramstyle = "block_ram" *) reg [31:0] mem0 [0:16383];  // A1 取指 + B 访存
-    (* syn_ramstyle = "block_ram" *) reg [31:0] mem1 [0:16383];  // A2 取指
+    (* syn_ramstyle = "block_ram" *) reg [31:0] mem0 [0:32767];  // A1 取指 + B 访存
+    (* syn_ramstyle = "block_ram" *) reg [31:0] mem1 [0:32767];  // A2 取指
 
     // [重点] 这里【不要】加整数组清零的 for 循环。
     //   PDS 的循环展开上限是 2000 次（Verilog-4092: Loop limit 2000 exceeded），
@@ -102,7 +102,7 @@ module unified_mem #(
     // ------------------------------------------------------------------
     generate
     if (EARLY_LD != 0) begin : g_ldmem
-        (* syn_ramstyle = "block_ram" *) reg [31:0] mem2 [0:16383];
+        (* syn_ramstyle = "block_ram" *) reg [31:0] mem2 [0:32767];
         initial $readmemh("mem.hex", mem2);
 
         always @(posedge b_clk) begin

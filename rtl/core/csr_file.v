@@ -126,8 +126,14 @@ module csr_file (
     //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
     //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
     //     （旧值 2026_1024 = lane B 访存管道落地但 LANEB_MEM=0，P2）
+    //     2026_1028  [128KB] 统一存储器 64KB→128KB（15 位字地址）：
+    //                core.v / cpu_top.v / mem_bus.v / unified_mem.v /
+    //                cache_i.v / cache_d.v / mem_model.vh 的 word 索引全部
+    //                14→15 位；兼容区判决加 `!addr[16]`（0x1FFF0 不再误中
+    //                MMIO）；快通路 load 的 RAM 判定同步放宽到 0x0~0x1FFEF。
+    //                语义上周期数不变（BRAM 仍是 1 拍读），时序需重扫 seed。
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1027;   // 2026-10-16 P3.5：摘 alu_result_b 腿 + imem_addr2 解耦
+    localparam [31:0] DESIGN_REV = 32'h2026_1028;   // 2026-10-17 128KB：15 位字地址 + 兼容区别名修复
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,

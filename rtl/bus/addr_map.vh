@@ -10,23 +10,31 @@
 `define ADDR_MAP_VH
 
 // ---------------------------------------------------------------------------
-// RAM：32 位字，16384 word = 64KB，字索引用 addr[15:2]
-//   注意 0xFFF0~0xFFFF 被下面的兼容区挖走，RAM 实际可用到 0xFFEF。
-//   栈顶必须 <= 0xFFF0（CoreMark 用 0xF000，安全）。
-// [!] 2026-10-10 由 32KB(addr[14:2]) 扩到 64KB。扩容必须【一起】改这几处，
-//     漏一处就是静默错位：rtl/mem/unified_mem.v 的 mem0/mem1、
-//     rtl/core/core.v 的 imem_addr 切片、rtl/bus/mem_bus.v 的 ram_word 切片与
-//     ram_hit 范围、sim/mem_model.vh、以及下面兼容区的地址。
-// [!] **这份清单当时就漏了一处，实查踩到：`imem_addr2`（双发射第二取指口的
-//     宽度）**。它留在 13 位，而 `imem_addr + 1` 在 14 位宽里算 → 赋给 13 位线
+// RAM：32 位字，32768 word = 128KB，字索引用 addr[16:2]
+//   注意【低 64KB】的 0xFFF0~0xFFFF 被下面的兼容区挖走，RAM 实际可用到 0x1FFEF。
+//   [!] 0x1FFF0 的 addr[15:4] 也是 0xFFF —— 兼容区判决必须加 `!addr[16]`，
+//       否则 0x1FFF0 会被误判成 MMIO（mem_bus.v / core.v 的快通路判定同此）。
+//   栈顶：CoreMark 0xF000，RT-Thread 0x1FFF0（见 scripts/rtthread/bsp/link.ld）。
+// [!] 历史：2026-10-10 由 32KB(addr[14:2]) 扩到 64KB；2026-10-17 由
+//     64KB(addr[15:2]) 扩到 128KB(addr[16:2])。扩容必须【一起】改这些地方，
+//     漏一处就是静默错位：
+//       rtl/core/core.v（imem_addr / imem_addr2 / ld_addr 端口与切片、
+//                        ld_bad_ram、`15'd1` / `15'd0`）
+//       rtl/top/cpu_top.v（三根 wire 宽度）
+//       rtl/bus/mem_bus.v（ram_word 切片、ram_hit / legacy_hit）
+//       rtl/mem/unified_mem.v（mem0/mem1/mem2 深度）
+//       rtl/bus/cache_i.v / cache_d.v（word 宽度 + TAG_BITS + addr_tag 切片）
+//       sim/mem_model.vh（端口 + 三份阵列深度 + 清零循环）
+//       sim/tb_riscv.v / tb_coremark.v / tb_amo_int.v /
+//       sim/tools/tb_debug_trap.v / tb_icache_dbg.v / tb_memdbg.v
+//       rtl/bus/addr_map.vh（本文件的 RAM_LAST_BYTE 与注释）
+// [!] **凡是承载"word 索引"的线，宽度都要一起走**。2026-10-10 实踩：
+//     `imem_addr2` 留在 13 位，`imem_addr + 1` 在 14 位宽里算 → 赋给 13 位线
 //     时丢最高位 → 取指地址 ≥ 0x8000 时 lane B 从低 32KB 取错指令。
-//     **凡是承载"word 索引"的线，宽度都要跟 imem_addr 一起走** ——
-//     现在是 5 个文件：rtl/core/core.v（端口 + `14'd1`）、rtl/top/cpu_top.v、
-//     rtl/bus/mem_bus.v、sim/tb_riscv.v、sim/tb_coremark.v、sim/tb_amo_int.v、
-//     sim/tools/tb_debug_trap.v。再加一条就请补进这份清单。
+//     **再加一条承载 word 索引的线，就补进这份清单。**
 // ---------------------------------------------------------------------------
 `define RAM_BASE        32'h0000_0000
-`define RAM_LAST_BYTE   32'h0000_FFEF
+`define RAM_LAST_BYTE   32'h0001_FFEF
 
 // ---------------------------------------------------------------------------
 // 兼容区 0xFFF0~0xFFFF —— CoreMark 的链接脚本/移植层硬编码

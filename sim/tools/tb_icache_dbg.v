@@ -37,13 +37,13 @@ module coremark_tb;
     reg [63:0] cycle_count;
 
     // core ↔ mem_bus 的取指口与访存口
-    wire [13:0] imem_addr;     // 与 core / mem_bus 的端口同宽（64KB = 16384 word），别改窄
+    wire [14:0] imem_addr;     // 与 core / mem_bus 的端口同宽（128KB = 32768 word），别改窄
     wire [31:0] imem_rd;
-    wire [13:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（64KB），别改窄
+    wire [14:0] imem_addr2;    // 与 core / mem_bus 的端口同宽（128KB），别改窄
     wire [31:0] imem_rd2;
     // [任务 C] 提前 load 读口（C 口）：core 出地址、mem_bus 回数据。
     // [!] 必须接上 —— 悬空的 core 输入会变 Z（约定 13），会直接污染 load 数据。
-    wire [13:0] ld_addr;
+    wire [14:0] ld_addr;
     wire [31:0] ld_rdata;
     wire [31:0] mem_addr, mem_wdata, mem_rdata;
     wire        mem_ready;   // 访存就绪：mem_bus 出，core 入（访存等待机制）
@@ -655,7 +655,8 @@ module coremark_tb;
                           a_f_wbb ? u_core.wb_data_b :
                           a_f_wb  ? u_core.wb_data : u_core.rdata1;
     wire [31:0] a_addr  = a_base + u_core.imm;
-    wire        a_in_ram = (a_addr[31:16] == 16'd0) && (a_addr[15:4] != 12'hFFF);
+    wire        a_in_ram = (a_addr[31:17] == 15'd0) &&
+                           !((a_addr[16] == 1'b0) && (a_addr[15:4] == 12'hFFF));
     wire        a_bad_ex = (u_core.id_ex_reg_write   && (u_core.id_ex_rd   != 5'd0) &&
                             (u_core.id_ex_rd   == u_core.rs1)) ||
                            (u_core.id_ex_b_reg_write && (u_core.id_ex_b_rd != 5'd0) &&

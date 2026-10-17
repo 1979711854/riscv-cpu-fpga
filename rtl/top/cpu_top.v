@@ -91,13 +91,13 @@ module cpu_top (
     parameter LANEB_MEM  = 1;
 
     // ---- core ↔ mem_bus：取指口（A1 + 双发射第二读口 A2）----
-    wire [13:0] imem_addr;
+    wire [14:0] imem_addr;
     wire [31:0] imem_rd;
-    wire [13:0] imem_addr2;     // 与 imem_addr 同宽（64KB = 16384 word），别改窄 —— 见 core.v 端口注释
+    wire [14:0] imem_addr2;     // 与 imem_addr 同宽（128KB = 32768 word），别改窄 —— 见 core.v 端口注释
     wire [31:0] imem_rd2;
 
     // ---- core ↔ mem_bus：[任务 C] 提前 load 读口（C 口）----
-    wire [13:0] ld_addr;
+    wire [14:0] ld_addr;
     wire [31:0] ld_rdata;
 
     // ---- core ↔ mem_bus：访存口 ----

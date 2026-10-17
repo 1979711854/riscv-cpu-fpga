@@ -320,7 +320,7 @@ module tb_gomoku;
     //   `input_t` 就在 RAM 里，按地址读出来就能直接看见固件"以为"发生了什么。
     // 地址来源：`riscv-none-elf-nm sim/programs/gomoku_sim/gomoku_sim.elf`
     //     ⇒ `g_input` @ **0x6D7C**，大小 **0x38**。
-    //   存储器是【字寻址】（`mem0[0:16383]`，64KB）⇒ 字下标 = 0x6D7C/4 = **7007**。
+    //   存储器是【字寻址】（`mem0[0:32767]`，128KB）⇒ 字下标 = 0x6D7C/4 = **7007**。
     // 字段偏移（见 `scripts/gomoku/input.h` 的 input_t）：
     //     raw[4]@0  t_edge[4]@4  stable[4]@20  down_at[4]@24  long_sent[4]@40
     //     short_latch@44  long_latch@45  debounce_ticks@48  long_ticks@52

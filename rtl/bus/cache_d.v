@@ -9,10 +9,10 @@
 //
 // ----------------------------------------------------------------------------
 // 组织结构
-//   set 数 2048、2 路、每行 1 字（32 位）→ 2048×2×4B = 16 KB
-//   字地址（mem_addr[15:2]，14 位）切片：
-//       index = word[10:0]   (2048 组)
-//       tag   = word[13:11]  (3 位 —— 地址空间只有 64KB，所以 tag 极短)
+//   默认 set 数 512（IDX_BITS=9）、2 路、每行 1 字（32 位）→ 512×2×4B = 4 KB
+//   字地址（mem_addr[16:2]，15 位）切片：
+//       index = word[IDX_BITS-1:0]  (512 组)
+//       tag   = word[14:IDX_BITS]   (IDX=9 → 6 位 —— 地址空间 128KB，所以 tag 很短)
 //   [重点] tag 阵列用【组合读】（LUTRAM），这是本设计能成立的唯一原因：
 //     访存契约要求「T 拍给地址、T+1 拍 mem_rdata 有效」，而命中/缺失必须在
 //     **T 拍当拍**就知道（mem_ready 是 T 拍组合信号，等到 T+1 再发现缺失时
@@ -49,7 +49,7 @@
 // ============================================================================
 module cache_d #(
     parameter IDX_BITS = 9,         // set 索引位宽 → 512 组（4KB/侧；16KB 用 11）
-    parameter TAG_BITS = 5          // tag 位宽 = 14 − IDX_BITS（IDX=9 → 5）
+    parameter TAG_BITS = 6          // tag 位宽 = 15 − IDX_BITS（IDX=9 → 6）
 ) (
     input  wire        clk,
     input  wire        resetn,
@@ -57,7 +57,7 @@ module cache_d #(
     // ---- MEM 拍的访问请求（与 mem_bus 的 ram_hit && (mem_re|mem_we) 同相）----
     input  wire        req,
     input  wire        we,          // 1 = store
-    input  wire [13:0] word,        // 字索引 = mem_addr[15:2]
+    input  wire [14:0] word,        // 字索引 = mem_addr[16:2]
     input  wire [31:0] wdata,       // store 数据（已按字节复制）
     input  wire [3:0]  be,          // store 字节使能
 
@@ -77,7 +77,7 @@ module cache_d #(
     // 地址切片
     // ------------------------------------------------------------------
     wire [IDX_BITS-1:0] idx      = word[IDX_BITS-1:0];
-    wire [TAG_BITS-1:0] addr_tag = word[13:IDX_BITS];
+    wire [TAG_BITS-1:0] addr_tag = word[14:IDX_BITS];
 
     // ------------------------------------------------------------------
     // 复位清扫：2048 拍逐个把两个 tag 阵列的有效位清 0
@@ -96,7 +96,7 @@ module cache_d #(
     end
 
     // ------------------------------------------------------------------
-    // tag 阵列（组合读 → LUTRAM；每项 5 位 = {valid, recent, tag[2:0]}）
+    // tag 阵列（组合读 → LUTRAM；每项 {valid, recent, tag[TAG_BITS-1:0]}）
     // ------------------------------------------------------------------
     reg [TAG_BITS+1:0] tag0 [0:NSET-1];
     reg [TAG_BITS+1:0] tag1 [0:NSET-1];
