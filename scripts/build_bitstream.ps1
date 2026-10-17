@@ -24,14 +24,20 @@
                AI 思考期间光标照闪；串口见 render/ai 两条 "thread running" + [hb] 心跳）
     video    = HDMI 彩条版（填显存画 8 条竖条 + 串口显存读回自检）
     gomoku   = 五子棋版（HDMI 出棋盘，4 个按键操作，串口打印 AI 节点数/耗时）
+    combined = **[交付档] 单一位流**：boot selector + CoreMark + RT-Thread 三块镜像
+               合成一份 mem.hex（scripts/merge_images.py 校验后合并）。
+               复位后读 GPIO 的 key[2]（SW6）：按住 → CoreMark，松开 → 五子棋。
+               这一版是为了满足官方答疑第 53 问（R99）「跑分和应用同一个 bit 流」。
 [!] 各变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
          demo     -> DEBUG_LED=0（led[7:0] 全给 GPIO，恢复 LED=KEY 演示映射）
          rtthread -> DEBUG_LED=1（同 coremark；led[0]=pll_locked 仍是上板首要判据）
          video    -> DEBUG_LED=1（led[1]=video_locked，HDMI 黑屏先看这一颗）
+         combined -> DEBUG_LED=1（两个程序共用一颗位流；led[0] 仍是最快的锁相判据）
 
 .PARAMETER Iter
-    仅 coremark 用，默认 4332。
+    仅 coremark / combined 用，默认 **3900**（76.5052MHz 档：3900 × 217,088 ÷ 76,505,200
+    = 11.0665 s，余量 10.7%）。[!] 85.0051MHz 时代的 4332 已不适用 —— 换频必须重算。
 [!] **改了流水线/取指逻辑、主频或编译选项必须重算**：
         ITER = 时钟频率 × 10s ÷ 每迭代周期数
     当前（双发射 + -O3 + 到达级重定向 + 任务C 的 EARLY_LD + A1 的 II=1 乘法器
@@ -92,10 +98,10 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku")]
+    [ValidateSet("coremark", "demo", "rtthread", "video", "gomoku", "combined")]
     [string]$Variant,
 
-    [int]$Iter = 4332,
+    [int]$Iter = 3900,
 
     [switch]$Single,      # 综合【单发射】回退版（DUAL_ISSUE=0）；结束后自动还原
     [switch]$Cache,
@@ -156,24 +162,33 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(22028);
-                 # [!] 2026-10-16 T6（队友 GUI 重设计：竖排多级菜单 + 23 个装饰 tile
-                 #     运行时合成）并入后实测：mem.hex 21046 -> 22028 行
-                 #     （10523 -> 11014 字；text 41901 -> 43865 B，T6 只动 scripts/gomoku，
-                 #     跑分档 coremark 固件不引用 gomoku 源码 => 17104 不变）。
-                 #     旧值 21046（85.0051MHz）/ 21048（76.5052MHz）随 T6 作废；
-                 #     76.5 MHz 评估档若要重建需自量。
+$expectLines = @{ coremark = @(17104); demo = @(326);
+                 # [!] 2026-10-17 单一位流（base 0x10000 + 76.5052MHz）重建实测：
+                 #     rtthread mem.hex = 22,282 行（11,141 字），
+                 #     text 44,373 B / data 188 / bss 10,952，_end = 0x1DD08，
+                 #     堆 4,840 B（__heap_end 0x1EFF0，栈区 0x1EFF0~0x1FFF0）。
+                 #     T6 时代在 0x0/85MHz 下的 22,028 已作废 —— 换布局 + 换频都会变。
+                 #     [重点] 这个数必须用【非 -Sim】的 rtthread\build.ps1 -Firmware 量。
+                  rtthread = @(22282);
+                  boot = @(34);
+                 # combined = 三块的**行数之和**（elf2mem 每字 2 行，且 merge_images.py
+                 # 已断言三块不重叠 ⇒ 合并后行数 = 行数之和，不会多也不会少）：
+                 #   boot 34 + coremark 17,104 + rtthread 22,282 = 39,420
+                 combined = @(39420);
                   video = @(758); gomoku = @(12552) }
 $expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
-                  rtthread = "11014 字（T6 后 2026-10-16 实测）";
+                  rtthread = "11141 字（0x10000 重定位 + 76.5MHz，2026-10-17 实测）";
+                  boot = "17 字（boot selector）";
+                  combined = "19,710 字 = boot 17 + coremark 8552 + rtthread 11141";
                   video = "379 字"; gomoku = "6276 字" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
 #   coremark -> 1：led[1:0] 显示 pll_locked / done，板上能一眼看出卡在哪
 #   demo     -> 0：led[7:0] 全给 GPIO，恢复"按开关位置重排"的 LED=KEY 映射
+#   combined -> 1：两个程序共用一颗位流，led[0]=pll_locked 仍是最快的锁相判据
 $topBoard = Join-Path $repo "rtl\top\cpu_top_board.v"
-$debugLed = @{ coremark = 1; demo = 0; rtthread = 1; video = 1; gomoku = 1 }[$Variant]
+$debugLed = @{ coremark = 1; demo = 0; rtthread = 1; video = 1; gomoku = 1; combined = 1 }[$Variant]
 
 # ---- 拟综合的双发射开关：从 cpu_top.v 读（这是"板上是哪一版"的唯一真相）----
 # cpu_top_board 例化 cpu_top 时不传该参数，所以综合取 cpu_top.v 里的默认值。
@@ -307,7 +322,53 @@ if ($topNew -ne $topOrig) {
 try {
     # ---- 1) 生成固件 ----
     Write-Host "[1/3] 生成固件 ..." -ForegroundColor Yellow
-    if ($Variant -eq "rtthread") {
+    if ($Variant -eq "combined") {
+        # ------------------------------------------------------------------
+        # [交付档] 单一位流：boot selector + CoreMark + RT-Thread 三块合成一份 mem.hex
+        # ------------------------------------------------------------------
+        # 顺序 = 0x0 boot → 0x1000 coremark → 0x10000 rtthread。
+        # [!] 三块都必须**重新编译**，不能复用目录里躺着的旧 hex —— 换频/换布局后
+        #     旧 hex 里的地址常量全是上一套（这正是"文件在、内容过期"那类坑）。
+        $stage = Join-Path $repo "sim\programs\combined"
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+        Write-Host "      1/3 boot selector ..." -ForegroundColor DarkGray
+        & (Join-Path $PSScriptRoot "boot\build.ps1") -Quiet
+        if ($LASTEXITCODE -ne 0) { throw "boot selector 构建失败" }
+        Copy-Item (Join-Path $PSScriptRoot "boot\build\mem.hex") `
+                  (Join-Path $stage "boot.hex") -Force
+
+        Write-Host "      2/3 CoreMark（ITER=$Iter）..." -ForegroundColor DarkGray
+        & (Join-Path $PSScriptRoot "run_coremark.ps1") -Iter $Iter -SkipSim
+        if ($LASTEXITCODE -ne 0) { throw "CoreMark 构建失败" }
+        Copy-Item (Join-Path $repo "sim\programs\mem.hex") `
+                  (Join-Path $stage "coremark.hex") -Force
+
+        Write-Host "      3/3 RT-Thread 五子棋 ..." -ForegroundColor DarkGray
+        & (Join-Path $PSScriptRoot "rtthread\build.ps1") -Firmware
+        if ($LASTEXITCODE -ne 0) { throw "RT-Thread 固件编译失败" }
+        Copy-Item (Join-Path $PSScriptRoot "rtthread\build\mem.hex") `
+                  (Join-Path $stage "rtthread.hex") -Force
+
+        # 合并前先逐块过行数守卫：合并后只有一个总数，出错时看不出是哪一块错了
+        foreach ($k in @("boot", "coremark", "rtthread")) {
+            $n = (Get-Content (Join-Path $stage "$k.hex")).Count
+            if ($expectLines[$k] -notcontains $n) {
+                Write-Host "!! $k.hex 行数与预期不符：期望 $(($expectLines[$k] | Sort-Object) -join ' 或 ')（$($expectDesc[$k])），实际 $n" -ForegroundColor Red
+                Write-Host "   若本次确实改过布局/编译期常量，属正常，更新 expectLines 即可；否则停下查清楚。" -ForegroundColor Yellow
+                exit 1
+            }
+            Write-Host ("      $k.hex  $n 行（$($expectDesc[$k])）") -ForegroundColor DarkGray
+        }
+
+        # merge_images.py：重叠 / 越界 / 兼容区 / 0x1FFF0 保留区 一律硬报错
+        & python (Join-Path $repo "scripts\merge_images.py") `
+                 --boot (Join-Path $stage "boot.hex") `
+                 --coremark (Join-Path $stage "coremark.hex") `
+                 --rtthread (Join-Path $stage "rtthread.hex") `
+                 -o (Join-Path $repo "sim\programs\mem.hex")
+        if ($LASTEXITCODE -ne 0) { throw "merge_images.py 失败：三块镜像没通过布局校验，别往下综合" }
+    } elseif ($Variant -eq "rtthread") {
         # RT-Thread 的固件由它自己的 build 脚本产出（它有独立的 BSP 与链接脚本），
         # 先把产物放进 sim\programs\，这样下面的 sync_firmware 与 sha256 校验
         # 都能照常走，不必为它开一条特例路径。
@@ -421,13 +482,30 @@ Write-Host ""
 Write-Host "接下来：" -ForegroundColor Cyan
 Write-Host "  1) PDS -> TOOL -> Programmer，器件选 PG2L200H，"
 Write-Host "     配置文件就是上面这个路径（**别用备份/旧文件**）"
-if ($Variant -eq "coremark") {
-    Write-Host "  2) 烧完立刻抓串口（一轮约 12 秒，慢一拍就错过）："
+if ($Variant -eq "coremark" -or $Variant -eq "combined") {
+    # [!] 时钟口径从 core_portme.c 的 EE_TICKS_PER_SEC 读，别再写死 ——
+    #     2026-10-17 换频到 76.5052MHz 后，写死的 85,005,100 会算出 12.4 s（错）。
+    $eeTicks = 0
+    $m = Select-String -Path (Join-Path $repo "scripts\coremark_port\core_portme.c") `
+                       -Pattern '#define\s+EE_TICKS_PER_SEC\s+(\d+)'
+    if ($m) { $eeTicks = [int]$m.Matches[0].Groups[1].Value }
+    if ($eeTicks -le 0) {
+        Write-Host " [!] 读不到 core_portme.c 的 EE_TICKS_PER_SEC，下面按 76,505,200 算" -ForegroundColor Yellow
+        $eeTicks = 76505200
+    }
+    Write-Host "  2) 烧完立刻抓串口（一轮约 11 秒，慢一拍就错过）："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"
     $expTicks = $Iter * $cpiCycles
-    Write-Host " [重点] 板上时钟 85.0051MHz，期望 Total ticks ≈ $expTicks -> /85,005,100 = $([math]::Round($expTicks / 85005100, 2)) s"
-    Write-Host "       （**别再用 ÷62.03e6 / ÷49.89e6 / ÷45e6 / ÷27e6** —— 那都是旧口径。以 PDS 时序报告里的实际频率为准）"
-    Write-Host "       得分预期：85.0051e6 / $cpiCycles = $([math]::Round(85005100 / $cpiCycles, 1)) CoreMark（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；单发射 280.4；双发射 0 档 370.2 / 1 档 rev1027 391.6）"
+    Write-Host " [重点] 板上时钟 $eeTicks Hz（$([math]::Round($eeTicks / 1e6, 4)) MHz，读自 core_portme.c），期望 Total ticks ≈ $expTicks"
+    Write-Host "       -> /$eeTicks = $([math]::Round($expTicks / $eeTicks, 4)) s"
+    Write-Host "       主分预期：$([math]::Round($eeTicks / $cpiCycles, 4)) CoreMark/MHz（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；与频率无关）"
+    if ($Variant -eq "combined") {
+        Write-Host ""
+        Write-Host " [单一位流] 复位后由 boot selector 选路（key[2] = 丝印 SW6，低有效）："
+        Write-Host "     **按住 SW6 再按 SW3 复位** → CoreMark 跑分（上面这条期望值）"
+        Write-Host "     **直接按 SW3 复位**       → RT-Thread 五子棋（HDMI + 按键）"
+        Write-Host "   验收：同一颗位流里两条路径都要跑通，录视频时先跑分再复位进五子棋。"
+    }
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + gomoku 的 render/AI 两条线程："
     Write-Host "     powershell -ExecutionPolicy Bypass -File scripts\serial_monitor.ps1 -Port COM4 -Seconds 60"

@@ -134,6 +134,12 @@ $RECYCLE.BIN/
 # ---- RT-Thread 移植（scripts/rtthread/）----
 /scripts/rtthread/build/
 
+# ---- boot selector（scripts/boot/）：编译产物不入库 ----
+# [!] 2026-10-17 加：scripts/boot/build/ 下会产出 boot.elf 与 {i,d,}mem.hex，
+#     它们是 merge_images.py 的输入、可随时重建；入库只会造成"hex 与 boot.S 不同步"。
+#     （.elf/.o 已被上面的全局规则覆盖，这里补 hex。）
+/scripts/boot/build/
+
 # ---- 五子棋 x86 单测产物 ----
 /scripts/gomoku/*.exe
 /scripts/gomoku/*.o

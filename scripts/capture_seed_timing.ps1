@@ -80,6 +80,27 @@ function Read-TextShared {
     finally { if ($sr) { $sr.Dispose() } elseif ($fs) { $fs.Dispose() } }
 }
 
+# 从一份 .rtr 里取出 CPU 时钟的**请求周期**（ns），用来算可达 Fmax。
+# [!] 2026-10-17 实踩：原先 Fmax 按 85MHz 的 11.764 写死，拿它解析 76.5MHz 的报告
+#     会打印 87.26 MHz（错 11%）。周期必须从报告本身读：
+#     时钟声明表里 CPU 时钟那一行的第一个数字就是请求周期
+#     （85 档 11.764 / 76.5 档 13.071）。
+function Read-CpuPeriod {
+    param([string]$File)
+    $txt = Read-TextShared $File
+    if (-not $txt) { return $null }
+    foreach ($l in ($txt -split "`r?`n")) {
+        if ($l.TrimStart().StartsWith($CpuClk)) {
+            $n = @($l.Trim() -split '\s+')
+            if ($n.Count -ge 2) {
+                $v = 0.0
+                if ([double]::TryParse($n[1], [ref]$v) -and $v -gt 0) { return $v }
+            }
+        }
+    }
+    return $null
+}
+
 # 从一份 .rtr 里取出 CPU 域那一行（WNS / TNS / 失败端点 / 总端点）
 function Read-CpuWns {
     param([string]$File)
@@ -130,6 +151,7 @@ function Show-CpuWnsTable {
         $rows += [pscustomobject]@{
             Seed = $seed; Label = $label
             Wns  = if ($w) { $w.Wns } else { $null }
+            Period = if ($w) { Read-CpuPeriod $f } else { $null }
             FailEP = if ($w) { $w.FailEP } else { $null }
             TotalEP = if ($w) { $w.TotalEP } else { $null }
             # [?] 读不出 Setup Summary 的（拷到半截 / 不是 CPU 域报告）
@@ -159,11 +181,18 @@ function Show-CpuWnsTable {
 
     $best = $sorted[0]
     $bestTag = if ($best.Seed -ge 0) { "seed $($best.Seed)" } else { "（钉 seed / 单 seed 模式，只有一份）" }
+    # Fmax = 1000 / (请求周期 − WNS)。周期从报告里读，**不能写死**
+    # （写死 11.764 会把 76.5 档算成 87.26 MHz，2026-10-17 实踩）。
+    $period = $best.Period
+    if (-not $period) {
+        $period = 11.764
+        Write-Host "  [!] 这份报告读不到 CPU 时钟的请求周期，按 85MHz 的 11.764 算 —— 换过频的话这个 Fmax 不可信" -ForegroundColor Yellow
+    }
     Write-Host ""
-    Write-Host ("  最优：{0}  WNS {1} ns / 可达 Fmax {2} MHz  （totalEP {3}，{4}）" -f `
+    Write-Host ("  最优：{0}  WNS {1} ns / 可达 Fmax {2} MHz  （请求周期 {3} ns，totalEP {4}，{5}）" -f `
         $bestTag, `
         ("{0:+0.000;-0.000;0.000}" -f $best.Wns), `
-        ([math]::Round(1000.0 / (11.764 - $best.Wns), 4)), $best.TotalEP, $best.Label) -ForegroundColor Green
+        ([math]::Round(1000.0 / ($period - $best.Wns), 4)), $period, $best.TotalEP, $best.Label) -ForegroundColor Green
     if ($best.Seed -ge 0) {
         Write-Host "  复现该布局：把 pds\RV32I_1\RV32I_1.pds 的 cmd_pnr 里 gplace_times 换成" -ForegroundColor Green
         Write-Host "             (_option gplace_seed (_integer $($best.Seed)))" -ForegroundColor Green
