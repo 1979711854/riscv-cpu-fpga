@@ -252,3 +252,83 @@ scripts\build_bitstream.ps1 video     # 一条命令：固件 -> 同步 -> 综�
    —— `SELFCHECK FAIL` 说明问题在 CPU 侧写/读显存，与 TMDS 无关
 3. 显示器应出 **8 条等宽竖条**，从左到右：白 黄 青 绿 品红 蓝 黑
 4. 黑屏/无信号/雪花 的排查顺序见 `rtl/video/video_top.v` 文件头那 5 条
+
+---
+
+## rev1028 · **单一位流**（boot selector + CoreMark + RT-Thread）· `b45941d6` · 2026-10-17
+
+> 这是**第一个满足官方答疑第 53 问（R99「跑分和应用必须是同一个 bit 流」）的交付位流**。
+> 一颗位流里驻留三个程序，复位后按 SW6 二选一；两条路径都已在板上跑通。
+
+### 文件
+
+| 项 | 值 |
+|---|---|
+| 归档文件（本地；`.sbit` 被 `.gitignore` 忽略，不入库） | `combined_boot_coremark_rtthread_dual_noaext_ms_earlyld_a1_ras_btb_gomoku_g3_lanebmem_76mhz_rev1028_seed10pin_b45941d6.sbit` |
+| md5（前 8 位即文件名） | **`b45941d6db1e3d1116deb3e080c03ba7`** |
+| sha256 | `59a21d8f125bba5b4d7b016f2f3269d7f36d8fe4246de5706d43792166f04846` |
+| 大小 / 生成时间 | 9,188,552 B / 2026-10-17 **18:11:33** |
+| 时序报告副本（本地） | `rev1028_combined_76mhz_seed10_b45941d6_timing.rtr`（341,258 B，同一次 P&R） |
+
+### 配置（一眼确认装的是哪一版 RTL）
+
+| 项 | 值 |
+|---|---|
+| DUAL_ISSUE / EARLY_LD / LANEB_MEM | 1 / 1 / 1 |
+| RAS / BTB | 开（BTB 32 项） |
+| DCACHE_EN / ICACHE_EN | **0 / 0**（交付档不开 Cache） |
+| PLL | STATIC_RATIO0 = 15.0 ⇒ **76.5052 MHz**，请求周期 13.0710 ns |
+| 布局 | `gplace_seed 10` 钉定 |
+| 器件 | PG2L200H-FBB676，速度 -6，PDS 2022.2-SP6.4 |
+
+### 镜像（**这一份 mem.hex 就是"同一颗位流"的证据**）
+
+`pds/RV32I_1/mem.hex`：**39,420 行 / 19,710 字**，sha256 `d8a8ce93bc0ace9f27a6f5b3803a96a19ddc6da610a4c854a10579b69a680548`
+
+| 段 | 区间 | 字数 | 内容 |
+|---|---|---|---|
+| boot | `0x00000~0x00043` | 17 | 复位入口，读 `key[2]`：按住→`0x1000`，松开→`0x10000` |
+| CoreMark | `0x01000~0x09a67` | 8,552 | ITER=3900 |
+| RT-Thread | `0x10000~0x1b23f` | 11,141 | 五子棋 G3，栈顶 `0x1FFF0`，堆 4,840 B |
+
+### 时序（只认 `Path Group: clk|u_pll/u_gpll/CLKOUT0_Inferred` 那一行）
+
+| 路径组 | WNS | 失败端点 / 总端点 | Fmax |
+|---|---|---|---|
+| **clk_sys → clk_sys（CPU 域）** | **+0.304 ns** | **0 / 21,135** | **78.3269 MHz** |
+| clk_sys → pix_clk | +6.484 ns | 0 / 21 | — |
+| pix_clk → clk_sys | +8.477 ns | 0 / 1 | — |
+| Design Summary | — | — | **All Constraints Met** |
+
+> [!] `multiseed` 日志里的 `Setup (Slow)` 是**跨域口径**，不能当 CPU 域引用（本项目历史上踩过）。
+
+### 板上实测（2026-10-17 18:54 / 19:02，见 `doc/board/uart_20261017_190201.txt`）
+
+| 路径 | 现象 |
+|---|---|
+| 默认复位 | banner → `[boot] heap = 4840` → render/ai 两线程 → `[hb] alive 5000/10000/15000`（连续 3 次） |
+| 按住 SW6 + SW3 | `Total ticks 846,440,591` → 11.0638 s → **经典分 352.5 / 主分 4.6075**，四 CRC `e9f5 e714 1fd7 8e3a`，`Correct operation validated` |
+
+> [!] 串口打印的 `Iterations/Sec 354` 是 `HAS_FLOAT=0` 下的**整数秒截断**（11.0638→11）。
+> 报告一律用 352.5 / 4.6075。**不要**为了改这行重出位流：2026-10-17 实测打开 `HAS_FLOAT=1`
+> 会让 `.text` 从 32 KB 涨到 **96,217 B**，越出 CoreMark 的 56 KB 区间（已回退）。
+
+> [!] 资源引 `run.log` 的 `Total LUTs 7740 / Registers 3692 / DRM 165.5`（逻辑口径）；
+> 同日志末尾 `Device Utilization Summary` 的 `CLMA 6497 + CLMS 2265 = 8,762` 是**物理站点口径**，别混。
+
+### 与备份档的关系
+
+| 位流 | 状态 |
+|---|---|
+| `b45941d6`（本档） | **唯一交付位流**：跑分 + 应用同一颗 |
+| `c6af65be`（CoreMark @85.0051） | **备份**：只有 CoreMark，不满足 R99 |
+| `5909a2d0`（五子棋 @85.0051） | **备份**：只有应用，不满足 R99 |
+| `bcd8fdd2` / `8894cdcb` / `f64b977` / `176e0028` | 历史档，仅作对照，勿交付 |
+
+### 复现
+
+```powershell
+scripts\build_bitstream.ps1 combined        # boot + CoreMark(ITER=3900) + RT-Thread -> 合并 -> 综合
+scripts\run_combined_sim.ps1                # 两条路径的仿真判据（ITER=1）
+powershell -File scripts\capture_seed_timing.ps1 -Parse pds\RV32I_1\report_timing\cpu_top_board.rtr
+```

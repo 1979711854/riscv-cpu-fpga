@@ -273,6 +273,19 @@ scripts\build_bitstream.ps1 coremark -Iter 3900
 
 ⇒ 与 `6074c89c` 逐项一致：**装两个程序的代价是 0**（BRAM 初值不进时序路径）。
 
+**归档（2026-10-17 19:20）**：位流已按仓库既有命名法落到 `pds/RV32I_1/bitstreams/`：
+
+| 物 | 值 |
+|---|---|
+| 文件 | `combined_boot_coremark_rtthread_dual_noaext_ms_earlyld_a1_ras_btb_gomoku_g3_lanebmem_76mhz_rev1028_seed10pin_b45941d6.sbit` |
+| md5 / sha256 | `b45941d6db1e3d1116deb3e080c03ba7` / `59a21d8f…f04846` |
+| 时序副本 | `rev1028_combined_76mhz_seed10_b45941d6_timing.rtr`（同一次 P&R） |
+| 说明 | `pds/RV32I_1/bitstreams/README.md` 新增 rev1028 章节（配置 / 镜像三段 / 时序三行 / 板上实测 / 备份关系 / 复现命令） |
+
+> [!] `.sbit` 被 `.gitignore` 忽略（`/pds/**/*.sbit`），**只有 README 入库**。
+> 换机器/重装仓库后位流不会跟着来，必须靠 md5 + `build_bitstream.ps1 combined` 重建；
+> 这也是为什么 README 里把 md5/sha256/mem.hex 指纹一起写死。
+
 ### 10.7 工具修正
 
 - `capture_seed_timing.ps1`：Fmax 从"写死 11.764"改成**从 `.rtr` 的时钟表读请求周期**，
