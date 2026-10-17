@@ -595,12 +595,19 @@ module core #(
     // jal 无条件必跳、目标只依赖 PC+imm，仍走静态预测；jalr 目标依赖 rs1、到达级无
     // 前递通路，仍【不预测】走 EX 冲刷。保守版因此不需要 BTB 的 target 部分：branch/jal 的
     // 目标与 EX 级算出的必然相同，不存在"预测对方向但目标算错"（那只可能由 jalr 引起）。
-    // 索引 idx=PC[9:2]、tag=PC[31:8]，直接映射 256 项。预测错不影响正确性：EX 级冲刷兜住。
+    // 索引 idx=PC[9:2]、tag=PC[17:10]（L3 后；原 tag=PC[31:8]），直接映射 256 项。
+    // 预测错不影响正确性：EX 级冲刷兜住。
     // [阶段1] 查询点从 ID 级（if_id_pc）挪到【到达级】（if_addr_d，见下面的 bht_idx_p）：
     //   到达级同一拍 imem_rd 已给出指令字，可当场算出目标 p_target 并立即重定向，
     //   被预测 taken 的分支不再付那 1 拍取指重定向气泡。
-    reg [23:0] bht_tag  [0:255];
-    reg [1:0]  bht_ctr  [0:255];
+    // [L3 减 LUT] 深度保持 256，tag 24 → **8 位**（PC[17:10]）。
+    //   索引仍是 idx = PC[9:2]，tag = PC[17:10] ⇒ 索引+tag 唯一覆盖 PC[17:2] = 256KB；
+    //   两份镜像都落在 0x0~0x1FFFF（128KB）内 ⇒ **零别名、预测率逐位不变**
+    //   （实测 region cycles 仍是 217,088 / mispredict 仍是 1,543）。
+    //   只缩 tag 宽度不缩深度：深度一变，深层 LUT-RAM 阵列外圈的地址译码/输出 mux
+    //   会被综合成额外逻辑，反而更亏（实测 128 项版多了 804 拍、命中率掉）。
+    reg [7:0]   bht_tag  [0:255];
+    reg [1:0]   bht_ctr  [0:255];
     reg [255:0] bht_valid;
 
     // ================= [B1-RAS] 返回地址栈 =================
@@ -629,15 +636,19 @@ module core #(
     //   条件分支与 jal 的目标 = PC+imm，到达级由 p_target 现算、已经是对的，所以
     //   BTB 不复存它们（只存 jalr），不与 BHT（方向）打架。
     //
-    // 形态完全照 BHT：直接映射 256 项，索引 idx=PC[9:2]、tag=PC[31:8]。
+    // 形态完全照 BHT：直接映射 32 项，索引 idx=PC[6:2]、tag=PC[31:8]。
     //   读在到达级（if_addr_d），训练在 EX 级（id_ex_pc），读写同拍读旧值可接受
     //   （最多一次误预测，被 §7 目标校验兜住）。
     //   [!] 优先级 RAS > BTB > PC+imm（ret 的目标由栈给，比 BTB 准）；BTB 命中时
     //   p_pred_taken=1 ⇒ jalr 独占发射（pair_now=0），与它原来"不被预测、不配对"一致。
     //   [!] 目标只折进【已有的 p_target 腿】，绝不新增 fetch_addr 的腿（Fmax 第一风险点）。
-    reg [23:0] btb_tag    [0:255];
-    reg [31:0] btb_target [0:255];
-    reg [255:0] btb_valid;
+    //   [L2 减 LUT] 256 → 32 项：btb_tag 96→12、btb_target 124→16 个 RAM64X1（−192 LUT-RAM）。
+    //   tag 保持 24 位（PC[31:8]）⇒ 索引只看 PC[6:2]，**PC[7] 不参与匹配** ⇒
+    //   相差 128 字节的两个 jalr 别名（共用一条目）。只影响命中率、不影响正确性：
+    //   目标错由 §7 的 ex_target_wrong（id_ex_pred_taken && rs1_val&~1 != 预测目标）冲刷兜住。
+    reg [23:0] btb_tag    [0:31];
+    reg [31:0] btb_target [0:31];
+    reg [31:0] btb_valid;
 
     // ex_flush 优先：EX 级是更老的指令，它重定向时到达级/ID 级指令本来就会被杀掉。
     // stall / mc_stall 时 ID/EX 不前进或保持，重定向必须一并抑制，否则 pc_r 与
@@ -759,7 +770,7 @@ module core #(
     wire p_branch = (p_op_a == 7'b1100011);
     wire p_jump   = (p_op_a == 7'b1101111);
     wire [7:0] bht_idx_p   = if_addr_d[9:2];
-    wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[31:8]);
+    wire       bht_hit_p   = bht_valid[bht_idx_p] && (bht_tag[bht_idx_p] == if_addr_d[17:10]);
     wire       bht_taken_p = bht_ctr[bht_idx_p][1];
     // [B1-RAS] 到达级 `ret` 检测。ret = jalr x0,0(x1|x5)：
     //   opcode=1100111(JALR)、funct3=000、rd=x0、rs1∈{x1(ra),x5(t0)}。
@@ -773,7 +784,7 @@ module core #(
     //   ret 也是 jalr，但目标该由栈给；只有"非 RAS 命中"的 jalr 才查 BTB。
     //   BTB_EN=0 时 p_btb_pred 恒 0 ⇒ 逐位回退成 RAS-only 的行为。
     wire       p_is_jalr  = (p_op_a == 7'b1100111);
-    wire [7:0] btb_idx_p  = if_addr_d[9:2];
+    wire [4:0] btb_idx_p  = if_addr_d[6:2];
     wire       btb_hit_p  = btb_valid[btb_idx_p] && (btb_tag[btb_idx_p] == if_addr_d[31:8]);
     wire       p_btb_pred = (BTB_EN != 0) && p_is_jalr && !p_ras_hit && btb_hit_p;
     // 静态规则兜底：BHT 未命中时后向条件分支 / jal 预测跳转（到达级 pc = if_addr_d）
@@ -1297,7 +1308,7 @@ module core #(
     // not-taken 分支也能学到（若只在 taken 时分配，这类分支永远分配不上）。预测表是纯
     // 建议性的：读写同拍无转发、读到旧值是允许的（最多一次误预测，被冲刷兜住）。
     wire [7:0] bht_idx_w = id_ex_pc[9:2];
-    wire       bht_hit_w = bht_valid[bht_idx_w] && (bht_tag[bht_idx_w] == id_ex_pc[31:8]);
+    wire       bht_hit_w = bht_valid[bht_idx_w] && (bht_tag[bht_idx_w] == id_ex_pc[17:10]);
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             bht_valid <= 256'd0;
@@ -1311,7 +1322,7 @@ module core #(
                                                                         : bht_ctr[bht_idx_w] - 2'd1;
             end else begin
                 bht_valid[bht_idx_w] <= 1'b1;
-                bht_tag[bht_idx_w]   <= id_ex_pc[31:8];
+                bht_tag[bht_idx_w]   <= id_ex_pc[17:10];
                 bht_ctr[bht_idx_w]   <= branch_taken ? 2'b10 : 2'b01;
             end
         end
@@ -1356,10 +1367,10 @@ module core #(
     // 门控与 RAS 同（= 该指令【提交到 EX】那拍）：mem_ready_int && !mc_stall && !trap。
     //   冻结期 ID/EX 保持 ⇒ 不门控会每拍重复训练（与根因 #1/#2 同族）。
     wire       btb_upd_en = (BTB_EN != 0) && mem_ready_int && !mc_stall && !trap && id_ex_jump_reg;
-    wire [7:0] btb_idx_w  = id_ex_pc[9:2];
+    wire [4:0] btb_idx_w  = id_ex_pc[6:2];
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            btb_valid <= 256'd0;
+            btb_valid <= 32'd0;
         end else if (btb_upd_en) begin
             btb_valid[btb_idx_w]  <= 1'b1;
             btb_tag[btb_idx_w]    <= id_ex_pc[31:8];
