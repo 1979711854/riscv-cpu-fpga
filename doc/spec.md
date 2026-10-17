@@ -47,7 +47,7 @@
 | `rtl/core/multiplier.v` | multiplier | M 扩展乘法，**拆成 2 拍**（换时序余量）|
 | `rtl/core/amo_unit.v` | amo_unit | A 扩展原子指令（AMO* / LR / SC）|
 | `rtl/bus/cache_i.v` / `cache_d.v` | cache_i / cache_d | **I/D Cache**（4 KB/侧、2 路组相联，`parameter` 开关，默认关）—— 见 §4.4 |
-| `rtl/top/cpu_top_board.v` | cpu_top_board | **上板顶层**（PDS 的 top）：PLL 27 → 85.0051 MHz + 引脚约束 + HDMI |
+| `rtl/top/cpu_top_board.v` | cpu_top_board | **上板顶层**（PDS 的 top）：PLL 27 → **76.5052 MHz（生产档）** + 引脚约束 + HDMI（85.0051 是 2026-10-16 之前的评估档，128KB 后收敛不了）
 | `rtl/video/*.v` | video_top 等 | 视频子系统（tile PPU + TMDS），**独立于 CPU**，细节见 `rtl/video/video_top.v` 文件头 |
 
 ## 3. 流水线
@@ -153,8 +153,11 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 
 ### 4.2 地址映射
 
+> **[!] 2026-10-17：统一存储器 64 KB → 128 KB**（32,768 word × 32 bit，字索引 `addr[16:2]`）。
+> 低 64 KB 的 `0xFFF0~0xFFFF` 仍被兼容区挖走；RAM 实际可用到 `0x1_FFEF`。
+
 ```
-0x0000_0000 - 0x0000_FFEF   RAM（统一存储器 64KB 内可用部分）
+0x0000_0000 - 0x0001_FFEF   RAM（统一存储器 128KB；低 64KB 的 0xFFF0~0xFFFF 被兼容区占用）
 0x0000_FFF0 - 0x0000_FFFF   兼容区（CoreMark 移植层硬编码）
     0xFFF4 R  cycle_cnt[31:0]   core_portme.c 的 get_time()
     0xFFF8 W  done              start.S 里 main 返回后写 1
@@ -172,9 +175,11 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 > **CLINT / 定时器中断**：`mtime` 就是那个自由跑计数器（32 位，不是规范建议的
 > 64 位）。
 > [!] **回绕周期跟着时钟走**：27 MHz 下约 **159 秒**，45 MHz 下 **95.4 秒**，
-> 49.89 MHz 下 **86.1 秒**，**当前板上 85.0051 MHz 下约 50.5 秒**。
-> 按"最长的一次连续计时"算，本项目最长的 CoreMark 计时区间是 **11.70 秒**
-> （**当前跑分档**：ITER=4332 @85.0051 MHz，双发射 + `EARLY_LD` + B1-RAS/BTB + A 扩展默认关；历史：ITER=4280 双发射 + `EARLY_LD`、ITER=4116 双发射 + `EARLY_LD`、ITER=3170 双发射、ITER=2740 单发射），
+> 49.89 MHz 下 **86.1 秒**，85.0051 MHz 下约 **50.5 秒**，
+> **当前生产档 76.5052 MHz 下约 56.1 秒**。
+> 按"最长的一次连续计时"算，本项目最长的 CoreMark 计时区间是 **11.06 秒**
+> （**当前跑分档**：ITER=3900 @76.5052 MHz，双发射 + `EARLY_LD` + `LANEB_MEM=1`，Cache 全关；
+> 历史：ITER=4332 @85.0051、ITER=4280、ITER=4116、ITER=3170、ITER=2740 单发射），
 > 远小于回绕周期，**当前无风险**。
 > 但若日后把 ITER 加到几千、或做更长的长稳测试，**必须重新核对** ——
 > 32 位计数器一回绕，`Total ticks` 就会算出错误的（甚至负的）时长。
@@ -182,8 +187,13 @@ jal 的静态后向预测），命中当拍就重定向；未命中要等 EX 解
 > `sim/tests/timer_irq.S`。
 
 - RAM 译码**显式排除 0xFFF0~0xFFFF**（否则 CoreMark 写 0xFFF8 会落进 RAM，`done` 永不拉高）
-- 栈顶必须 ≤ 0xFFF0（CoreMark 用 0xF000，五子棋同样）
+- **兼容区判决必须带 `!addr[16]`** —— `0x1_FFF0` 的 `addr[15:4]` 也是 `0xFFF`，只看低位会把
+  RAM 末尾误判成 MMIO（`mem_bus.v` 与 `core.v` 的快通路判定同此）
+- 栈顶：**CoreMark `0xF000`**（仍在低 64 KB，链接脚本未动）、**RT-Thread `0x1FFF0`**（`scripts/rtthread/bsp/link.ld`）
 - 单点定义：`rtl/bus/addr_map.vh`；软件侧镜像：`scripts/demo/addr_map.h`
+- **[!] 凡是承载 word 索引的线，宽度都要跟着 `imem_addr`（现 15 位）一起改** —— 2026-10-10 由
+  32KB 扩 64KB 时 `imem_addr2` 留在 13 位，`imem_addr + 1` 丢最高位，导致 lane B 在 `≥0x8000`
+  时从低 32KB 取错指令（**编译零报错、四条基线全过**）。扩容清单在 `addr_map.vh` 文件头。
 
 ### 4.3 外设设计要点
 
@@ -330,10 +340,11 @@ parameter ICACHE_EN = 0;   // 指令 Cache
   实测结论 = **对分数贡献 0**（后端单周期 BRAM，命中与不命中一样快），价值在功能条目。
   `fence.i` 仍为 NOP（现状无自修改代码，安全）；若将来支持"软件写指令存储"，
   必须升级为"冲刷 I-Cache"。
-- **边缘 AI 加速**：RAM 仅 64 KB（无片外存储），当前硬件条件下不可行
+- **边缘 AI 加速**：RAM 仅 **128 KB**（无片外存储、无 DDR），当前硬件条件下不可行
 
 **扩展注意**：RAM 容量（字索引线宽）牵动多处 —— 现行清单在 `rtl/bus/addr_map.vh` 文件头：
 `unified_mem` 的 `mem0`/`mem1` 数组深度、`core.v` 的 `imem_addr` 切片、`mem_bus` 的
 `ram_word` 切片与 `ram_hit` 范围、仿真 `mem_model.vh`、兼容区地址，以及双发射第二取指口
 `imem_addr2` 的宽度。扩容必须按该清单逐处同步改，否则高位被静默截断
-（`imem_addr2` 漏改曾酿成"代码 >32KB 取错指令"的 bug）。
+（历史上两次实踩：32KB→64KB 时 `imem_addr2` 漏改，代码 >32KB 就取错指令；
+64KB→128KB 时兼容区漏加 `!addr[16]`，`0x1_FFF0` 会被误判成 MMIO）。
