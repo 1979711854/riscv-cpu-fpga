@@ -132,6 +132,12 @@ int game_ai_level(const game_t *gm)
 
 int game_cursor_shown(const game_t *gm)
 {
+    /* [2026-10-17] **AI VS AI 下不画光标**：光标是给人类玩家的操作指示，
+     *   双方都是 AI 时没有"人"，它只会在棋盘中间一直闪（红色圈圈），纯粹干扰观感。
+     *   用户 2026-10-17 上板反馈："AI 下棋，中间还是会有红色圈圈光标闪烁，应该考虑去掉"。
+     *   [!] 人机模式下行为【不变】：仍按 cursor_on（闪烁节拍）与 cursor_hidden
+     *       （落子后 AI 思考期间隐藏）决定，见 game.h 的说明。 */
+    if (gm->mode != GAME_MODE_HUMAN) return 0;
     return (gm->phase == GAME_PLAYING && gm->cursor_on && !gm->cursor_hidden) ? 1 : 0;
 }
 
