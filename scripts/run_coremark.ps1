@@ -61,7 +61,14 @@ if (-not $SkipBuild) {
         "-T$port\link.ld",
         "$src\core_main.c", "$src\core_list_join.c", "$src\core_matrix.c",
         "$src\core_state.c", "$src\core_util.c",
-        "$port\core_portme.c", "$port\ee_printf.c", "$port\start.S",
+        # video_text.c = HDMI 文本控制台（任务 B）：ee_printf 的字符同时上屏。
+        # 字库/调色板直接 include scripts\gomoku 的那两份，不复制副本。
+        # [!] 顺序有讲究：video_text.o 必须排在**最后**。链接次序决定代码地址，
+        #     而 CoreMark 的计时区间对取指/分支预测的地址对齐极其敏感 ——
+        #     把它插在 core_portme 之前，实测 Total ticks 会从 217,088 变成 217,089
+        #     （跑分"变了 1 拍"，验收要求逐位相同）。放到最后，benchmark 那批
+        #     .o 的地址与不开屏时完全一致。
+        "$port\core_portme.c", "$port\ee_printf.c", "$port\start.S", "$port\video_text.c",
         "-o", $elf
     )
     # [!] 2026-10-16：riscv-none-elf-ld 会往 stderr 打一行
@@ -129,6 +136,17 @@ if ($widthWarn.Count -gt 0) {
 
 Push-Location $sim
 try {
-    & vvp $vvp "+ITER=$Iter" "+IMEM=programs/imem.hex" "+DMEM=programs/dmem.hex" "+MEMWAIT=$MemWait"
+    # [!] 2026-10-18：vvp 会往 stderr 打一条
+    #     `tb_coremark.v:307: Warning: Calling system function $value$plusargs() as a task.`
+    #     PS 5.1 + $ErrorActionPreference="Stop" 会把它变成 NativeCommandError，
+    #     仿真**其实照跑**，但脚本当场报错退出（技能 §1 记过这个坑）。
+    #     修法与构建阶段一致：调外部命令期间临时切 Continue。
+    $eapSave = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & vvp $vvp "+ITER=$Iter" "+IMEM=programs/imem.hex" "+DMEM=programs/dmem.hex" "+MEMWAIT=$MemWait"
+    } finally {
+        $ErrorActionPreference = $eapSave
+    }
 }
 finally { Pop-Location }

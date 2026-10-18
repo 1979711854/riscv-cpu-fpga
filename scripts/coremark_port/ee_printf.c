@@ -16,6 +16,7 @@ limitations under the License.
 
 #include <coremark.h>
 #include <stdarg.h>
+#include "video_text.h"   /* HDMI 文本控制台（任务 B）：串口有什么，屏上就有什么 */
 
 #define ZEROPAD   (1 << 0) /* Pad with zero */
 #define SIGN      (1 << 1) /* Unsigned/signed long */
@@ -689,6 +690,10 @@ ee_printf(const char *fmt, ...)
     while (*p)
     {
         uart_send_char(*p);
+        /* [!] 2026-10-18 任务 B：串口照旧（回归证据不能丢），另外镜像一份到 HDMI。
+         *     计时区间里 video_text_putc 会被 mirror 开关挡掉（见 core_portme.c 的
+         *     start_time/stop_time），所以这条路径**不可能**弄脏 Total ticks。 */
+        video_text_putc(*p);
         n++;
         p++;
     }

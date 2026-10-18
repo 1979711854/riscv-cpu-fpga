@@ -1,5 +1,7 @@
 #include "coremark.h"
 #include "core_portme.h"
+#include "video_text.h"        /* HDMI 文本控制台（任务 B）*/
+#include "../gomoku/cm_mailbox.h"   /* 0xFF00 共享邮箱：跑完把分数留给五子棋标题屏 */
 
 #if VALIDATION_RUN
 volatile ee_s32 seed1_volatile = 0x3415;
@@ -40,16 +42,27 @@ barebones_clock(void)
 #define EE_TICKS_PER_SEC           76505200
 
 static CORETIMETYPE start_time_val, stop_time_val;
+static CORETIMETYPE cm_ticks;      /* 计时区间总拍数；stop_time 里记下，结果页要用 */
 
+/* 计时区间里的"显存保险丝"（任务书 §3.3 第 4 条）：
+ *   start_time() 进门先关掉 HDMI 镜像，stop_time() 出门再打开。
+ *   ⇒ 即使以后有人在计时区间里打日志，也只会走串口、**绝不会写显存**
+ *     （显存写在慢总线上，多一次就可能让 Total ticks 变一位，跑分作废）。 */
 void
 start_time(void)
 {
+    /* [!] 本函数**只读计时器，一个字都不多做** —— 这是"Total ticks 逐位相同"的关键：
+     *     start_time 的长度变了，它自己的 `ret` 就会换地址，BTB 里那条预测对不上，
+     *     计时区间会莫名多 1 拍（实测：把 mirror 调用塞进来，217,088 → 217,089）。
+     *     显存保险丝改在 portable_init 的末尾关、stop_time 里开，见那边的注释。 */
     GETMYTIME(&start_time_val);
 }
 void
 stop_time(void)
 {
     GETMYTIME(&stop_time_val);
+    cm_ticks = (CORETIMETYPE)(stop_time_val - start_time_val);
+    video_text_mirror(1);
 }
 CORE_TICKS
 get_time(void)
@@ -94,11 +107,30 @@ portable_init(core_portable *p, int *argc, char *argv[])
         unsigned    rev;
         int         i;
 
+        /* ---- HDMI 文本控制台初始化（任务书 §3.3）----
+         * [!] **必须在这里、也就是 start_time() 之前做完**：它要写调色板 + 95 个
+         *     16x16 图块 + 清 40x30 的 nametable（约 32KB 显存），@76.5MHz 约 0.3ms。
+         *     放进计时区间就会直接改变 Total ticks。
+         * [!] 只在本函数里做一次；计时区间里由 start_time/stop_time 的
+         *     video_text_mirror 开关挡着，绝不写显存。 */
+        video_text_init();
+
         __asm__ volatile ("csrr %0, mimpid" : "=r"(rev));
-        for (p = pre; *p; p++) *uart = (ee_u8)*p;
-        for (i = 28; i >= 0; i -= 4) *uart = (ee_u8)hx[(rev >> i) & 0xF];
+        for (p = pre; *p; p++) { *uart = (ee_u8)*p; video_text_putc(*p); }
+        for (i = 28; i >= 0; i -= 4) {
+            char h = hx[(rev >> i) & 0xF];
+            *uart = (ee_u8)h;
+            video_text_putc(h);
+        }
         *uart = (ee_u8)'\r';
         *uart = (ee_u8)'\n';
+        video_text_putc('\n');          /* putc 忽略 '\r'，只处理 '\n' */
+
+        /* ---- 显存保险丝：从这里到 stop_time 之间，HDMI 镜像关闭 ----
+         * 位置刻意放在 portable_init 的**最后**（紧挨着之后的 get_seed/start_time）：
+         *   · 计时区间里任何 ee_printf 都只走串口，不会写显存；
+         *   · 又不必往 start_time() 里加指令（加了会让计时区间多 1 拍，见上面的注释）。 */
+        video_text_mirror(0);
     }
 
     (void)argc;
@@ -106,9 +138,122 @@ portable_init(core_portable *p, int *argc, char *argv[])
     p->portable_id = 1;
 }
 
+/* ---------------------------------------------------------------------------
+ * 结果页（任务书 §3.1 / §3.5）
+ * ---------------------------------------------------------------------------
+ * [!] 为什么用 container_of 取 results：`portable_fini()` 只拿到 `&results[0].port`，
+ *     而 Total ticks / 四个 CRC / 迭代数都在外层的 core_results 里（port 是**最后一个**
+ *     成员）。改 third_party 里的 CoreMark 源码是更坏的选择 —— 那份是 EEMBC 的
+ *     上游代码，升级/比对时会冲突。offsetof 是编译期常量，零运行期开销。
+ * ------------------------------------------------------------------------- */
+static const core_results *results_from_port(core_portable *p)
+{
+    return (const core_results *)((const char *)p - __builtin_offsetof(core_results, port));
+}
+
+/* 把成绩写进 0xFF00 的共享邮箱（跨复位保留，五子棋标题屏来读）。
+ * [!] **magic 最后写** —— 读的一方（五子棋）据此判断"这是一份完整结果"。 */
+static void mailbox_publish(const core_results *r, ee_u32 score_x100, ee_u16 seedcrc)
+{
+    volatile ee_u32 *m = (volatile ee_u32 *)CM_MBOX_BASE;
+
+    m[CM_MBOX_I_MAGIC] = 0u;                       /* 先撤销，别让旧 magic 骗到人 */
+    m[CM_MBOX_I_ITER]     = (ee_u32)ITERATIONS;
+    m[CM_MBOX_I_TICKS]    = (ee_u32)cm_ticks;
+    m[CM_MBOX_I_SCORE]    = score_x100;
+    m[CM_MBOX_I_SEEDCRC]  = (ee_u32)seedcrc;
+    m[CM_MBOX_I_CRCLIST]  = (ee_u32)r->crclist;
+    m[CM_MBOX_I_CRCMAT]   = (ee_u32)r->crcmatrix;
+    m[CM_MBOX_I_CRCSTATE] = (ee_u32)r->crcstate;
+    m[CM_MBOX_I_FLAGS]    = (r->err == 0) ? (ee_u32)CM_MBOX_FLAG_CRC_OK : 0u;
+    m[CM_MBOX_I_MAGIC]    = (ee_u32)CM_MBOX_MAGIC; /* 最后 */
+}
+
+/* 屏上结果页。数字全部**现算**（64 位），不用 CoreMark 的整数截断值：
+ *   Score        = ITER × 时钟 ÷ ticks
+ *   CoreMark/MHz = ITER × 1e6 ÷ ticks
+ *   Total time   = ticks ÷ 时钟（毫秒定点，避免 11 / 0 那种整数截断） */
+static void draw_result_page(const core_results *r, ee_u16 seedcrc)
+{
+    unsigned long long ticks = (unsigned long long)cm_ticks;
+    unsigned long long score_x10, cpi_x1000, secs_x1000;
+    unsigned int score10, cpi1000, secs1000;
+
+    if (ticks == 0ull) ticks = 1ull;
+
+    score_x10  = (unsigned long long)ITERATIONS * (unsigned long long)EE_TICKS_PER_SEC * 10ull / ticks;
+    cpi_x1000  = (unsigned long long)ITERATIONS * 1000000000ull / ticks;
+    secs_x1000 = ticks * 1000ull / (unsigned long long)EE_TICKS_PER_SEC;
+
+    score10  = (unsigned int)score_x10;
+    cpi1000  = (unsigned int)cpi_x1000;
+    secs1000 = (unsigned int)secs_x1000;
+
+    video_text_clear();
+    video_text_puts("COREMARK 1.0  RV32IMA\n");
+    video_text_rule();
+    video_text_puts("ITER        : ");
+    video_text_putdec((unsigned)ITERATIONS, 0);
+    video_text_putc('\n');
+    video_text_puts("Total ticks : ");
+    video_text_putdec((unsigned)cm_ticks, 0);
+    video_text_putc('\n');
+    video_text_puts("Total time  : ");
+    video_text_putdec(secs1000 / 1000u, 0);
+    video_text_putc('.');
+    video_text_putdec(secs1000 % 1000u, 3);
+    video_text_puts(" S\n");
+    video_text_puts("CoreMark/MHz: ");
+    video_text_putdec(cpi1000 / 1000u, 0);
+    video_text_putc('.');
+    video_text_putdec(cpi1000 % 1000u, 3);
+    video_text_putc('\n');
+    video_text_puts("Score       : ");
+    video_text_putdec(score10 / 10u, 0);
+    video_text_putc('.');
+    video_text_putdec(score10 % 10u, 0);
+    video_text_putc('\n');
+    video_text_rule();
+    video_text_puts("seedcrc   : 0x");
+    video_text_puthex(seedcrc, 4);
+    video_text_putc('\n');
+    video_text_puts("crclist   : 0x");
+    video_text_puthex(r->crclist, 4);
+    video_text_putc('\n');
+    video_text_puts("crcmatrix : 0x");
+    video_text_puthex(r->crcmatrix, 4);
+    video_text_putc('\n');
+    video_text_puts("crcstate  : 0x");
+    video_text_puthex(r->crcstate, 4);
+    video_text_putc('\n');
+    video_text_puts((r->err == 0) ? "CRC OK\n" : "CRC BAD\n");
+    video_text_rule();
+    video_text_putc('\n');
+    video_text_puts("SW6 UP + RESET -> GOMOKU\n");
+}
+
 void
 portable_fini(core_portable *p)
 {
+    const core_results *res = results_from_port(p);
+    ee_u16 seedcrc = 0;
+    ee_u32 score_x100;
+
+    /* ---- 1) 与 CoreMark 报告里同一套 seedcrc 算法（core_main.c:287-290）---- */
+    seedcrc = crc16(res->seed1, seedcrc);
+    seedcrc = crc16(res->seed2, seedcrc);
+    seedcrc = crc16(res->seed3, seedcrc);
+    seedcrc = crc16((ee_s16)res->size, seedcrc);
+
+    /* ---- 2) 分数（64 位；ITER×时钟×100 超过 32 位，见任务书 §3.6.1）---- */
+    score_x100 = (ee_u32)((unsigned long long)ITERATIONS *
+                          (unsigned long long)EE_TICKS_PER_SEC * 100ull /
+                          (unsigned long long)(cm_ticks ? cm_ticks : 1));
+
+    /* ---- 3) 共享邮箱 + HDMI 结果页 ---- */
+    mailbox_publish(res, score_x100, seedcrc);
+    draw_result_page(res, seedcrc);
+
     /* [!] Cache 命中/缺失上报（高阶任务①，2026-10-11 加）。
      *   位置刻意放在 portable_fini：它在 CoreMark 报告【之后】、计时区间【之外】，
      *   所以既不影响 Total ticks，也不影响四个 CRC。

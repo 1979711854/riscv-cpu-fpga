@@ -199,7 +199,17 @@ foreach ($src in ($cSrcs + $sSrcs)) {
 
 # ---- 链接 ------------------------------------------------------------------
 Write-Host "[2/3] 链接 ..." -ForegroundColor Cyan
-& $GCC @ldflags @objs -o $Elf
+# [!] 2026-10-18：ld 会往 stderr 打 `warning: ... LOAD segment with RWX permissions`，
+#     而本脚本是 $ErrorActionPreference="Stop" ⇒ PS 5.1 把原生命令的 stderr 变成
+#     终态错误（NativeCommandError），链接其实成功了，脚本却当场退出。
+#     与 run_coremark.ps1 / gomoku\build.ps1 记的是同一个坑，修法一致。
+$eapSave = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    & $GCC @ldflags @objs -o $Elf
+} finally {
+    $ErrorActionPreference = $eapSave
+}
 if ($LASTEXITCODE -ne 0) { throw "链接失败（多半是 32KB 装不下，看上面的 undefined / overflow）" }
 
 # ---- 占用报告 --------------------------------------------------------------
