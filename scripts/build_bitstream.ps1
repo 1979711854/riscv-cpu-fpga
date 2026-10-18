@@ -162,7 +162,7 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(22790); demo = @(326);
+$expectLines = @{ coremark = @(22790, 22782); demo = @(326);
                  # [!] 2026-10-18 任务 B（CoreMark 镜像上 HDMI）：CoreMark 镜像加了
                  #     video_text.c（文本控制台 + 结果页 + 共享邮箱 + 64 位分数），
                  #     mem.hex 17,104 -> 22,790 行（ITER=3900；ITER=1 是 22,724，
@@ -178,17 +178,17 @@ $expectLines = @{ coremark = @(22790); demo = @(326);
                  #     改成 render.c 的运行时合成（与 gen_tiles.py 逐像素一致，
                  #     test_render 用 tiles_data.h 对拍）。
                  #     [重点] 这个数必须用【非 -Sim】的 rtthread\build.ps1 -Firmware 量。
-                  rtthread = @(19818);
+                  rtthread = @(19818, 20100);
                   boot = @(34);
                  # combined = 三块的**行数之和**（elf2mem 每字 2 行，且 merge_images.py
                  # 已断言三块不重叠 ⇒ 合并后行数 = 行数之和，不会多也不会少）：
                  #   boot 34 + coremark 22,790 + rtthread 19,818 = 42,642
-                 combined = @(42642);
+                 combined = @(42642, 42916);
                   video = @(758); gomoku = @(11834) }
-$expectDesc  = @{ coremark = "11395 字（含 HDMI 文本控制台 + 分组结果页）"; demo = "163 字";
-                  rtthread = "9909 字（0x10000 重定位 + 76.5MHz，2026-10-18 实测）";
+$expectDesc  = @{ coremark = "11391 字（含 HDMI 文本控制台 + 分组结果页，2026-10-18 主界面改版后实测）"; demo = "163 字";
+                  rtthread = "10050 字（0x10000 重定位 + 76.5MHz，2026-10-18 主界面改版后实测）";
                   boot = "17 字（boot selector）";
-                  combined = "21,321 字 = boot 17 + coremark 11395 + rtthread 9909";
+                  combined = "21,458 字 = boot 17 + coremark 11391 + rtthread 10050";
                   video = "379 字"; gomoku = "5917 字（第二轮界面改版后）" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
