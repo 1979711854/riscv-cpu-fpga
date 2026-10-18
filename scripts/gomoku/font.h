@@ -6,7 +6,8 @@
  *
  * 只存紧凑位图（95 字 x 7 字节 = 665 字节）；render_init() 上电时
  * 放大 2x 成 16x16 图块写进显存 tile 36..130。
- * 前景 FONT_FG / 背景 FONT_BG，见 tiles.h 的调色板。
+ * 前景 FONT_FG / 背景 FONT_BG 的**下标**定义在 palette.h（调色板本体），
+ * 这里直接写死数字是为了让 dev 板/控制台两处引用同一份下标。
  * ========================================================================== */
 
 #ifndef GOMOKU_FONT_H
@@ -20,8 +21,8 @@
 #define FONT_BASE       32   /* 第一个字模 = 空格 */
 #define FONT_N_GLYPHS   95   /* 0x20..0x7E */
 #define FONT_TILE_BASE  36   /* 棋盘图块 0..35 之后 */
-#define FONT_FG         2   /* 文字前景（黑子主体色）*/
-#define FONT_BG         0   /* 文字背景（棋盘底色）*/
+#define FONT_FG         8   /* 文字前景（暖白，见 palette.h）*/
+#define FONT_BG         7   /* 文字背景（深色 UI 底，见 palette.h）*/
 
 /* FONT_GLYPH[字模][行] = 5 位位图：bit4..bit0 = 列0..列4，1 = 亮 */
 static const uint8_t FONT_GLYPH[FONT_N_GLYPHS][FONT_H] = {
@@ -36,7 +37,7 @@ static const uint8_t FONT_GLYPH[FONT_N_GLYPHS][FONT_H] = {
     { 0, 0, 0, 0, 0, 0, 0 },   /* 0x28 */
     { 0, 0, 0, 0, 0, 0, 0 },   /* 0x29 */
     { 0, 0, 0, 0, 0, 0, 0 },   /* 0x2A */
-    { 0, 0, 0, 0, 0, 0, 0 },   /* 0x2B */
+    { 0, 4, 4, 31, 4, 4, 0 },   /* 0x2B */
     { 0, 0, 0, 0, 0, 0, 0 },   /* 0x2C */
     { 0, 0, 0, 14, 0, 0, 0 },   /* 0x2D */
     { 0, 0, 0, 0, 0, 4, 0 },   /* 0x2E */

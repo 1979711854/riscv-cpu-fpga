@@ -244,9 +244,89 @@ static void test_init(void)
         CHECK(f_ok, "字库图块只应含 FONT_FG/FONT_BG 两种颜色");
     }
 
-    /* 字库（36..130）+ 装饰图块区（131..153，T6 运行时合成）之后不该被写 */
-    CHECK(g_pat[(unsigned)(RENDER_TILE_ICON_WHITE + 1) * TILE_BYTES] == 0xAA,
-          "字库 + 装饰图块区之后不该被写");
+    /* 字库（36..130）+ 装饰图块区（131..186）之后不该被写 */
+    CHECK(g_pat[(unsigned)RENDER_TILE_MAX * TILE_BYTES] == 0xAA,
+          "已用图块（0..RENDER_TILE_MAX-1）之后不该被写");
+    CHECK(RENDER_TILE_MAX <= 256, "图块总数必须 ≤ 256（显存只有 256 块）");
+}
+
+/* ---------------------------------------------------------------------------
+ * B2. 深色 UI / 标题屏装饰图块（2026-10-18）
+ *     这几块最容易画错：描边的横线该在上还是下、底色是不是 UI 底、
+ *     大 logo 的"O"到底有没有画成棋子。
+ * ------------------------------------------------------------------------- */
+static uint8_t pat_at(int tile, int y, int x)
+{
+    return g_pat[(unsigned)tile * TILE_BYTES + y * TILE_W + x];
+}
+
+static void test_theme(void)
+{
+    int t, y, x, gold, black, white, ui;
+
+    printf("---- B2. 深色 UI 与标题屏装饰图块 ----\n");
+    render_init();          /* 保证 g_pat 已按当前源码重新合成 */
+
+    /* 字库底色必须就是 UI 底 —— 否则标题屏 / HUD / CoreMark 控制台会是三种底色 */
+    CHECK(FONT_BG == PAL_UI_BG, "FONT_BG 必须等于 PAL_UI_BG");
+    CHECK(FONT_FG == PAL_UI_FG, "FONT_FG 必须等于 PAL_UI_FG");
+    CHECK(TILE_PALETTE[PAL_UI_BG] != TILE_PALETTE[PAL_BG], "UI 底色不能等于棋盘木色");
+
+    /* 外框 / 棋子图标：背景必须是 UI 底（不能留木色小方块）*/
+    CHECK(pat_at(RENDER_TILE_FRAME_H, 0, 0) == PAL_UI_BG, "外框横线图块底色应是 UI 底");
+    CHECK(pat_at(RENDER_TILE_FRAME_V, 0, 0) == PAL_UI_BG, "外框竖线图块底色应是 UI 底");
+    CHECK(pat_at(RENDER_TILE_ICON_BLACK, 0, 0) == PAL_UI_BG, "黑子图标底色应是 UI 底");
+    CHECK(pat_at(RENDER_TILE_ICON_WHITE, 0, 0) == PAL_UI_BG, "白子图标底色应是 UI 底");
+
+    /* 金色分隔线：中间两行金、上下是 UI 底 */
+    CHECK(pat_at(RENDER_TILE_RULE, 7, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_RULE, 8, 15) == PAL_GOLD, "分隔线中间两行应是金色");
+    CHECK(pat_at(RENDER_TILE_RULE, 0, 0) == PAL_UI_BG, "分隔线上下应是 UI 底");
+
+    /* 选中框：上排三块的横线在**底部**，下排三块的横线在**顶部** */
+    CHECK(pat_at(RENDER_TILE_BOX_TL, 15, 15) == PAL_GOLD, "TL 横线应在底部");
+    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 0) == PAL_GOLD, "TL 竖线应在左侧");
+    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 15) == PAL_UI_BG, "TL 右上角应是底色");
+    CHECK(pat_at(RENDER_TILE_BOX_T, 15, 8) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_T, 0, 8) == PAL_UI_BG, "T 横线应在底部");
+    CHECK(pat_at(RENDER_TILE_BOX_TR, 15, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_TR, 0, 15) == PAL_GOLD, "TR 横线在底部、竖线在右侧");
+    CHECK(pat_at(RENDER_TILE_BOX_L, 8, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_L, 8, 15) == PAL_UI_BG, "L 只有左侧竖线");
+    CHECK(pat_at(RENDER_TILE_BOX_R, 8, 15) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_R, 8, 0) == PAL_UI_BG, "R 只有右侧竖线");
+    CHECK(pat_at(RENDER_TILE_BOX_BL, 0, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_BL, 15, 15) == PAL_UI_BG, "BL 横线应在顶部");
+    CHECK(pat_at(RENDER_TILE_BOX_B, 0, 8) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_B, 15, 8) == PAL_UI_BG, "B 横线应在顶部");
+    CHECK(pat_at(RENDER_TILE_BOX_BR, 0, 15) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_BR, 15, 15) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_BR, 15, 0) == PAL_UI_BG, "BR 横线在顶部、竖线在右侧");
+
+    /* 大 logo：24 块全都要有金色（字）或棋子色（O），且只出现这几种颜色 */
+    for (t = 0; t < 24; t++) {
+        int tile = RENDER_TILE_LOGO_BASE + t;
+        gold = black = white = ui = 0;
+        for (y = 0; y < TILE_W; y++)
+            for (x = 0; x < TILE_W; x++) {
+                uint8_t v = pat_at(tile, y, x);
+                if      (v == PAL_GOLD)   gold++;
+                else if (v == PAL_BLACK)  black++;
+                else if (v == PAL_WHITE)  white++;
+                else if (v == PAL_UI_BG)  ui++;
+                else if (v != PAL_SHADOW && v != PAL_BLACK_HI && v != PAL_WHITE_EDGE) {
+                    printf("  [FAIL] logo 图块 %d 出现杂色 %d（像素 %d,%d）\n", tile, v, x, y);
+                    g_fail++;
+                }
+            }
+        CHECK(ui > 0, "logo 图块应保留 UI 底色（字母之间要能透出背景）");
+        if (t / 4 == 1)      /* 第 2 个字 = 黑子 */
+            CHECK(black > 0 && gold > 0, "第 2 个字应画成黑子（黑体 + 金边）");
+        else if (t / 4 == 3) /* 第 4 个字 = 白子 */
+            CHECK(white > 0 && gold > 0, "第 4 个字应画成白子（白体 + 金边）");
+        else
+            CHECK(gold > 0, "标题字母应有金色笔画");
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -428,6 +508,7 @@ int main(void)
 
     test_shapes();
     test_init();
+    test_theme();
     test_nt_address();
     test_render_states();
     test_cursor_cost();

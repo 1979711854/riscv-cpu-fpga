@@ -32,17 +32,33 @@ N_TILE = N_SHAPE * N_STATE      # 36
 
 # ---- 调色板 ----------------------------------------------------------------
 # 索引 -> 24bit RGB。**索引号被 tiles 数组直接引用**，改顺序等于改画。
+#
+# [2026-10-18 标题屏改版] 前 7 项是棋盘/棋子的颜色，一项都不许动 ——
+#   对局界面已上板、用户认可，这次只加**不冲突的新项**：
+#     7  UI 深色底（墨绿）  —— 文字图块的背景，也是整屏底色
+#     8  文字前景（暖白）
+#     9  金色强调        —— logo / 选中框 / 分隔线
+#    10  阴影（比 UI 底更深）—— 大 logo 的投影
+#    11  分隔线（介于底与字之间）
+#   [!] 为什么不用"整行金色底条"做选中态：字库图块的背景是**不透明**的，
+#       整行铺金会被每个字的背景方块盖成一个个小方块（见任务书 §2.5.2）。
 PAL = [
-    0xE8C88C,   # 0 棋盘底色（浅木色）
-    0x50381C,   # 1 棋盘线（深棕）
-    0x101010,   # 2 黑子主体
-    0x404040,   # 3 黑子高光
-    0xF8F8F8,   # 4 白子主体
-    0xA8A8A8,   # 5 白子描边
-    0xD02020,   # 6 光标（红）
+    0xE8C88C,   # 0  棋盘底色（浅木色）
+    0x50381C,   # 1  棋盘线（深棕）
+    0x101010,   # 2  黑子主体
+    0x404040,   # 3  黑子高光
+    0xF8F8F8,   # 4  白子主体
+    0xA8A8A8,   # 5  白子描边
+    0xD02020,   # 6  光标（红）
+    0x16211C,   # 7  UI 底（墨绿）—— FONT_BG
+    0xEDE3C8,   # 8  UI 文字（暖白）—— FONT_FG
+    0xD8A93C,   # 9  金色强调（logo / 选中框 / 分隔线）
+    0x0C1410,   # 10 阴影（比 UI 底更深）
+    0x2E3A34,   # 11 细分隔线
 ]
 
-P_BG, P_LINE, P_BLACK, P_BLACK_HI, P_WHITE, P_WHITE_EDGE, P_CURSOR = range(7)
+(P_BG, P_LINE, P_BLACK, P_BLACK_HI, P_WHITE, P_WHITE_EDGE, P_CURSOR,
+ P_UI_BG, P_UI_FG, P_GOLD, P_SHADOW, P_UI_LINE) = range(12)
 
 # ---- 9 种网格线形状 --------------------------------------------------------
 # 每个 shape 说明"四条边哪几条有线"：(上, 下, 左, 右)
@@ -419,6 +435,15 @@ FONT_GLYPHS = {
           "..#..",
           "..#..",
           "....."],
+    # [2026-10-18] 标题屏副标题 "RISC-V + RT-THREAD" 要用 '+'。
+    #   原字库没有它（会落成空格），补一个 5x7 的十字。
+    '+': [".....",
+          "..#..",
+          "..#..",
+          "#####",
+          "..#..",
+          "..#..",
+          "....."],
     '.': [".....",
           ".....",
           ".....",
@@ -465,7 +490,7 @@ def font_row_bits(ch, fy):
 def make_font_tile(ch):
     """把 ch 放大 FONT_SCALE 倍成 16x16 图块（预览用；固件在 render.c 做同一件事）。"""
     rows = font_rows(ch)
-    img = [[P_BG] * TILE for _ in range(TILE)]
+    img = [[P_UI_BG] * TILE for _ in range(TILE)]
     ox = (TILE - FONT_W * FONT_SCALE) // 2
     oy = (TILE - FONT_H * FONT_SCALE) // 2
     for fy in range(FONT_H):
@@ -473,7 +498,7 @@ def make_font_tile(ch):
             if rows[fy][fx] == '#':
                 for sy in range(FONT_SCALE):
                     for sx in range(FONT_SCALE):
-                        img[oy + fy * FONT_SCALE + sy][ox + fx * FONT_SCALE + sx] = P_BLACK
+                        img[oy + fy * FONT_SCALE + sy][ox + fx * FONT_SCALE + sx] = P_UI_FG
     return img
 
 
@@ -490,7 +515,8 @@ def emit_font(path):
                 % (FONT_N_GLYPHS, FONT_H, FONT_N_GLYPHS * FONT_H))
         f.write(" * 放大 %dx 成 16x16 图块写进显存 tile %d..%d。\n"
                 % (FONT_SCALE, FONT_TILE_BASE, FONT_TILE_BASE + FONT_N_GLYPHS - 1))
-        f.write(" * 前景 FONT_FG / 背景 FONT_BG，见 tiles.h 的调色板。\n")
+        f.write(" * 前景 FONT_FG / 背景 FONT_BG 的**下标**定义在 palette.h（调色板本体），\n")
+        f.write(" * 这里直接写死数字是为了让 dev 板/控制台两处引用同一份下标。\n")
         f.write(" * " + "=" * 74 + " */\n\n")
         f.write("#ifndef GOMOKU_FONT_H\n#define GOMOKU_FONT_H\n\n")
         f.write("#include <stdint.h>\n\n")
@@ -500,8 +526,8 @@ def emit_font(path):
         f.write("#define FONT_BASE       %d   /* 第一个字模 = 空格 */\n" % FONT_BASE)
         f.write("#define FONT_N_GLYPHS   %d   /* 0x20..0x7E */\n" % FONT_N_GLYPHS)
         f.write("#define FONT_TILE_BASE  %d   /* 棋盘图块 0..35 之后 */\n" % FONT_TILE_BASE)
-        f.write("#define FONT_FG         %d   /* 文字前景（黑子主体色）*/\n" % P_BLACK)
-        f.write("#define FONT_BG         %d   /* 文字背景（棋盘底色）*/\n\n" % P_BG)
+        f.write("#define FONT_FG         %d   /* 文字前景（暖白，见 palette.h）*/\n" % P_UI_FG)
+        f.write("#define FONT_BG         %d   /* 文字背景（深色 UI 底，见 palette.h）*/\n\n" % P_UI_BG)
         f.write("/* FONT_GLYPH[字模][行] = 5 位位图：bit4..bit0 = 列0..列4，1 = 亮 */\n")
         f.write("static const uint8_t FONT_GLYPH[FONT_N_GLYPHS][FONT_H] = {\n")
         for code in range(FONT_BASE, FONT_BASE + FONT_N_GLYPHS):
@@ -524,6 +550,55 @@ def dump_font_preview(s="GOMOKU AI 123"):
         print("    " + "".join('#' if v == P_BLACK else '.' for v in row))
 
 
+PAL_NAMES = [
+    ("PAL_BG",         "棋盘底色（浅木）"),
+    ("PAL_LINE",       "棋盘线"),
+    ("PAL_BLACK",      "黑子主体"),
+    ("PAL_BLACK_HI",   "黑子高光"),
+    ("PAL_WHITE",      "白子主体"),
+    ("PAL_WHITE_EDGE", "白子描边"),
+    ("PAL_RED",        "光标 / 最后一手"),
+    ("PAL_UI_BG",      "UI 深色底（= FONT_BG）"),
+    ("PAL_UI_FG",      "UI 文字暖白（= FONT_FG）"),
+    ("PAL_GOLD",       "金色强调（logo / 选中框）"),
+    ("PAL_SHADOW",     "阴影（比 UI 底更深）"),
+    ("PAL_UI_LINE",    "细分隔线"),
+]
+
+
+def emit_palette(path):
+    """调色板单独一份头文件。
+
+    为什么要拆出来：CoreMark 的 HDMI 文本控制台（scripts/coremark_port/video_text.c）
+    也要写同一张调色板。让它 include 这个 12 项的小表，而不是 tiles.h —— 后者带
+    36 块 x 256B 的棋盘图块（9KB），CoreMark 镜像不该为了一行颜色把它装进去。
+    """
+    assert len(PAL_NAMES) == len(PAL)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("/* " + "=" * 74 + "\n")
+        f.write(" * palette.h —— 调色板（五子棋 + CoreMark 文本控制台共用）\n")
+        f.write(" *\n")
+        f.write(" * [!] 本文件由 scripts/gomoku/gen_tiles.py **自动生成，不要手改**。\n")
+        f.write(" *     改颜色改那个脚本再重跑。\n")
+        f.write(" *\n")
+        f.write(" * 前 7 项是棋盘/棋子色（对局界面已上板，不要动）；\n")
+        f.write(" * 7..11 是标题屏的深色 UI 配色。\n")
+        f.write(" * [" + "!" + "] FONT_BG / FONT_FG（font.h）分别取 PAL_UI_BG / PAL_UI_FG，\n")
+        f.write(" *     所以整屏文字底、CoreMark 控制台底、标题屏底色**必然是同一个颜色**。\n")
+        f.write(" * " + "=" * 74 + " */\n\n")
+        f.write("#ifndef GOMOKU_PALETTE_H\n#define GOMOKU_PALETTE_H\n\n")
+        f.write("#include <stdint.h>\n\n")
+        f.write("#define TILE_N_PALETTE %d\n\n" % len(PAL))
+        for i, (name, desc) in enumerate(PAL_NAMES):
+            f.write("#define %-15s %2d   /* %s */\n" % (name, i, desc))
+        f.write("\nstatic const uint32_t TILE_PALETTE[TILE_N_PALETTE] = {\n")
+        for i, c in enumerate(PAL):
+            f.write("    0x%06Xu%s   /* %d  %s */\n"
+                    % (c, "," if i < len(PAL) - 1 else " ", i, PAL_NAMES[i][1]))
+        f.write("};\n\n")
+        f.write("#endif /* GOMOKU_PALETTE_H */\n")
+
+
 def emit(path):
     tiles = []
     for shape in range(N_SHAPE):
@@ -544,7 +619,8 @@ def emit(path):
         f.write(" * 共 %d 块 × 256 字节 = %d 字节。\n" % (N_TILE, N_TILE * 256))
         f.write(" * " + "=" * 74 + " */\n\n")
         f.write("#ifndef GOMOKU_TILES_H\n#define GOMOKU_TILES_H\n\n")
-        f.write("#include <stdint.h>\n\n")
+        f.write("#include <stdint.h>\n")
+        f.write("#include \"palette.h\"   /* 调色板独立一份：CoreMark 的文本控制台也 include 它 */\n\n")
         f.write("#define TILE_W         %d\n" % TILE)
         f.write("#define TILE_BYTES     %d\n" % (TILE * TILE))
         f.write("#define TILE_N_SHAPE   %d\n" % N_SHAPE)
@@ -564,11 +640,7 @@ def emit(path):
         f.write("#define TILE_ST_WHITE  2\n")
         f.write("#define TILE_ST_CURSOR 3\n\n")
         f.write("#define TILE_OF(shape, state)  ((uint8_t)((shape) * TILE_N_STATE + (state)))\n\n")
-        f.write("#define TILE_N_PALETTE %d\n" % len(PAL))
-        f.write("static const uint32_t TILE_PALETTE[TILE_N_PALETTE] = {\n")
-        for i, c in enumerate(PAL):
-            f.write("    0x%06Xu%s   /* %d */\n" % (c, "," if i < len(PAL) - 1 else " ", i))
-        f.write("};\n\n")
+        f.write("/* 调色板（TILE_N_PALETTE / TILE_PALETTE）在 palette.h 里，见上面的 include */\n\n")
         f.write("/* [TILE_OF(shape,state)][py*16+px] = 调色板索引 */\n")
         f.write("static const uint8_t TILE_PATTERN[TILE_N_TOTAL][TILE_BYTES] = {\n")
         for i, img in enumerate(tiles):
@@ -597,6 +669,9 @@ def dump_preview(n=2):
 if __name__ == "__main__":
     import os
     here = os.path.dirname(os.path.abspath(__file__))
+    pout = os.path.join(here, "palette.h")
+    emit_palette(pout)
+    print("已生成 %s" % pout)
     out = os.path.join(here, "tiles.h")
     emit(out)
     print("已生成 %s" % out)

@@ -108,18 +108,28 @@ module tb_gomoku;
     //                                  = (7+r)*256 + (12+c)
     // 换算成 32 位字 + 字节道。
     // ========================================================================
+    // 绝对坐标版本（2026-10-18 加）：标题屏的 logo / 菜单框不在棋盘坐标里，
+    // 要用 (行 0..29, 列 0..39) 直接寻址。
+    function [7:0] nt_at;
+        input integer row;
+        input integer col;
+        integer idx;
+        begin
+            idx = row * 256 + col;
+            case (idx % 4)
+                0: nt_at = u_vid.u_nt.mem[idx/4][ 7: 0];
+                1: nt_at = u_vid.u_nt.mem[idx/4][15: 8];
+                2: nt_at = u_vid.u_nt.mem[idx/4][23:16];
+                default: nt_at = u_vid.u_nt.mem[idx/4][31:24];
+            endcase
+        end
+    endfunction
+
     function [7:0] nt_byte;
         input integer r;
         input integer c;
-        integer idx;
         begin
-            idx = (7 + r) * 256 + (12 + c);
-            case (idx % 4)
-                0: nt_byte = u_vid.u_nt.mem[idx/4][ 7: 0];
-                1: nt_byte = u_vid.u_nt.mem[idx/4][15: 8];
-                2: nt_byte = u_vid.u_nt.mem[idx/4][23:16];
-                default: nt_byte = u_vid.u_nt.mem[idx/4][31:24];
-            endcase
+            nt_byte = nt_at(7 + r, 12 + c);
         end
     endfunction
 
@@ -402,25 +412,27 @@ module tb_gomoku;
             $display("  [ok]   banner 收到：固件已启动");
         end
 
-        // ---- [2] 上电就把棋盘铺好了 ----
+        // ---- [2] 标题屏（2026-10-18 改版）----
+        // [!] 改版前标题屏是"空棋盘 + 左上角菜单"，这里查的是棋盘图块；
+        //     改版后标题屏是**整屏 logo + 菜单**（不再画 15x15 棋盘），
+        //     所以棋盘那两条断言挪到「开局之后」再查（见下面 [3b]）。
         #(FRAME_NS * 2);
         checks = checks + 1;
-        if (nt_byte(0, 0) !== T_TOPLEFT_EMPTY) begin
+        if (nt_at(1, 14) < 8'd154 || nt_at(1, 14) > 8'd177) begin
             errors = errors + 1;
-            $display("  [FAIL] nametable(0,0) = %0d，期望 %0d（左上角空格）",
-                     nt_byte(0, 0), T_TOPLEFT_EMPTY);
+            $display("  [FAIL] 标题屏 logo 位置 (行1,列14) = %0d，期望 154..177（4x 大 logo）",
+                     nt_at(1, 14));
         end else begin
-            $display("  [ok]   棋盘左上角已铺好（tile=%0d）", nt_byte(0, 0));
+            $display("  [ok]   标题屏 logo 已铺上（tile=%0d）", nt_at(1, 14));
         end
 
         checks = checks + 1;
-        if (nt_byte(7, 7) !== T_STAR) begin
+        if (nt_at(5, 4) !== 8'd178) begin
             errors = errors + 1;
-            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（星位点）",
-                     nt_byte(7, 7), T_STAR);
+            $display("  [FAIL] 菜单选中框左上角 (行5,列4) = %0d，期望 178（BOX_TL）",
+                     nt_at(5, 4));
         end else begin
-            $display("  [ok]   天元是星位点（tile=%0d）—— 标题屏空盘铺星位，符合预期",
-                     nt_byte(7, 7));
+            $display("  [ok]   标题屏选中框已画（tile=%0d）", nt_at(5, 4));
         end
 
         // ---- [3] 标准菜单导航（阶段 1）----
@@ -446,6 +458,28 @@ module tb_gomoku;
             $finish;
         end else begin
             $display("  [ok]   菜单开局成功");
+        end
+
+        // ---- [3b] 开局后 15x15 棋盘才铺出来（标题屏不再画棋盘）----
+        //   这两条原来是「上电就查」，改版后标题屏整屏是 logo + 菜单，
+        //   棋盘要到进对局那一拍才画 ⇒ 断言挪到这里，覆盖不变。
+        #(FRAME_NS * 2);
+        checks = checks + 1;
+        if (nt_byte(0, 0) !== T_TOPLEFT_EMPTY) begin
+            errors = errors + 1;
+            $display("  [FAIL] nametable(0,0) = %0d，期望 %0d（左上角空格）",
+                     nt_byte(0, 0), T_TOPLEFT_EMPTY);
+        end else begin
+            $display("  [ok]   开局后棋盘左上角已铺好（tile=%0d）", nt_byte(0, 0));
+        end
+
+        checks = checks + 1;
+        if (nt_byte(7, 7) !== T_STAR) begin
+            errors = errors + 1;
+            $display("  [FAIL] 天元 nametable = %0d，期望 %0d（星位点）",
+                     nt_byte(7, 7), T_STAR);
+        end else begin
+            $display("  [ok]   天元是星位点（tile=%0d）", nt_byte(7, 7));
         end
 
         // ---- [4] 在天元落子，AI 应手（同步：同一帧内先落人子、再落 AI 子）----

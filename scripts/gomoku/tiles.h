@@ -14,6 +14,7 @@
 #define GOMOKU_TILES_H
 
 #include <stdint.h>
+#include "palette.h"   /* 调色板独立一份：CoreMark 的文本控制台也 include 它 */
 
 #define TILE_W         16
 #define TILE_BYTES     256
@@ -38,16 +39,7 @@
 
 #define TILE_OF(shape, state)  ((uint8_t)((shape) * TILE_N_STATE + (state)))
 
-#define TILE_N_PALETTE 7
-static const uint32_t TILE_PALETTE[TILE_N_PALETTE] = {
-    0xE8C88Cu,   /* 0 */
-    0x50381Cu,   /* 1 */
-    0x101010u,   /* 2 */
-    0x404040u,   /* 3 */
-    0xF8F8F8u,   /* 4 */
-    0xA8A8A8u,   /* 5 */
-    0xD02020u    /* 6 */
-};
+/* 调色板（TILE_N_PALETTE / TILE_PALETTE）在 palette.h 里，见上面的 include */
 
 /* [TILE_OF(shape,state)][py*16+px] = 调色板索引 */
 static const uint8_t TILE_PATTERN[TILE_N_TOTAL][TILE_BYTES] = {
