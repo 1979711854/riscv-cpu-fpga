@@ -199,7 +199,17 @@ foreach ($src in ($cSrcs + $sSrcs)) {
 
 # ---- 链接 ------------------------------------------------------------------
 Write-Host "[2/3] 链接 ..." -ForegroundColor Cyan
-& $GCC @ldflags @objs -o $Elf
+# [!] 2026-10-18：ld 会往 stderr 打 `warning: ... LOAD segment with RWX permissions`，
+#     而本脚本是 $ErrorActionPreference="Stop" ⇒ PS 5.1 把原生命令的 stderr 变成
+#     终态错误（NativeCommandError），链接其实成功了，脚本却当场退出。
+#     与 run_coremark.ps1 / gomoku\build.ps1 记的是同一个坑，修法一致。
+$eapSave = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    & $GCC @ldflags @objs -o $Elf
+} finally {
+    $ErrorActionPreference = $eapSave
+}
 if ($LASTEXITCODE -ne 0) { throw "链接失败（多半是 32KB 装不下，看上面的 undefined / overflow）" }
 
 # ---- 占用报告 --------------------------------------------------------------
@@ -208,11 +218,17 @@ Write-Host "[3/3] 镜像占用：" -ForegroundColor Cyan
 $sizeLine = (& $SIZE $Elf | Select-Object -Last 1) -split '\s+' | Where-Object { $_ -ne '' }
 $text = [int]$sizeLine[0]; $data = [int]$sizeLine[1]; $bss = [int]$sizeLine[2]
 
-# RAM 占用 = .text + .data + .bss（统一存储器，代码和数据抢同一块 32KB）
+# RAM 占用 = .text + .data + .bss（统一存储器，代码和数据抢同一块）
+# [!] 2026-10-17 单一位流：RT-Thread 从 0x0 搬到 **0x10000**（CoreMark 占 0x1000~0xEFFF，
+#     低 64KB 的 0xFFF0~0xFFFF 是兼容区 MMIO）。本程序可用区间：
+#         0x10000 ~ 0x1FFEF（RAM 末字节），其中栈区 0x1EFF0~0x1FFF0（4KB）要单独扣掉。
+#     所以静态可用 = 0x1EFF0 - 0x10000 = 0xEFF0 = 61,424 B。
+#     （上一版是 0x0~0xEFFF / 60KB，数字变了但含义相同：`.text+.data+.bss` 不能顶到栈底。）
 $ramUsed = $text + $data + $bss
-$ramTotal = 0xF000          # 可用 RAM = 0x0~0xEFFF = 60KB（栈顶 0xF000）
-$stackTop = 0xFFF0
-$heapEnd  = 0xF000
+$ramBase  = 0x10000
+$heapEnd  = 0x1EFF0         # 堆顶 = 栈底（栈区 0x1EFF0~0x1FFF0）
+$stackTop = 0x1FFF0
+$ramTotal = $heapEnd - $ramBase
 Write-Host ("      代码 .text = {0,6} 字节" -f $text)
 Write-Host ("      数据 .data = {0,6} 字节   .bss = {1,6} 字节" -f $data, $bss)
 Write-Host ("      静态占用   = {0,6} 字节 / {1} 字节 ({2:p1})" -f $ramUsed, $ramTotal, ($ramUsed / $ramTotal))
@@ -232,10 +248,11 @@ if ($endAddr -gt 0) {
 }
 
 if ($ramUsed -ge $ramTotal) {
-    throw "镜像 $ramUsed 字节 >= 可用 RAM，装不下！先裁 rtconfig.h（关组件）或缩应用。"
+    throw "镜像 $ramUsed 字节 >= 可用 RAM（0x$('{0:X}' -f $ramBase)~0x$('{0:X}' -f $heapEnd) = $ramTotal 字节），装不下！先裁 rtconfig.h（关组件）或缩应用。"
 }
-if ($ramUsed -ge $heapEnd) {
-    throw "静态占用 $ramUsed 已越过栈底 0x$('{0:X}' -f $heapEnd)，堆被挤没了。先裁代码。"
+# 用 _end（含段间对齐填充）判"堆还剩多少"，比 text+data+bss 相加准确
+if ($endAddr -gt 0 -and $endAddr -ge $heapEnd) {
+    throw ("_end = 0x{0:X} 已到/越过栈底 0x{1:X} —— 堆被挤没了。先裁代码。" -f $endAddr, $heapEnd)
 }
 
 # ---- 出固件（可选）---------------------------------------------------------

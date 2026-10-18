@@ -641,6 +641,25 @@ def emit(path):
         f.write("#define TILE_ST_CURSOR 3\n\n")
         f.write("#define TILE_OF(shape, state)  ((uint8_t)((shape) * TILE_N_STATE + (state)))\n\n")
         f.write("/* 调色板（TILE_N_PALETTE / TILE_PALETTE）在 palette.h 里，见上面的 include */\n\n")
+        f.write("/* [!] 2026-10-18：36 块棋盘图块的**像素表**已从本文件移走 ——\n")
+        f.write(" *     render.c 现在按同一套几何**运行时合成**（synth_board_tile），\n")
+        f.write(" *     省下 9,216 字节 .rodata（RT-Thread 镜像就靠这 9KB 才装得下堆）。\n")
+        f.write(" *     像素表在 tiles_data.h，**只给 x86 单测当参考真值**，不进固件。 */\n\n")
+        f.write("#endif /* GOMOKU_TILES_H */\n")
+
+    # ---- 参考像素表（只给单测用，不进固件）----
+    dpath = path.replace("tiles.h", "tiles_data.h")
+    with open(dpath, "w", encoding="utf-8", newline="\n") as f:
+        f.write("/* " + "=" * 74 + "\n")
+        f.write(" * tiles_data.h —— 36 块棋盘图块的**参考像素表**（只给 x86 单测）\n")
+        f.write(" *\n")
+        f.write(" * [!] 本文件由 scripts/gomoku/gen_tiles.py **自动生成，不要手改**。\n")
+        f.write(" * [!] **不要 include 进固件**：9,216 字节的常量表会把 RT-Thread 镜像顶爆。\n")
+        f.write(" *     固件侧用 render.c 的 synth_board_tile() 运行时合成；\n")
+        f.write(" *     test_render.c 拿这张表逐像素对拍，保证两边画出来的完全一样。\n")
+        f.write(" * " + "=" * 74 + " */\n\n")
+        f.write("#ifndef GOMOKU_TILES_DATA_H\n#define GOMOKU_TILES_DATA_H\n\n")
+        f.write("#include \"tiles.h\"\n\n")
         f.write("/* [TILE_OF(shape,state)][py*16+px] = 调色板索引 */\n")
         f.write("static const uint8_t TILE_PATTERN[TILE_N_TOTAL][TILE_BYTES] = {\n")
         for i, img in enumerate(tiles):
@@ -650,7 +669,7 @@ def emit(path):
                 f.write("        " + ",".join("%d" % v for v in img[y]) + ",\n")
             f.write("    },\n")
         f.write("};\n\n")
-        f.write("#endif /* GOMOKU_TILES_H */\n")
+        f.write("#endif /* GOMOKU_TILES_DATA_H */\n")
 
 
 def dump_preview(n=2):
