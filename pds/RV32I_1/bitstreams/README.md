@@ -334,13 +334,14 @@ powershell -File scripts\capture_seed_timing.ps1 -Parse pds\RV32I_1\report_timin
 ```
 ---
 
-## rev1029 · **单一位流**（boot selector + CoreMark + RT-Thread）· `c642c0ac` · 2026-10-17
+## rev1029 · **单一位流** · 当前 **`273f6c5a`**（seed 29，2026-10-18）· 原 `c642c0ac`
 
-> [!] **2026-10-18 追加：同 RTL 的换布局候选 `273f6c5a`（待上板）**
-> `lut_combined_76mhz_seed29_273f6c5a.sbit`（md5 **`273f6c5a175b5ddf1e961438ad60efe2`**，9,188,552 B）+ 同名 `_timing.rtr`。
-> 唯一差别是 **`gplace_seed 10 → 29`**：WNS **+0.311 → +0.358**、Fmax **78.3699 → 78.6596（+0.37%）**、
-> LUT/FF/DRM 与拍数、CRC 全部不变。**banner 仍打印 `RTL=0x20261028`，与上一颗同号 —— 烧板前核 md5。**
-> 上板通过后本节标题与数字才整体改为 `273f6c5a`。
+> [!] **当前 rev1029 交付流 = `273f6c5a`（已上板）；下面表格是 `c642c0ac` 的记录，勿混读**
+> `lut_combined_76mhz_seed29_273f6c5a.sbit`（md5 **`273f6c5a175b5ddf1e961438ad60efe2`**，9,188,552 B，2026-10-18 14:34:12）
+> + 同名 `_timing.rtr`。相对 `c642c0ac` **只换布局 seed（10 → 29）**，RTL/固件/拍数/CRC/LUT 全不变：
+> WNS **+0.311 → +0.358**、Fmax **78.3699 → 78.6596（+0.37%）**、totalEP 16,703。
+> 板上证据 `doc/board/uart_20261018_144114.txt`（FW 14:21:34、846,440,591、四 CRC 全对、menu=HUMAN）。
+> **banner 与 `c642c0ac` 同号 `0x20261028`** ⇒ 烧板前必须核 md5。`c642c0ac` 保留为前一候选（已上板）。
 
 > 相对 rev1028 **只改资源占用（减 LUT）**，功能、拍数、CRC 一字未动：
 > `uart_tx` TX FIFO 1024→512、BTB 256→32 项、BHT tag 24→8 位。
