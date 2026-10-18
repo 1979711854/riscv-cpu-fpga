@@ -1,0 +1,1573 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-18 17:10:45
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 15:14:13
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 8944 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+[hb] alive, uptime 15000 ticks
+menu=HUMAN
+[build] FW=COREMARK RTL=0x20261028
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 846440591
+Total time (secs): 11
+Iterations/Sec   : 354
+Iterations       : 3900
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xbd59
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x00000000
+[cache] D miss=0x00000000
+[cache] I hits=0x00000000
+[cache] I miss=0x00000000
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 15:14:13
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 8944 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+item=AI
+mode=AI
+[hb] alive, uptime 5000 ticks
+menu=AI
+item=BLACK
+item=WHITE
+[hb] alive, uptime 10000 ticks
+item=STEP
+item=START
+AI match: black=NORMAL white=NORMAL step=1000ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . c[hb] alive, uptime 15000 ticks
+AI moved, nodes=416 depth=4 t=197ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . * . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . .AI moved, nodes=1287 depth=4 t=636ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . * . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1AI moved, nodes=1355 depth=4 t=720ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . * . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1[hb] alive, uptime 20000 ticks
+AI moved, nodes=830 depth=4 t=444ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . . O * . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .  AI moved, nodes=805 depth=4 t=458ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . . O O * . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .  AI moved, nodes=983 depth=4 t=604ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . * O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .  [hb] alive, uptime 25000 ticks
+AI moved, nodes=1010 depth=4 t=673ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . * O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1AI moved, nodes=1083 depth=4 t=748ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . * . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1AI moved, nodes=1087 depth=4 t=778ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . * X . . . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1[hb] alive, uptime 30000 ticks
+AI moved, nodes=1279 depth=4 t=903ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . * . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1AI moved, nodes=1720 depth=4 t=1294ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . * X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1[hb] alive, uptime 35000 ticks
+AI moved, nodes=1161 depth=4 t=847ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . X X . * . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . .1AI moved, nodes=901 depth=4 t=661ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . * X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1AI moved, nodes=652 depth=4 t=493ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . * X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1[hb] alive, uptime 40000 ticks
+AI moved, nodes=946 depth=4 t=765ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . * . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1AI moved, nodes=832 depth=4 t=716ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . * . . . O . . . . . . . . 
+ 6 . . . X . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1AI moved, nodes=536 depth=4 t=478ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X . * X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1[hb] alive, uptime 45000 ticks
+AI moved, nodes=293 depth=4 t=250ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X * X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1AI moved, nodes=1159 depth=4 t=1031ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . * . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1AI moved, nodes=425 depth=4 t=406ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . X . . . . . . . . 
+10 . . . . . . . * . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1[hb] alive, uptime 50000 ticks
+AI moved, nodes=1135 depth=4 t=1116ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . X . . . . . . . . 
+10 . . . . . * . O . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1AI moved, nodes=464 depth=4 t=473ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . X . . . . . . . . 
+10 . . . . . X . O . . . . . . . 
+11 . . . . * . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1[hb] alive, uptime 55000 ticks
+AI moved, nodes=1379 depth=4 t=1454ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . X . . . . . . . . 
+10 . . . . . X . O . . . . . . . 
+11 . . . . O * . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1AI moved, nodes=1153 depth=4 t=1239ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . * X . . . . . . . . 
+10 . . . . . X . O . . . . . . . 
+11 . . . . O X . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1AI moved, nodes=1042 depth=4 t=1120ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X * O . . . . . . . 
+11 . . . . O X . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . 1[hb] alive, uptime 60000 ticks
+AI moved, nodes=798 depth=4 t=837ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X * . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . 1AI moved, nodes=889 depth=4 t=950ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . * . . . . . . . . . 
+13 . . . . . . . . 1[hb] alive, uptime 65000 ticks
+AI moved, nodes=1464 depth=4 t=1641ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X * . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . . . 1AI moved, nodes=373 depth=4 t=404ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . * . . 1AI moved, nodes=504 depth=4 t=564ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . . . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1[hb] alive, uptime 70000 ticks
+AI moved, nodes=794 depth=4 t=901ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . . * . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1AI moved, nodes=783 depth=4 t=889ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . * X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1AI moved, nodes=403 depth=4 t=467ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O * . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1[hb] alive, uptime 75000 ticks
+AI moved, nodes=1475 depth=4 t=1763ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . * . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . 
+AI moved, nodes=470 depth=4 t=578ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . * . . . . . 
+ 5 . . O . . . O . . O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1[hb] alive, uptime 80000 ticks
+AI moved, nodes=891 depth=4 t=1116ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . X . . . . . 
+ 5 . . O . . . O . * O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . .1AI moved, nodes=772 depth=4 t=950ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . X . . . . . 
+ 5 . . O . . . O * O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1[hb] alive, uptime 85000 ticks
+AI moved, nodes=1562 depth=4 t=1950ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . X . . . . . 
+ 5 . . O * . . O X O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X .  AI moved, nodes=1232 depth=4 t=1510ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . X . . . . . 
+ 5 . . O O * . O X O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . [hb] alive, uptime 90000 ticks
+AI moved, nodes=745 depth=4 t=917ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . * . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1AI moved, nodes=382 depth=4 t=481ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . * . . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . . 1AI moved, nodes=928 depth=4 t=1190ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X * . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . .1[hb] alive, uptime 95000 ticks
+AI moved, nodes=1141 depth=4 t=1443ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . * X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . . X . . . . . . . . . 
+13 . . . . . X . .AI moved, nodes=1411 depth=4 t=1782ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . . X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . * X . . . . . . . . . 
+13 . . . . . X . .[hb] alive, uptime 100000 ticks
+AI moved, nodes=896 depth=4 t=1118ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . * X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . O X . . . . . . . . . 
+13 . . . . . X . .1AI moved, nodes=909 depth=4 t=1136ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . O X . . . . . . . . . 
+13 . . . . * X . .1[hb] alive, uptime 105000 ticks
+AI moved, nodes=1036 depth=4 t=1310ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . . O X . . . . . . . . . 
+13 . . . . O X .  AI moved, nodes=1329 depth=4 t=1661ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . . . O X O . . . . . . . . 
+12 . . . * O X . . . . . . . . . 
+13 . . . . O X . .[hb] alive, uptime 110000 ticks
+AI moved, nodes=801 depth=4 t=1019ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . * . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . .1AI moved, nodes=978 depth=4 t=1237ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . . . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . * . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . .1[hb] alive, uptime 115000 ticks
+AI moved, nodes=1023 depth=4 t=1293ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . * . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . .AI moved, nodes=445 depth=4 t=554ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . * . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . . 1AI moved, nodes=425 depth=4 t=513ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . * . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . . . X X X O . . . . . . . 
+11 . . X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . . 1[hb] alive, uptime 120000 ticks
+AI moved, nodes=431 depth=4 t=519ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . * . X X X O . . . . . . . 
+11 . . X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . . 1AI moved, nodes=342 depth=4 t=402ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . . . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . * X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . . 1AI moved, nodes=1012 depth=4 t=1219ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . * . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X . . . . . . . . . 
+13 . . . . O X . .[hb] alive, uptime 125000 ticks
+AI moved, nodes=1217 depth=4 t=1480ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . . . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X * . . . . . . . . 
+13 . . . . O X . .AI moved, nodes=363 depth=4 t=437ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . . . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . * . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . . 1[hb] alive, uptime 130000 ticks
+AI moved, nodes=516 depth=4 t=614ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . * . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . . 1AI moved, nodes=782 depth=4 t=938ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . . 1AI moved, nodes=1021 depth=4 t=1219ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X .  [hb] alive, uptime 135000 ticks
+AI moved, nodes=340 depth=4 t=400ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O . . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . X 1AI moved, nodes=1571 depth=4 t=1903ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O . . . . . . . 
+11 . X X . O X O * . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X .  [hb] alive, uptime 140000 ticks
+AI moved, nodes=360 depth=4 t=419ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . . O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O * . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . X 1AI moved, nodes=1108 depth=4 t=1320ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . * O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X . O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . .AI moved, nodes=386 depth=4 t=440ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X . O . X . . . . . 
+ 5 . . O O X * O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . X 1[hb] alive, uptime 145000 ticks
+AI moved, nodes=737 depth=4 t=847ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . . X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X * O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . X 1AI moved, nodes=1142 depth=4 t=1317ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . * X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . . O O X X . . . . . . . . 
+13 . . . . O X . .[hb] alive, uptime 150000 ticks
+AI moved, nodes=1526 depth=4 t=1750ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . * O O X X . . . . . . . . 
+13 . . . . O X .  AI moved, nodes=791 depth=4 t=898ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X . O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . . . * O X . X 1[hb] alive, uptime 155000 ticks
+AI moved, nodes=713 depth=4 t=806ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O . . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X * O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . . . O O X . X 1AI moved, nodes=762 depth=4 t=846ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O * . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . . O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . . . O O X . X 1AI moved, nodes=681 depth=4 t=745ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . * O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . . . O O X . X 1[hb] alive, uptime 160000 ticks
+AI moved, nodes=1065 depth=4 t=1170ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . * . O O X . .AI moved, nodes=694 depth=4 t=755ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X . . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . O * O O X . X 1AI moved, nodes=863 depth=4 t=930ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X * . . . . . . 
+12 . . X O O X X . . . . . . . . 
+13 . O X O O X . X 1[hb] alive, uptime 165000 ticks
+AI moved, nodes=590 depth=4 t=635ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . . X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . * . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=504 depth=4 t=537ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . * X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=554 depth=4 t=578ms
+
+    A B C D E F G H I J K L M N O
+ 1 . * X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . . O . O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1[hb] alive, uptime 170000 ticks
+AI moved, nodes=999 depth=4 t=1048ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . * O . O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X AI moved, nodes=835 depth=4 t=874ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O * O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O . . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1[hb] alive, uptime 175000 ticks
+AI moved, nodes=1432 depth=4 t=1497ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O * . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X .  AI moved, nodes=615 depth=4 t=644ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=364 depth=4 t=380ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1[hb] alive, uptime 180000 ticks
+AI moved, nodes=634 depth=4 t=671ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=349 depth=4 t=360ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O . . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=794 depth=4 t=837ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O * . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X . X . . . . . . 
+13 . O X O O X . X 1[hb] alive, uptime 185000 ticks
+AI moved, nodes=548 depth=4 t=580ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X * X . . . . . . 
+13 . O X O O X . X 1AI moved, nodes=119 depth=4 t=113ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X O X . . . . . . 
+13 . O X O O X * X 1AI moved, nodes=279 depth=4 t=280ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O . . . . . . 
+12 . . X O O X X O X . . . . . . 
+13 . O X O O X X X 1[hb] alive, uptime 190000 ticks
+AI moved, nodes=468 depth=4 t=479ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O * . . . . . 
+12 . . X O O X X O X . . . . . . 
+13 . O X O O X X X 1AI moved, nodes=42 depth=4 t=31ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . . . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O X . . . . . 
+12 . . X O O X X O X . . . . . . 
+13 . O X O O X X X O 1BLACK wins
+AI moved, nodes=14 depth=4 t=1ms
+
+    A B C D E F G H I J K L M N O
+ 1 . X X . . . . . . . . . . . . 
+ 2 . . O . O X . . . . . . . . . 
+ 3 . X O O . X O . . . . . . . . 
+ 4 . O O X O X X O . X . . . . . 
+ 5 . X O O X O O X O O . . . . . 
+ 6 . . X X O X X X . O . . . . . 
+ 7 . . . . X O O O X O X . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . O . O X . O X . * . . . 
+10 . . O . X X X O O O X . . . . 
+11 . X X X O X O X O X . . . . . 
+12 . . X O O X X O X . . . . . . 
+13 . O X O1[hb] alive, uptime 195000 ticks
+[hb] alive, uptime 200000 ticks
+[hb] alive, uptime 205000 ticks
+[hb] alive, uptime 210000 ticks
+[hb] alive, uptime 215000 ticks
+[hb] alive, uptime 220000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 15:14:13
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 8944 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[!] vblank timeout -- video not running (check D18 video_locked)
+# 结束于 2026-10-18 17:15:45，共 1571 行

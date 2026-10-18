@@ -1,0 +1,584 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-18 19:15:31
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 18:45:30
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9320 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 18:45:30
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9320 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+menu=HUMAN
+[build] FW=COREMARK RTL=0x20261028
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 846440591
+Total time (secs): 11
+Iterations/Sec   : 354
+Iterations       : 3900
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xbd59
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x00000000
+[cache] D miss=0x00000000
+[cache] I hits=0x00000000
+[cache] I miss=0x00000000
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 18 2026 18:45:30
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 9320 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+item=AI
+mode=AI
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+[hb] alive, uptime 15000 ticks
+menu=AI
+item=BLACK
+[hb] alive, uptime 20000 ticks
+[hb] alive, uptime 25000 ticks
+item=WHITE
+item=STEP
+item=START
+AI match: black=NORMAL white=NORMAL step=1000ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=416 depth=4 t=196ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . * . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+[hb] alive, uptime 30000 ticks
+AI moved, nodes=1287 depth=4 t=635ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . * . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=1355 depth=4 t=719ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . * . . . . . . . 
+ 7 . . . . . . O . . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=830 depth=4 t=443ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . . O * . . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+[hb] alive, uptime 35000 ticks
+AI moved, nodes=805 depth=4 t=457ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . . O O * . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=983 depth=4 t=603ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . . * O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=1010 depth=4 t=671ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . * O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+[hb] alive, uptime 40000 ticks
+AI moved, nodes=1083 depth=4 t=746ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . * . . . . . . . . 
+ 6 . . . . . . . X . . . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=1087 depth=4 t=776ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . * X . . . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+[hb] alive, uptime 45000 ticks
+AI moved, nodes=1279 depth=4 t=901ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . * . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . . X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=1720 depth=4 t=1291ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . * X . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=1161 depth=4 t=845ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . . X X . * . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+[hb] alive, uptime 50000 ticks
+AI moved, nodes=901 depth=4 t=660ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . . * X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=652 depth=4 t=492ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . . . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . * X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=946 depth=4 t=764ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . O . . . . . . . . 
+ 6 . . . * . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+[hb] alive, uptime 55000 ticks
+AI moved, nodes=832 depth=4 t=715ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . * . . . O . . . . . . . . 
+ 6 . . . X . . X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+AI moved, nodes=536 depth=4 t=478ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X . * X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=293 depth=4 t=250ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X * X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+[hb] alive, uptime 60000 ticks
+AI moved, nodes=1159 depth=4 t=1029ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . * . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=WHITE
+AI moved, nodes=425 depth=4 t=406ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . O . . . O . . . . . . . . 
+ 6 . . . X O X X X . O . . . . . 
+ 7 . . . . X O O O X . . . . . . 
+ 8 . . . . O X X X . O . . . . . 
+ 9 . . . . . . X . . . . . . . . 
+10 . . . . . . . * . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+title
+AI moved, nodes=425 depth=4 t=406ms
+
+    A B C D E F G H I J K L M N O
+ 1 . . . . . . . . . . . . . . . 
+ 2 . . . . . . . . . . . . . . . 
+ 3 . . . . . . . . . . . . . . . 
+ 4 . . . . . . . . . . . . . . . 
+ 5 . . . . . . . . . . . . . . . 
+ 6 . . . . . . . . . . . . . . . 
+ 7 . . . . . . . . . . . . . . . 
+ 8 . . . . . . . . . . . . . . . 
+ 9 . . . . . . . . . . . . . . . 
+10 . . . . . . . . . . . . . . . 
+11 . . . . . . . . . . . . . . . 
+12 . . . . . . . . . . . . . . . 
+13 . . . . . . . . . . . . . . . 
+14 . . . . . . . . . . . . . . . 
+15 . . . . . . . . . . . . . . . 
+cursor=H8 you=BLACK turn=BLACK
+menu=MAIN
+item=HUMAN
+[hb] alive, uptime 65000 ticks
+menu=HUMAN
+mode=HUMAN
+[build] FW=COREMARK RTL=0x20261028
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 846440591
+Total time (secs): 11
+Iterations/Sec   : 354
+Iterations       : 3900
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xbd59
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x00000000
+[cache] D miss=0x00000000
+[cache] I hits=0x00000000
+[cache] I miss=0x00000000
+ 
+# 结束于 2026-10-18 19:19:31，共 582 行
