@@ -18,6 +18,7 @@
 #include "board.h"
 #include "render.h"
 #include "tiles.h"
+#include "tiles_data.h"   /* 参考像素表（只给单测；固件里是 render.c 运行时合成）*/
 #include "font.h"
 
 static int g_pass = 0;
@@ -272,9 +273,11 @@ static void test_theme(void)
     CHECK(FONT_FG == PAL_UI_FG, "FONT_FG 必须等于 PAL_UI_FG");
     CHECK(TILE_PALETTE[PAL_UI_BG] != TILE_PALETTE[PAL_BG], "UI 底色不能等于棋盘木色");
 
-    /* 外框 / 棋子图标：背景必须是 UI 底（不能留木色小方块）*/
-    CHECK(pat_at(RENDER_TILE_FRAME_H, 0, 0) == PAL_UI_BG, "外框横线图块底色应是 UI 底");
-    CHECK(pat_at(RENDER_TILE_FRAME_V, 0, 0) == PAL_UI_BG, "外框竖线图块底色应是 UI 底");
+    /* 外框：必须是**木色**底 —— 它四角复用的是棋盘边角图块（木色），
+     * 改成 UI 深色会在棋盘四周留下 4 个木色小方块角块。 */
+    CHECK(pat_at(RENDER_TILE_FRAME_H, 0, 0) == PAL_BG, "外框横线图块底色应是棋盘木色");
+    CHECK(pat_at(RENDER_TILE_FRAME_V, 0, 0) == PAL_BG, "外框竖线图块底色应是棋盘木色");
+    /* 棋子图标：只出现在深色 UI 上（HUD / 标题菜单），底必须是 UI 底 */
     CHECK(pat_at(RENDER_TILE_ICON_BLACK, 0, 0) == PAL_UI_BG, "黑子图标底色应是 UI 底");
     CHECK(pat_at(RENDER_TILE_ICON_WHITE, 0, 0) == PAL_UI_BG, "白子图标底色应是 UI 底");
 

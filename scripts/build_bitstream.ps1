@@ -162,25 +162,33 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(17104); demo = @(326);
-                 # [!] 2026-10-17 单一位流（base 0x10000 + 76.5052MHz）重建实测：
-                 #     rtthread mem.hex = 22,282 行（11,141 字），
-                 #     text 44,373 B / data 188 / bss 10,952，_end = 0x1DD08，
-                 #     堆 4,840 B（__heap_end 0x1EFF0，栈区 0x1EFF0~0x1FFF0）。
-                 #     T6 时代在 0x0/85MHz 下的 22,028 已作废 —— 换布局 + 换频都会变。
+$expectLines = @{ coremark = @(20780); demo = @(326);
+                 # [!] 2026-10-18 任务 B（CoreMark 镜像上 HDMI）：CoreMark 镜像加了
+                 #     video_text.c（文本控制台 + 结果页 + 共享邮箱 + 64 位分数），
+                 #     mem.hex 17,104 -> 20,780 行（ITER=3900；ITER=1 是 20,760，
+                 #     差 20 行 = 10 字，来自 seed4 常量与对齐）。
+                 #     video_text.o **排在链接最后**，benchmark 那批 .o 的地址不变 ——
+                 #     否则 Total ticks 会从 217,088 变成 217,089（见 run_coremark.ps1）。
+                 # [!] 2026-10-18 任务 A（标题屏改版）后重新实测：
+                 #     rtthread mem.hex = 19,758 行（9,879 字），
+                 #     text 39,284 / data 232 / bss 11,192，_end = 0x1CB88，
+                 #     堆 9,320 B（__heap_end 0x1EFF0）⇒ 满足"堆 >= 8KB"。
+                 #     比改版前小 2,500 行：36 块棋盘图块从 .rodata 的 9,216 B 常量表
+                 #     改成 render.c 的运行时合成（与 gen_tiles.py 逐像素一致，
+                 #     test_render 用 tiles_data.h 对拍）。
                  #     [重点] 这个数必须用【非 -Sim】的 rtthread\build.ps1 -Firmware 量。
-                  rtthread = @(22282);
+                  rtthread = @(19758);
                   boot = @(34);
                  # combined = 三块的**行数之和**（elf2mem 每字 2 行，且 merge_images.py
                  # 已断言三块不重叠 ⇒ 合并后行数 = 行数之和，不会多也不会少）：
-                 #   boot 34 + coremark 17,104 + rtthread 22,282 = 39,420
-                 combined = @(39420);
-                  video = @(758); gomoku = @(12552) }
-$expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
-                  rtthread = "11141 字（0x10000 重定位 + 76.5MHz，2026-10-17 实测）";
+                 #   boot 34 + coremark 20,780 + rtthread 19,758 = 40,572
+                 combined = @(40572);
+                  video = @(758); gomoku = @(11712) }
+$expectDesc  = @{ coremark = "10380 字（含 HDMI 文本控制台）"; demo = "163 字";
+                  rtthread = "9879 字（0x10000 重定位 + 76.5MHz，2026-10-18 实测）";
                   boot = "17 字（boot selector）";
-                  combined = "19,710 字 = boot 17 + coremark 8552 + rtthread 11141";
-                  video = "379 字"; gomoku = "6276 字" }
+                  combined = "20,286 字 = boot 17 + coremark 10380 + rtthread 9879";
+                  video = "379 字"; gomoku = "5856 字（图块改运行时合成后）" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。

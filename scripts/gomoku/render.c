@@ -316,12 +316,14 @@ void render_text_dedup_center(int slot, int row, const char *s)
 /* ---- 阶段 1 合成图块：在 render_init 里现算，不占固件 .rodata ---------------
  * 刻意【不用 libc】（没有 memcpy），用显式循环搬像素。 */
 
+/* 棋盘图块的合成函数（定义在下面 render_init 之前，这里先声明）。 */
+static void synth_board_tile(uint8_t *buf, int shape, int state);
+
 /* 拷贝棋盘图块并在右上角叠一个红色小三角（最后一手标记）。color: 0=黑 1=白。 */
 static void synth_last_move(uint8_t *buf, int shape, int color)
 {
-    int i, y, x;
-    const uint8_t *src = TILE_PATTERN[TILE_OF(shape, color + 1)];  /* BLACK=1 / WHITE=2 */
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = src[i];
+    int y, x;
+    synth_board_tile(buf, shape, color + 1);     /* BLACK=1 / WHITE=2 */
     /* 右上角 4x4 小三角（顶点朝左下）。避开中心子（半径 6）与行/列 7-8 的网格线。 */
     for (y = 0; y < 4; y++)
         for (x = 12 + y; x < TILE_W; x++)
@@ -331,29 +333,30 @@ static void synth_last_move(uint8_t *buf, int shape, int color)
 /* 星位点：内部空格图块 + 中心 4x4 实心点（比网格线粗，一眼能认出是星位）。 */
 static void synth_star(uint8_t *buf)
 {
-    int i, y, x;
-    const uint8_t *src = TILE_PATTERN[TILE_OF(TILE_SHAPE_INNER, TILE_ST_EMPTY)];
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = src[i];
+    int y, x;
+    synth_board_tile(buf, TILE_SHAPE_INNER, TILE_ST_EMPTY);
     for (y = 6; y <= 9; y++)
         for (x = 6; x <= 9; x++)
             buf[y * TILE_W + x] = PAL_LINE;
 }
 
 /* 外框纯横线 / 纯竖线（2px，与棋盘线同色）。四角复用棋盘边角图块。
- * [!] 2026-10-18：背景从 PAL_BG（木色）改成 PAL_UI_BG（深色 UI 底）。
- *     整屏底色已经是深色，外框若留着木色底，棋盘四周会出现一圈"木框"，
- *     和深色 UI 撞成两种底 —— 正是任务书 §2.5.1 说的那类"小方块"。 */
+ * [!] 2026-10-18 保留 **PAL_BG（木色）底**，不要改成 UI 深色：
+ *     外框四角复用的是棋盘边角图块（木色），只把横/竖线改成深色底，
+ *     棋盘四周就会出现 4 个"木色小方块"角块，看着像画错了。
+ *     木框 + 木棋盘 = 一整块木色棋盘，外面才是深色 UI —— 这正是任务书
+ *     §2.2.1 要的"深色 UI + 木色棋盘"两色体系。 */
 static void synth_frame_h(uint8_t *buf)
 {
     int i, x;
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_UI_BG;
+    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_BG;
     for (x = 0; x < TILE_W; x++) { buf[7 * TILE_W + x] = PAL_LINE; buf[8 * TILE_W + x] = PAL_LINE; }
 }
 
 static void synth_frame_v(uint8_t *buf)
 {
     int i, y;
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_UI_BG;
+    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_BG;
     for (y = 0; y < TILE_W; y++) { buf[y * TILE_W + 7] = PAL_LINE; buf[y * TILE_W + 8] = PAL_LINE; }
 }
 
@@ -500,11 +503,89 @@ static void put_pat(uint16_t tile, const uint8_t *buf)
     vid_bulk_write(VID_REGION_PAT, (uint16_t)(tile * TILE_BYTES), buf, (uint16_t)TILE_BYTES);
 }
 
+/* ---------------------------------------------------------------------------
+ * 36 块棋盘图块：**运行时合成**（2026-10-18 从 .rodata 搬到这里）
+ * ---------------------------------------------------------------------------
+ * 为什么：那张 36 × 256B 的常量表 = 9,216 字节，跟着 RT-Thread 镜像一起驻留
+ *   RAM。镜像已经到 96.8%，堆只剩一百多字节 —— 把表换成这段几何代码，
+ *   .rodata 少 9KB、代码多几百字节，堆立刻回到 8KB 以上。
+ *
+ * [!] 几何必须与 gen_tiles.py 逐像素一致（那边是 Python 参考实现）：
+ *     线宽 2px 在 7..8 行列；棋子半径 6、高光半径 2 偏左上；光标是 5.5..7 的空心圈。
+ *     `test_render.c` 用 tiles_data.h 的参考表逐像素对拍，画歪了会当场 FAIL。
+ * ------------------------------------------------------------------------- */
+
+/* 9 种形状的四条边（上/下/左/右）有没有线 —— 顺序与 gen_tiles.py 的 SHAPES 一致 */
+static const uint8_t SHAPE_EDGES[TILE_N_SHAPE][4] = {
+    {1, 1, 1, 1},   /* 0 内部 */
+    {0, 1, 1, 1},   /* 1 上边 */
+    {1, 0, 1, 1},   /* 2 下边 */
+    {1, 1, 0, 1},   /* 3 左边 */
+    {1, 1, 1, 0},   /* 4 右边 */
+    {0, 1, 0, 1},   /* 5 左上角 */
+    {0, 1, 1, 0},   /* 6 右上角 */
+    {1, 0, 0, 1},   /* 7 左下角 */
+    {1, 0, 1, 0},   /* 8 右下角 */
+};
+
+static void synth_board_tile(uint8_t *buf, int shape, int state)
+{
+    const uint8_t *e = SHAPE_EDGES[shape];
+    int up = e[0], dn = e[1], lf = e[2], rt = e[3];
+    int i, x, y;
+
+    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_BG;
+
+    /* 横线：两端都有线就贯穿，只有一端就从中心画到那一端（必须画到边界，
+     * 否则相邻两块之间会断开，整张棋盘看起来是虚线）。 */
+    if (lf || rt) {
+        int x0 = lf ? 0 : 8;
+        int x1 = rt ? (TILE_W - 1) : 7;
+        for (y = 7; y <= 8; y++)
+            for (x = x0; x <= x1; x++) buf[y * TILE_W + x] = PAL_LINE;
+    }
+    /* 竖线（同上）*/
+    if (up || dn) {
+        int y0 = up ? 0 : 8;
+        int y1 = dn ? (TILE_W - 1) : 7;
+        for (x = 7; x <= 8; x++)
+            for (y = y0; y <= y1; y++) buf[y * TILE_W + x] = PAL_LINE;
+    }
+
+    if (state == TILE_ST_BLACK || state == TILE_ST_WHITE) {
+        /* 实心圆 + 左上高光。用 2x 整数坐标代替浮点（dx = x-7.5 ⇒ 2dx = 2x-15），
+         * 这样不用链接 libm，且与 gen_tiles.py 的 float 版本逐像素等价。 */
+        int color    = (state == TILE_ST_BLACK) ? PAL_BLACK : PAL_WHITE;
+        int hi_color = (state == TILE_ST_BLACK) ? PAL_BLACK_HI : PAL_WHITE_EDGE;
+        for (y = 0; y < TILE_W; y++) {
+            for (x = 0; x < TILE_W; x++) {
+                int dx = 2 * x - (TILE_W - 1);
+                int dy = 2 * y - (TILE_W - 1);
+                if (dx * dx + dy * dy <= 144) {          /* (2*STONE_R)^2 = 144 */
+                    int hx = dx + 4, hy = dy + 4;        /* 高光圆心左/上偏 2px */
+                    buf[y * TILE_W + x] = (uint8_t)((hx * hx + hy * hy <= 16) ? hi_color : color);
+                }
+            }
+        }
+    } else if (state == TILE_ST_CURSOR) {
+        /* 空心圈：5.5..7 像素（不能挡中心，否则看不见底下的交叉点）*/
+        for (y = 0; y < TILE_W; y++) {
+            for (x = 0; x < TILE_W; x++) {
+                int dx = 2 * x - (TILE_W - 1);
+                int dy = 2 * y - (TILE_W - 1);
+                int d2 = dx * dx + dy * dy;
+                if (d2 >= 121 && d2 <= 196)              /* (2*5.5)^2 .. (2*7)^2 */
+                    buf[y * TILE_W + x] = PAL_RED;
+            }
+        }
+    }
+}
+
 void render_init(void)
 {
     uint8_t  pal[TILE_N_PALETTE * 4];
     uint8_t  tile[TILE_BYTES];
-    uint16_t t, i, py;
+    uint16_t i;
 
     /* ---- 调色板：24bit RGB 存成字（小端）⇒ 字节序 B,G,R,0 ---- */
     for (i = 0; i < TILE_N_PALETTE; i++) {
@@ -516,12 +597,18 @@ void render_init(void)
     }
     vid_bulk_write(VID_REGION_PAL, 0, pal, (uint16_t)(TILE_N_PALETTE * 4));
 
-    /* ---- 图块像素：tiles.h 里是一行 16 字节的二维数组，显存里也是行优先，
-     *      但【方向相反】：显存是 [tile][row][col]，C 数组也是 [tile][y][x]，
-     *      所以可以一块一块整片搬 —— 不用逐像素。 ---- */
-    for (t = 0; t < TILE_N_TOTAL; t++) {
-        for (py = 0; py < TILE_BYTES; py++) tile[py] = TILE_PATTERN[t][py];
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(t * TILE_BYTES), tile, TILE_BYTES);
+    /* ---- 图块像素：36 块棋盘图块**运行时合成**（省 9,216 字节 .rodata，
+     *      见上面 synth_board_tile 的说明）。 ---- */
+    {
+        int shape, state;
+        for (shape = 0; shape < TILE_N_SHAPE; shape++) {
+            for (state = 0; state < TILE_N_STATE; state++) {
+                synth_board_tile(tile, shape, state);
+                vid_bulk_write(VID_REGION_PAT,
+                               (uint16_t)(TILE_OF(shape, state) * TILE_BYTES),
+                               tile, (uint16_t)TILE_BYTES);
+            }
+        }
     }
 
     /* ---- 字库图块：把紧凑 5x7 位图放大 FONT_SCALE 倍成 16x16，写到 tile 36..130。

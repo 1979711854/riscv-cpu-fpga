@@ -329,8 +329,9 @@ module tb_gomoku;
     //     ③ 别的地方卡住
     //   `input_t` 就在 RAM 里，按地址读出来就能直接看见固件"以为"发生了什么。
     // 地址来源：`riscv-none-elf-nm sim/programs/gomoku_sim/gomoku_sim.elf`
-    //     ⇒ `g_input` @ **0x6D7C**，大小 **0x38**。
-    //   存储器是【字寻址】（`mem0[0:32767]`，128KB）⇒ 字下标 = 0x6D7C/4 = **7007**。
+    //     ⇒ `g_input` @ **0x8FD8**，大小 **0x38**（2026-10-18 标题屏改版后重量）。
+    //   [!] 这个地址会随 .data/.text 大小漂移 —— 改完固件必须重新 nm 一次。
+    //   存储器是【字寻址】（`mem0[0:32767]`，128KB）⇒ 字下标 = 0x8FD8/4 = **9206**。
     // 字段偏移（见 `scripts/gomoku/input.h` 的 input_t）：
     //     raw[4]@0  t_edge[4]@4  stable[4]@20  down_at[4]@24  long_sent[4]@40
     //     short_latch@44  long_latch@45  debounce_ticks@48  long_ticks@52
@@ -339,7 +340,7 @@ module tb_gomoku;
     //     85005 / 425025（而不是 100000 / 500000）。**这决定 2 帧按住到底算不算长按。**
     // 层次路径：unified_mem 例化在 mem_bus 里（`u_mem`），mem_bus 在 cpu_top 里（`u_bus`）。
     // ========================================================================
-    localparam integer GI = 7007;                              // 0x6D7C / 4
+    localparam integer GI = 9206;                              // 0x8FD8 / 4
     wire [31:0] gi_raw_w  = u_soc.u_bus.u_mem.mem0[GI + 0];    // raw[0..3]      @0x6D7C
     wire [31:0] gi_stb_w  = u_soc.u_bus.u_mem.mem0[GI + 5];    // stable[0..3]   @0x6D90
     wire [31:0] gi_lsn_w  = u_soc.u_bus.u_mem.mem0[GI + 10];   // long_sent[0..3]@0x6DA4
