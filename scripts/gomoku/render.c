@@ -248,6 +248,20 @@ void render_text(int row, int col, const char *s)
     vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256), line, (uint16_t)SCREEN_COLS);
 }
 
+void render_text_span(int row, int col, const char *s)
+{
+    /* [!] 只写这几个格子，**不铺整行**。
+     *     用途：和其他内容共享同一行的短标签（标题屏的 "AI VS AI"、LAST COREMARK
+     *     那三行）。用 render_text 会把整行先铺成空格，把同一行上的选中框/说明行
+     *     一起抹掉 —— 2026-10-18 第二轮反馈里"选中框缺一段"就是这么来的。 */
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        int c = col + i;
+        if (c < 0 || c >= SCREEN_COLS) break;
+        put_abs(row, c, glyph_tile((int)(unsigned char)s[i]));
+    }
+}
+
 void render_text_center(int row, const char *s)
 {
     int len = 0;
@@ -465,6 +479,12 @@ static void synth_box(uint8_t *buf, int kind)
     int hline_top    = (kind >= 5);
     int vleft        = (kind == 0 || kind == 3 || kind == 5);
     int vright       = (kind == 2 || kind == 4 || kind == 7);
+    /* [!] 竖线只画在**框内侧**（2026-10-18 第二轮反馈 T4）：
+     *     角块如果让竖线贯穿整块 16px，就会从上下边框外面戳出去 14px，
+     *     看起来像"金条超出框"。所以上排角块的竖线只占 y=14..15（正好接上边框），
+     *     下排角块只占 y=0..1，只有左右两条边（L/R）才是整块通高。 */
+    int vy0 = hline_bottom ? 14 : 0;
+    int vy1 = hline_top    ?  1 : (TILE_W - 1);
 
     for (y = 0; y < TILE_W; y++)
         for (x = 0; x < TILE_W; x++)
@@ -482,7 +502,7 @@ static void synth_box(uint8_t *buf, int kind)
             buf[1 * TILE_W + x] = PAL_GOLD;
         }
     }
-    for (y = 0; y < TILE_W; y++) {
+    for (y = vy0; y <= vy1; y++) {
         if (vleft)  { buf[y * TILE_W + 0] = PAL_GOLD; buf[y * TILE_W + 1] = PAL_GOLD; }
         if (vright) { buf[y * TILE_W + 14] = PAL_GOLD; buf[y * TILE_W + 15] = PAL_GOLD; }
     }

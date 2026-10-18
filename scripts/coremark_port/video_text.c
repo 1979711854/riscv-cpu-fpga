@@ -175,6 +175,23 @@ void video_text_puts(const char *s)
     while (*s) video_text_putc(*s++);
 }
 
+/* 在 (row,col) 直接写一段字，**不动光标、不换行、不滚动**。
+ * 结果页用：每行固定落在指定行，行距才拉得开（滚动区仍然走 putc 的流式输出）。 */
+void video_text_at(int row, int col, const char *s)
+{
+    if (row < 0 || row >= VIDEO_TEXT_ROWS) return;
+    while (*s && col < VIDEO_TEXT_COLS) {
+        unsigned char c = (unsigned char)*s++;
+        if (c < 0x20 || c > 0x7E) c = ' ';
+        if (col >= 0) {
+            vbuf[row][col] = c;
+            REG8(VIDEO_NT + (unsigned int)row * 256u + (unsigned int)col)
+                = (unsigned char)(FONT_TILE_BASE + (c - FONT_BASE));
+        }
+        col++;
+    }
+}
+
 void video_text_putdec(unsigned v, int width)
 {
     char tmp[12];

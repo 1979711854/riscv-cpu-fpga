@@ -286,25 +286,34 @@ static void test_theme(void)
           pat_at(RENDER_TILE_RULE, 8, 15) == PAL_GOLD, "分隔线中间两行应是金色");
     CHECK(pat_at(RENDER_TILE_RULE, 0, 0) == PAL_UI_BG, "分隔线上下应是 UI 底");
 
-    /* 选中框：上排三块的横线在**底部**，下排三块的横线在**顶部** */
-    CHECK(pat_at(RENDER_TILE_BOX_TL, 15, 15) == PAL_GOLD, "TL 横线应在底部");
-    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 0) == PAL_GOLD, "TL 竖线应在左侧");
-    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 15) == PAL_UI_BG, "TL 右上角应是底色");
+    /* 选中框（2026-10-18 第二轮反馈 T4：竖线**只画框内侧**，不许戳出上下边框）
+     *   上排三块：横线在 y=14..15，竖线也只占 y=14..15；
+     *   下排三块：横线在 y=0..1，  竖线也只占 y=0..1；
+     *   只有左/右边（L/R）是整块通高。 */
+    CHECK(pat_at(RENDER_TILE_BOX_TL, 15, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_TL, 15, 15) == PAL_GOLD,
+          "TL 横线在底部两端都该是金色");
+    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 0) == PAL_UI_BG,
+          "TL 竖线不许戳出上边框（T4）");
     CHECK(pat_at(RENDER_TILE_BOX_T, 15, 8) == PAL_GOLD &&
           pat_at(RENDER_TILE_BOX_T, 0, 8) == PAL_UI_BG, "T 横线应在底部");
-    CHECK(pat_at(RENDER_TILE_BOX_TR, 15, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_TR, 0, 15) == PAL_GOLD, "TR 横线在底部、竖线在右侧");
-    CHECK(pat_at(RENDER_TILE_BOX_L, 8, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_L, 8, 15) == PAL_UI_BG, "L 只有左侧竖线");
+    CHECK(pat_at(RENDER_TILE_BOX_TR, 15, 15) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_TR, 0, 15) == PAL_UI_BG,
+          "TR 横线在底部、竖线不外露");
+    CHECK(pat_at(RENDER_TILE_BOX_L, 0, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_L, 8, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_L, 15, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_L, 8, 15) == PAL_UI_BG, "L 只有左侧竖线（通高）");
     CHECK(pat_at(RENDER_TILE_BOX_R, 8, 15) == PAL_GOLD &&
           pat_at(RENDER_TILE_BOX_R, 8, 0) == PAL_UI_BG, "R 只有右侧竖线");
     CHECK(pat_at(RENDER_TILE_BOX_BL, 0, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BL, 15, 15) == PAL_UI_BG, "BL 横线应在顶部");
+          pat_at(RENDER_TILE_BOX_BL, 0, 15) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_BL, 15, 0) == PAL_UI_BG, "BL 横线在顶部、竖线不外露");
     CHECK(pat_at(RENDER_TILE_BOX_B, 0, 8) == PAL_GOLD &&
           pat_at(RENDER_TILE_BOX_B, 15, 8) == PAL_UI_BG, "B 横线应在顶部");
     CHECK(pat_at(RENDER_TILE_BOX_BR, 0, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BR, 15, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BR, 15, 0) == PAL_UI_BG, "BR 横线在顶部、竖线在右侧");
+          pat_at(RENDER_TILE_BOX_BR, 0, 0) == PAL_GOLD &&
+          pat_at(RENDER_TILE_BOX_BR, 15, 15) == PAL_UI_BG, "BR 横线在顶部、竖线不外露");
 
     /* 大 logo：24 块全都要有金色（字）或棋子色（O），且只出现这几种颜色 */
     for (t = 0; t < 24; t++) {

@@ -32,6 +32,9 @@ void video_text_putc(char c);
 
 void video_text_puts(const char *s);
 
+/* 在 (row,col) 直接写一段字：不动光标、不换行、不滚动。结果页排版用。 */
+void video_text_at(int row, int col, const char *s);
+
 /* 无符号十进制（补空格到 width 位，右对齐）。 */
 void video_text_putdec(unsigned v, int width);
 

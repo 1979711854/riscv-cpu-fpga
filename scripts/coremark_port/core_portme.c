@@ -169,15 +169,55 @@ static void mailbox_publish(const core_results *r, ee_u32 score_x100, ee_u16 see
     m[CM_MBOX_I_MAGIC]    = (ee_u32)CM_MBOX_MAGIC; /* 最后 */
 }
 
-/* 屏上结果页。数字全部**现算**（64 位），不用 CoreMark 的整数截断值：
+/* ---- 结果页用的小工具：自己拼串（固件没有 sprintf）---- */
+static char *vt_append(char *d, const char *s)
+{
+    while (*s) *d++ = *s++;
+    *d = '\0';
+    return d;
+}
+
+static char *vt_dec(char *d, unsigned v, int width)
+{
+    char tmp[12];
+    int  n = 0;
+    if (v == 0) tmp[n++] = '0';
+    while (v) { tmp[n++] = (char)('0' + (v % 10u)); v /= 10u; }
+    while (n < width) tmp[n++] = '0';
+    while (n--) *d++ = tmp[n];
+    *d = '\0';
+    return d;
+}
+
+static char *vt_hex(char *d, unsigned v, int width)
+{
+    static const char hx[] = "0123456789abcdef";
+    char tmp[12];
+    int  n = 0;
+    if (v == 0) tmp[n++] = '0';
+    while (v) { tmp[n++] = hx[v & 0xFu]; v >>= 4; }
+    while (n < width) tmp[n++] = '0';
+    while (n--) *d++ = tmp[n];
+    *d = '\0';
+    return d;
+}
+
+/* 屏上结果页（2026-10-18 第二轮反馈 C1~C4）：
+ *   · 每一行都从 **col 4** 起，不再贴左上角；
+ *   · 按「标题 / 参数 / 结果 / CRC / 提示」五组分开，**组间空一行**；
+ *   · 只留关键数字，编译器 flags 那些长行不往结果页上堆（滚动区里已经有了）。
+ * 数字全部**现算**（64 位），不用 CoreMark 的整数截断值：
  *   Score        = ITER × 时钟 ÷ ticks
  *   CoreMark/MHz = ITER × 1e6 ÷ ticks
  *   Total time   = ticks ÷ 时钟（毫秒定点，避免 11 / 0 那种整数截断） */
 static void draw_result_page(const core_results *r, ee_u16 seedcrc)
 {
+    const int X = 4;                    /* 结果页左边界（反馈 C1：不贴左） */
     unsigned long long ticks = (unsigned long long)cm_ticks;
     unsigned long long score_x10, cpi_x1000, secs_x1000;
-    unsigned int score10, cpi1000, secs1000;
+    unsigned int score10, cpi1000, secs1000, mhz10;
+    char line[40];
+    char *p;
 
     if (ticks == 0ull) ticks = 1ull;
 
@@ -188,48 +228,68 @@ static void draw_result_page(const core_results *r, ee_u16 seedcrc)
     score10  = (unsigned int)score_x10;
     cpi1000  = (unsigned int)cpi_x1000;
     secs1000 = (unsigned int)secs_x1000;
+    mhz10    = (unsigned int)(EE_TICKS_PER_SEC / 100000u);   /* 76.5052MHz -> 765 */
 
     video_text_clear();
-    video_text_puts("COREMARK 1.0  RV32IMA\n");
-    video_text_rule();
-    video_text_puts("ITER        : ");
-    video_text_putdec((unsigned)ITERATIONS, 0);
-    video_text_putc('\n');
-    video_text_puts("Total ticks : ");
-    video_text_putdec((unsigned)cm_ticks, 0);
-    video_text_putc('\n');
-    video_text_puts("Total time  : ");
-    video_text_putdec(secs1000 / 1000u, 0);
-    video_text_putc('.');
-    video_text_putdec(secs1000 % 1000u, 3);
-    video_text_puts(" S\n");
-    video_text_puts("CoreMark/MHz: ");
-    video_text_putdec(cpi1000 / 1000u, 0);
-    video_text_putc('.');
-    video_text_putdec(cpi1000 % 1000u, 3);
-    video_text_putc('\n');
-    video_text_puts("Score       : ");
-    video_text_putdec(score10 / 10u, 0);
-    video_text_putc('.');
-    video_text_putdec(score10 % 10u, 0);
-    video_text_putc('\n');
-    video_text_rule();
-    video_text_puts("seedcrc   : 0x");
-    video_text_puthex(seedcrc, 4);
-    video_text_putc('\n');
-    video_text_puts("crclist   : 0x");
-    video_text_puthex(r->crclist, 4);
-    video_text_putc('\n');
-    video_text_puts("crcmatrix : 0x");
-    video_text_puthex(r->crcmatrix, 4);
-    video_text_putc('\n');
-    video_text_puts("crcstate  : 0x");
-    video_text_puthex(r->crcstate, 4);
-    video_text_putc('\n');
-    video_text_puts((r->err == 0) ? "CRC OK\n" : "CRC BAD\n");
-    video_text_rule();
-    video_text_putc('\n');
-    video_text_puts("SW6 UP + RESET -> GOMOKU\n");
+
+    /* 组 1：标题 */
+    video_text_at(1, X, "COREMARK 1.0");
+    p = line; p = vt_append(p, "RV32IMA @ ");
+    p = vt_dec(p, mhz10 / 10u, 0);
+    p = vt_append(p, ".");
+    p = vt_dec(p, mhz10 % 10u, 0);
+    p = vt_append(p, " MHz");
+    video_text_at(3, X, line);
+
+    /* 组 2：参数 */
+    p = line; p = vt_append(p, "ITER        = ");
+    p = vt_dec(p, (unsigned)ITERATIONS, 0);
+    video_text_at(4, X, line);
+
+    /* 组 3：结果（空一行再开始）*/
+    p = line; p = vt_append(p, "Total ticks : ");
+    p = vt_dec(p, (unsigned)cm_ticks, 0);
+    video_text_at(6, X, line);
+
+    p = line; p = vt_append(p, "Time        : ");
+    p = vt_dec(p, secs1000 / 1000u, 0);
+    p = vt_append(p, ".");
+    p = vt_dec(p, secs1000 % 1000u, 3);
+    p = vt_append(p, " s");
+    video_text_at(7, X, line);
+
+    p = line; p = vt_append(p, "CoreMark/MHz: ");
+    p = vt_dec(p, cpi1000 / 1000u, 0);
+    p = vt_append(p, ".");
+    p = vt_dec(p, cpi1000 % 1000u, 3);
+    video_text_at(8, X, line);
+
+    p = line; p = vt_append(p, "Score       : ");
+    p = vt_dec(p, score10 / 10u, 0);
+    p = vt_append(p, ".");
+    p = vt_dec(p, score10 % 10u, 0);
+    video_text_at(9, X, line);
+
+    /* 组 4：四个 CRC（空一行）*/
+    p = line; p = vt_append(p, "seedcrc   : 0x");
+    p = vt_hex(p, seedcrc, 4);
+    video_text_at(11, X, line);
+
+    p = line; p = vt_append(p, "crclist   : 0x");
+    p = vt_hex(p, r->crclist, 4);
+    video_text_at(12, X, line);
+
+    p = line; p = vt_append(p, "crcmatrix : 0x");
+    p = vt_hex(p, r->crcmatrix, 4);
+    video_text_at(13, X, line);
+
+    p = line; p = vt_append(p, "crcstate  : 0x");
+    p = vt_hex(p, r->crcstate, 4);
+    video_text_at(14, X, line);
+
+    /* 组 5：判定 + 下一步（各空一行）*/
+    video_text_at(16, X, (r->err == 0) ? "CRC OK" : "CRC BAD");
+    video_text_at(18, X, "SW6 UP + RESET -> GOMOKU");
 }
 
 void

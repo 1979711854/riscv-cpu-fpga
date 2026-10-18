@@ -128,6 +128,11 @@ void render_text(int row, int col, const char *s);
 /* 同一行水平居中写一段文字。 */
 void render_text_center(int row, const char *s);
 
+/* 只写这几个格子，**不铺整行**。给"和其他内容共享同一行"的短标签用：
+ * 标题屏的 "AI VS AI"、LAST COREMARK 三行 —— 用 render_text 会把整行铺成空格，
+ * 把同一行上的选中框/说明行抹掉。 */
+void render_text_span(int row, int col, const char *s);
+
 /* [2026-10-17] 幂等写：内容（含列）没变就跳过这一行的写。
  *   `slot` 是调用方给的固定编号 0..5，同一槽位要一直对应同一行；换行就换槽位。
  *   用途 = HUD 每帧重画时避免"内容没变也在重写"导致的闪烁。
