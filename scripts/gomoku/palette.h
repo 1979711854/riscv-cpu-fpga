@@ -38,11 +38,11 @@ static const uint32_t TILE_PALETTE[TILE_N_PALETTE] = {
     0xF8F8F8u,   /* 4  白子主体 */
     0xA8A8A8u,   /* 5  白子描边 */
     0xD02020u,   /* 6  光标 / 最后一手 */
-    0x16211Cu,   /* 7  UI 深色底（= FONT_BG） */
+    0x1A1A1Eu,   /* 7  UI 深色底（= FONT_BG） */
     0xEDE3C8u,   /* 8  UI 文字暖白（= FONT_FG） */
     0xD8A93Cu,   /* 9  金色强调（logo / 选中框） */
-    0x0C1410u,   /* 10  阴影（比 UI 底更深） */
-    0x2E3A34u    /* 11  细分隔线 */
+    0x0E0E10u,   /* 10  阴影（比 UI 底更深） */
+    0x3A3A40u    /* 11  细分隔线 */
 };
 
 #endif /* GOMOKU_PALETTE_H */

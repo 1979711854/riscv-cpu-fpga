@@ -95,6 +95,8 @@ static void dump_ascii(FILE *f)
                 ch = '+';
             } else if (t == RENDER_TILE_RULE) {
                 ch = '=';
+            } else if (t == RENDER_TILE_ARROW) {
+                ch = '>';
             } else if (t >= 131 && t <= 153) {
                 ch = '*';
             } else if (t < 36) {

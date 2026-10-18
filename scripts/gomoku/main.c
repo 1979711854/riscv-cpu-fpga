@@ -251,25 +251,29 @@ static const char *menu_item_text(const game_t *gm, int i)
 #define TITLE_LOGO_COL    14
 #define TITLE_LOGO_COLS   12
 #define TITLE_SUB_ROW     4
-#define TITLE_MENU_ROW0   7
-#define TITLE_MENU_GAP    4
+#define TITLE_RULE_ROW    5           /* 副标题下面的金色分隔线 */
+#define TITLE_VS_ROW      6           /* ● VS ○ 小图形 */
+#define TITLE_MENU_ROW0   8           /* 第一项菜单行（与副标题拉开 3 行） */
+#define TITLE_MENU_GAP    3           /* 3 行选中框 + 1 行空，4 项也放得下 */
 #define TITLE_MENU_LEFT   1
-#define TITLE_MENU_WIDTH  23          /* 固定框宽：最长项 18 + 图标列 + 右留白 */
-#define TITLE_MENU_ICON_X (TITLE_MENU_LEFT + 1)
-#define TITLE_MENU_TEXT_X (TITLE_MENU_LEFT + 3)
+#define TITLE_MENU_WIDTH  23          /* 固定框宽：最长项 + 左右 padding */
+#define TITLE_MENU_ARROW_X (TITLE_MENU_LEFT + 1)   /* 金色三角 */
+#define TITLE_MENU_ICON_X  (TITLE_MENU_LEFT + 2)   /* 黑白子图标 */
+#define TITLE_MENU_TEXT_X  (TITLE_MENU_LEFT + 4)   /* 文字区左边界 */
 #define TITLE_DESC_X      TITLE_MENU_TEXT_X   /* 描述行与菜单文字左对齐 */
 #define TITLE_DESC_MAXROW 21                  /* 4 项时也不能压到提示行 */
 #define TITLE_CM_ROW      18
-#define TITLE_HINT1_ROW   22
-#define TITLE_HINT2_ROW   24
-#define TITLE_PLAT_ROW    26
+#define TITLE_HINT1_ROW   23
+#define TITLE_HINT2_ROW   25
+#define TITLE_PROMPT_ROW  27          /* PRESS ANY KEY（闪烁） */
+#define TITLE_PLAT_ROW    28          /* 底部平台信息；第 29 行留空 */
 
 /* [!] 小棋盘顶行必须**严格等于**第一项菜单行（反馈 T10：两处各写一个行号就会漂）。
  *     编译期自检：不相等的话下面这个 typedef 会变成"负长度数组"，直接编译失败。 */
-#define MINI_BOARD_TOP    TITLE_MENU_ROW0     /* 第一格所在行；外框在它上一行 */
+#define MINI_BOARD_TOP    TITLE_MENU_ROW0     /* 外框顶行 = 第一项菜单行 */
 #define MINI_BOARD_LEFT   25                  /* 外框左列；格子从右边一列开始 */
 #define MINI_CELL_COL     (MINI_BOARD_LEFT + 1)   /* 26：第 0 列格子 */
-#define MINI_CELL_ROW     MINI_BOARD_TOP          /*  7：第 0 行格子 */
+#define MINI_CELL_ROW     (MINI_BOARD_TOP + 1)    /* 9：第 0 行格子（框在 8） */
 #define TITLE_DEMO_N      7                   /* 7x7 自动对弈小棋盘 */
 #define TITLE_DEMO_MS     700u                /* 每手间隔 */
 typedef char title_layout_assert[(MINI_BOARD_TOP == TITLE_MENU_ROW0) ? 1 : -1];
@@ -279,6 +283,7 @@ static gomoku_t s_demo;
 static int      s_demo_i;      /* 下一手在表里的下标 */
 static uint32_t s_demo_t;      /* 上一手落子时刻 */
 static int      s_demo_gen;    /* 每落一子 +1；主循环据此判断要不要重画 */
+static int      s_prompt_on = 1;   /* PRESS ANY KEY 当前是否亮着 */
 
 /* 脚本走法：每两个字节一手 (行,列)，坐标是 7x7 子盘的 0..6。
  * 走完一轮就清盘重来 —— 录像里看起来像"两个 AI 一直在下"。
@@ -321,13 +326,29 @@ static int desc_row(int n_items)
  *   · **所有项共用固定框宽** TITLE_MENU_WIDTH（按最长项 “DIFFICULTY  NORMAL” 定）；
  *   · 图标列、文字列**固定**（不随文本长度漂移），文字在框内左对齐；
  *   · 未选中：不画框，文字仍落在同一列 —— 换选中项时文字不会跳。 */
+static int text_len(const char *s)
+{
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
 static void draw_menu_row(int row, const char *s, int selected)
 {
-    render_text(row, TITLE_MENU_TEXT_X, s);
-    if (!selected) return;
+    int len  = text_len(s);
+    int area = TITLE_MENU_WIDTH - (TITLE_MENU_TEXT_X - TITLE_MENU_LEFT) - 1;
+    int col  = TITLE_MENU_TEXT_X;
 
-    render_put(row, TITLE_MENU_ICON_X, RENDER_TILE_ICON_BLACK);
-    render_box(row, TITLE_MENU_LEFT, TITLE_MENU_WIDTH);
+    /* 文字在固定框内居中：所有项共用同一个卡片宽度，长度不同也不会左右参差。 */
+    if (len < area) col += (area - len) / 2;
+
+    render_text(row, col, s);
+    render_put(row, TITLE_MENU_ICON_X,
+               selected ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
+    if (selected) {
+        render_put(row, TITLE_MENU_ARROW_X, RENDER_TILE_ARROW);
+        render_box(row, TITLE_MENU_LEFT, TITLE_MENU_WIDTH);
+    }
 }
 
 /* 底部平台信息。**主频是算出来的**，不是写死的字面量 ——
@@ -340,7 +361,7 @@ static void draw_platform_row(void)
     /* MHz x10：ticks/ms = Hz/1000 ⇒ Hz/1e5 = (ticks/ms)/100 */
     uint32_t mhz10 = (hw_ticks_per_ms() * 10u) / 1000u;
 
-    p = buf_append(p, "RV32IMA RT-THREAD ");
+    p = buf_append(p, "RV32IMA | RT-THREAD | ");
     p = u32_to_str(p, mhz10 / 10u);
     p = buf_append(p, ".");
     p = u32_to_str(p, mhz10 % 10u);
@@ -371,7 +392,7 @@ static void draw_last_coremark(void)
     p = u32_to_str(p, (score % 100u) / 10u);
     render_text_span(TITLE_CM_ROW + 2, x, buf);     /* 空一行再写值 */
 
-    render_text_span(TITLE_CM_ROW + 3, x,
+    render_text_span(TITLE_CM_ROW + 4, x,
                      (m[CM_MBOX_I_FLAGS] & CM_MBOX_FLAG_CRC_OK) ? "CRC: OK" : "CRC: BAD");
 }
 
@@ -397,6 +418,14 @@ static void demo_advance(void)
     }
 }
 
+/* 标题屏的小 VS 图形：● VS ○，放在副标题和菜单之间。 */
+static void draw_vs_motif(void)
+{
+    render_put(TITLE_VS_ROW, 9,  RENDER_TILE_ICON_BLACK);
+    render_text_span(TITLE_VS_ROW, 11, "VS");
+    render_put(TITLE_VS_ROW, 14, RENDER_TILE_ICON_WHITE);
+}
+
 /* 整屏重画标题页。只在内容变化时调（见 draw_title）。 */
 static void title_draw_all(void)
 {
@@ -406,6 +435,8 @@ static void title_draw_all(void)
 
     render_logo(TITLE_LOGO_ROW, TITLE_LOGO_COL);
     render_text_center(TITLE_SUB_ROW, "RISC-V + RT-THREAD");
+    render_rule(TITLE_RULE_ROW, 6, 12);
+    draw_vs_motif();
 
     for (i = 0; i < 4; i++) {
         if (i < n)
@@ -416,20 +447,19 @@ static void title_draw_all(void)
 
     draw_last_coremark();
 
-    render_text_center(TITLE_HINT1_ROW, "UP/DN MOVE | L/R CHANGE");
-    render_text_center(TITLE_HINT2_ROW, "HOLD = OK | L = BACK");
+    render_text_center(TITLE_HINT1_ROW, "UP/DOWN : MOVE");
+    render_text_center(TITLE_HINT2_ROW, "HOLD : OK   LEFT : START");
+    render_text_center(TITLE_PROMPT_ROW, "PRESS ANY KEY");
+    s_prompt_on = 1;
     draw_platform_row();
 
     /* ---- 小棋盘放到**最后**画（反馈 T2：以前它先画，被菜单的整行 text 抹掉两行）----
-     * [!] render_text() 是**整行铺底**的：菜单项在第 7/11 行，正好压着小棋盘的
-     *     第 1/5 行，之前先画棋盘后画菜单 ⇒ 棋盘有两行变成纯背景。
-     *     现在顺序固定：背景 → 文本 → 小棋盘 → （选中框在 draw_menu_row 里已画完）。
-     *     棋盘区在 col 25 右侧、菜单文字最右到 col 21，两者不会互压。 */
+     * [!] render_text() 是**整行铺底**的：菜单行会压着小棋盘，所以顺序固定为
+     *     背景 → 文本 → 小棋盘 → （选中框在 draw_menu_row 里已画完）。
+     *     棋盘外框顶行 = TITLE_MENU_ROW0（第一项菜单行），格子从下一行开始。 */
     render_frame_at(MINI_CELL_ROW, MINI_CELL_COL, TITLE_DEMO_N);
     render_board_region(&s_demo, 0, 0, TITLE_DEMO_N, TITLE_DEMO_N,
                         MINI_CELL_ROW, MINI_CELL_COL);
-    /* 标签用 span 写（不铺整行）：它所在的第 15 行在 3 项页面上是第 3 项菜单行，
-     * 用 render_text 会把那一项的选中框抹掉。 */
     render_text_span(MINI_CELL_ROW + TITLE_DEMO_N + 1, MINI_BOARD_LEFT, "AI VS AI");
 }
 
@@ -458,6 +488,8 @@ static int title_sig_changed(void)
 /* 标题页的一拍：推进小棋盘、按需重画。返回 1 = 这一拍画了东西。 */
 static int draw_title(uint32_t now, int force)
 {
+    int drew = 0;
+
     if (now - s_demo_t >= TITLE_DEMO_MS * hw_ticks_per_ms()) {
         s_demo_t = now;
         demo_advance();
@@ -465,9 +497,20 @@ static int draw_title(uint32_t now, int force)
 
     if (force || title_sig_changed()) {
         title_draw_all();
-        return 1;
+        drew = 1;
     }
-    return 0;
+
+    /* PRESS ANY KEY：500ms 亮 / 500ms 灭。只重画这一行，不整屏重绘。 */
+    {
+        int on = ((now / (500u * hw_ticks_per_ms())) & 1u) == 0;
+        if (on != s_prompt_on) {
+            s_prompt_on = on;
+            render_text_center(TITLE_PROMPT_ROW, on ? "PRESS ANY KEY" : "");
+            drew = 1;
+        }
+    }
+
+    return drew;
 }
 
 /* 对局 HUD（标题屏在 draw_title 里画，**不经过这里**）。

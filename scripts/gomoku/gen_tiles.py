@@ -50,11 +50,11 @@ PAL = [
     0xF8F8F8,   # 4  白子主体
     0xA8A8A8,   # 5  白子描边
     0xD02020,   # 6  光标（红）
-    0x16211C,   # 7  UI 底（墨绿）—— FONT_BG
+    0x1A1A1E,   # 7  UI 底（炭黑）—— FONT_BG
     0xEDE3C8,   # 8  UI 文字（暖白）—— FONT_FG
     0xD8A93C,   # 9  金色强调（logo / 选中框 / 分隔线）
-    0x0C1410,   # 10 阴影（比 UI 底更深）
-    0x2E3A34,   # 11 细分隔线
+    0x0E0E10,   # 10 阴影（比 UI 底更深）
+    0x3A3A40,   # 11 细分隔线
 ]
 
 (P_BG, P_LINE, P_BLACK, P_BLACK_HI, P_WHITE, P_WHITE_EDGE, P_CURSOR,

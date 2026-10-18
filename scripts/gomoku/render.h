@@ -72,8 +72,9 @@ void vid_bulk_write(uint8_t region, uint16_t offset, const uint8_t *data, uint16
  *            6 个字 × 2x2 图块 = 24 块。"O" 画成黑白棋子（见 render_logo）。
  *   178..185  菜单选中框：3 行高的一圈金色描边（TL/T/TR/L/R/BL/B/BR）
  *   186       金色分隔线（logo 下面那条）
+ *   187       金色右三角（选中项左侧的选择标记）
  *
- * 合计用到 0..186 共 187 块，远低于 256 的上限（剩余 69 块）。
+ * 合计用到 0..187 共 188 块，远低于 256 的上限（剩余 68 块）。
  * -------------------------------------------------------------------------- */
 #define RENDER_TILE_LOGO_BASE  154
 #define RENDER_TILE_BOX_TL     178
@@ -85,7 +86,8 @@ void vid_bulk_write(uint8_t region, uint16_t offset, const uint8_t *data, uint16
 #define RENDER_TILE_BOX_B      184
 #define RENDER_TILE_BOX_BR     185
 #define RENDER_TILE_RULE       186
-#define RENDER_TILE_MAX        187   /* 已用图块数（编号 0..186），必须 ≤ 256 */
+#define RENDER_TILE_ARROW      187   /* 金色右三角：选中项左侧的选择标记 */
+#define RENDER_TILE_MAX        188   /* 已用图块数（编号 0..187），必须 ≤ 256 */
 
 /* 大 logo 的几何：字模 5x7 放大 4 倍 = 20x28 像素，占 2x2 个图块（32x32）。 */
 #define RENDER_LOGO_SCALE      4

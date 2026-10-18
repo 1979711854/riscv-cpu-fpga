@@ -517,6 +517,20 @@ static void synth_rule(uint8_t *buf)
             buf[y * TILE_W + x] = (uint8_t)((y == 7 || y == 8) ? PAL_GOLD : PAL_UI_BG);
 }
 
+/* 选中项左侧的金色右三角（指向文字）。背景 = UI 底，和标题屏融为一体。 */
+static void synth_arrow(uint8_t *buf)
+{
+    int x, y;
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            buf[y * TILE_W + x] = PAL_UI_BG;
+    for (y = 3; y <= 12; y++) {
+        int span = (y <= 7 ? (y - 2) : (13 - y)) * 2;   /* 2,4,..,10,10,..,2 */
+        for (x = 4; x <= 4 + span; x++)
+            buf[y * TILE_W + x] = PAL_GOLD;
+    }
+}
+
 /* 把一块图块写进显存（合成一遍写一次，只在 init 调）。 */
 static void put_pat(uint16_t tile, const uint8_t *buf)
 {
@@ -704,6 +718,9 @@ void render_init(void)
 
         synth_rule(tile);
         put_pat((uint16_t)RENDER_TILE_RULE, tile);
+
+        synth_arrow(tile);
+        put_pat((uint16_t)RENDER_TILE_ARROW, tile);
     }
 }
 
