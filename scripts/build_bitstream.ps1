@@ -156,16 +156,17 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(19756);
-                 # [!] 2026-10-18 任务 A（标题屏改版）+ 36 块棋盘图块改运行时合成后实测：
-                 #     rtthread mem.hex 22,028 -> 19,756 行（9,878 字），
-                 #     gomoku   12,552 -> 11,712 行（5,856 字）。
+$expectLines = @{ coremark = @(17104); demo = @(326); rtthread = @(19816);
+                 # [!] 2026-10-18 任务 A（标题屏改版 + 第二轮版面反馈）+ 36 块棋盘图块
+                 #     改运行时合成后实测：
+                 #     rtthread mem.hex 22,028 -> 19,816 行（9,908 字），
+                 #     gomoku   12,552 -> 11,834 行（5,917 字）。
                  #     图块表 9,216 B 从 .rodata 搬到 render.c 的运行时合成
                  #     （与 gen_tiles.py 逐像素一致，test_render 用 tiles_data.h 对拍）。
                  #     coremark 不引用 gomoku 源码 => 17,104 不变。
-                 video = @(758); gomoku = @(11712) }
+                 video = @(758); gomoku = @(11834) }
 $expectDesc  = @{ coremark = "8552 字"; demo = "163 字";
-                  rtthread = "9878 字（2026-10-18 图块改运行时合成后实测）";
+                  rtthread = "9908 字（2026-10-18 第二轮界面改版后实测）";
                   video = "379 字"; gomoku = "5856 字（图块改运行时合成后）" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
