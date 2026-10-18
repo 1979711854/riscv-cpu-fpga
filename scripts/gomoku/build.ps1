@@ -76,7 +76,20 @@ if ($Sim) {
 }
 $gccArgs += $srcs + @("-o", $elf)
 
-& riscv-none-elf-gcc @gccArgs
+# [!] 2026-10-18：riscv-none-elf-ld 会往 stderr 打一行
+#     `warning: ... has a LOAD segment with RWX permissions`，而本脚本设了
+#     $ErrorActionPreference="Stop" ⇒ PS 5.1 会把原生命令的 stderr 包装成
+#     【终态错误】（NativeCommandError），脚本在构建阶段当场死（ELF 其实已生成）。
+#     这和 scripts/run_coremark.ps1 里记的是同一个坑，修法也一样：调 gcc 期间
+#     临时把 EAP 切到 Continue（stderr 变成非终态、照常打印），真正的失败由退出码兜。
+#     **别用 2>$null** —— 实测 PS 5.1 下仍然终态。
+$eapSave = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    & riscv-none-elf-gcc @gccArgs
+} finally {
+    $ErrorActionPreference = $eapSave
+}
 if ($LASTEXITCODE -ne 0) { throw "gcc 编译失败" }
 
 # ---- 打印段大小并检查装不装得下 ----

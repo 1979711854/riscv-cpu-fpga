@@ -8,15 +8,10 @@
 #include "tiles.h"
 #include "font.h"
 
-/* 调色板下标 —— 与 gen_tiles.py 的 PAL 顺序、tiles.h 的 TILE_PALETTE 数组一致。
- * 阶段 1 的合成图块（红标/星位/外框/图标）用这些常量取色，不硬编码数字。 */
-#define PAL_BG         0   /* 棋盘底色 */
-#define PAL_LINE       1   /* 棋盘线 */
-#define PAL_BLACK      2   /* 黑子主体 */
-#define PAL_BLACK_HI   3   /* 黑子高光 */
-#define PAL_WHITE      4   /* 白子主体 */
-#define PAL_WHITE_EDGE 5   /* 白子描边 */
-#define PAL_RED        6   /* 光标红（阶段 1 也用作最后一手标记）*/
+/* 调色板下标 —— 与 gen_tiles.py 的 PAL 顺序、palette.h 的 TILE_PALETTE 一致。
+ * 合成图块（红标/星位/外框/图标/logo/选中框）用这些常量取色，不硬编码数字。
+ * [!] 2026-10-18 起调色板拆到 palette.h（CoreMark 的文本控制台也 include 它），
+ *     所以这里不再自己 #define，直接由 tiles.h -> palette.h 提供。 */
 
 /* 四条边哪几条有线（up<<3 | down<<2 | left<<1 | right）-> shape 0..8
  * 只有 9 种组合会出现在 15x15 的棋盘上：
@@ -49,6 +44,19 @@ uint8_t render_shape(int r, int c)
     if (r < GOMOKU_N - 1)   m |= 4u;   /* 下 */
     if (c > 0)              m |= 2u;   /* 左 */
     if (c < GOMOKU_N - 1)   m |= 1u;   /* 右 */
+    return SHAPE_LUT[m];
+}
+
+/* 任意 rows x cols 子盘上的形状（标题屏 7x7 小棋盘用）。
+ * [!] 不能直接给 render_shape 传 7x7 之外的尺寸 —— 它写死 GOMOKU_N，
+ *     拿去画小盘会把"下边"当成内部。 */
+static uint8_t shape_dim(int r, int c, int rows, int cols)
+{
+    uint8_t m = 0;
+    if (r > 0)          m |= 8u;
+    if (r < rows - 1)   m |= 4u;
+    if (c > 0)          m |= 2u;
+    if (c < cols - 1)   m |= 1u;
     return SHAPE_LUT[m];
 }
 
@@ -149,23 +157,50 @@ void render_clear(void)
  * 棋盘外框 + 坐标轴（阶段 1 静态装饰）。都画在 15x15 之外，上电各调一次即可；
  * render_full 每帧全刷只碰棋盘区，不会覆盖它们。
  * ------------------------------------------------------------------------- */
-void render_board_frame(void)
+void render_frame_at(int r0, int c0, int n)
 {
     int i;
     /* 四角复用棋盘边角图块（shape 5/6/7/8 空状态）—— 与棋盘边角同款，不另做图块。 */
-    put_abs(BOARD_ROW0 - 1, BOARD_COL0 - 1, RENDER_TILE(TILE_SHAPE_TOPLEFT,  RENDER_ST_EMPTY));
-    put_abs(BOARD_ROW0 - 1, BOARD_COL0 + GOMOKU_N, RENDER_TILE(TILE_SHAPE_TOPRIGHT, RENDER_ST_EMPTY));
-    put_abs(BOARD_ROW0 + GOMOKU_N, BOARD_COL0 - 1, RENDER_TILE(TILE_SHAPE_BOTLEFT,  RENDER_ST_EMPTY));
-    put_abs(BOARD_ROW0 + GOMOKU_N, BOARD_COL0 + GOMOKU_N, RENDER_TILE(TILE_SHAPE_BOTRIGHT, RENDER_ST_EMPTY));
+    put_abs(r0 - 1, c0 - 1, RENDER_TILE(TILE_SHAPE_TOPLEFT,  RENDER_ST_EMPTY));
+    put_abs(r0 - 1, c0 + n, RENDER_TILE(TILE_SHAPE_TOPRIGHT, RENDER_ST_EMPTY));
+    put_abs(r0 + n, c0 - 1, RENDER_TILE(TILE_SHAPE_BOTLEFT,  RENDER_ST_EMPTY));
+    put_abs(r0 + n, c0 + n, RENDER_TILE(TILE_SHAPE_BOTRIGHT, RENDER_ST_EMPTY));
     /* 上下横边 */
-    for (i = 0; i < GOMOKU_N; i++) {
-        put_abs(BOARD_ROW0 - 1,        BOARD_COL0 + i, RENDER_TILE_FRAME_H);
-        put_abs(BOARD_ROW0 + GOMOKU_N, BOARD_COL0 + i, RENDER_TILE_FRAME_H);
+    for (i = 0; i < n; i++) {
+        put_abs(r0 - 1,    c0 + i, RENDER_TILE_FRAME_H);
+        put_abs(r0 + n,    c0 + i, RENDER_TILE_FRAME_H);
     }
     /* 左右竖边 */
-    for (i = 0; i < GOMOKU_N; i++) {
-        put_abs(BOARD_ROW0 + i, BOARD_COL0 - 1,        RENDER_TILE_FRAME_V);
-        put_abs(BOARD_ROW0 + i, BOARD_COL0 + GOMOKU_N, RENDER_TILE_FRAME_V);
+    for (i = 0; i < n; i++) {
+        put_abs(r0 + i, c0 - 1, RENDER_TILE_FRAME_V);
+        put_abs(r0 + i, c0 + n, RENDER_TILE_FRAME_V);
+    }
+}
+
+void render_board_frame(void)
+{
+    render_frame_at(BOARD_ROW0, BOARD_COL0, GOMOKU_N);
+}
+
+/* 子盘区域：只有棋子/空格，没有光标、星位、最后一手标记。
+ * 一行一次 vid_bulk_write（cols 个字节），比逐格写少 cols-1 次调用。 */
+void render_board_region(const gomoku_t *g, int r0, int c0, int rows, int cols,
+                         int sr, int sc)
+{
+    uint8_t line[GOMOKU_N];
+    int r, c;
+
+    if (rows > SCREEN_COLS) rows = SCREEN_COLS;
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+            uint8_t shape = shape_dim(r, c, rows, cols);
+            uint8_t st    = RENDER_ST_EMPTY;
+            uint8_t v     = g->cell[r0 + r][c0 + c];
+            if (v == GOMOKU_BLACK)      st = RENDER_ST_BLACK;
+            else if (v == GOMOKU_WHITE) st = RENDER_ST_WHITE;
+            line[c] = RENDER_TILE(shape, st);
+        }
+        vid_bulk_write(VID_REGION_NT, (uint16_t)((sr + r) * 256 + sc), line, (uint16_t)cols);
     }
 }
 
@@ -304,18 +339,21 @@ static void synth_star(uint8_t *buf)
             buf[y * TILE_W + x] = PAL_LINE;
 }
 
-/* 外框纯横线 / 纯竖线（2px，与棋盘线同色）。四角复用棋盘边角图块。 */
+/* 外框纯横线 / 纯竖线（2px，与棋盘线同色）。四角复用棋盘边角图块。
+ * [!] 2026-10-18：背景从 PAL_BG（木色）改成 PAL_UI_BG（深色 UI 底）。
+ *     整屏底色已经是深色，外框若留着木色底，棋盘四周会出现一圈"木框"，
+ *     和深色 UI 撞成两种底 —— 正是任务书 §2.5.1 说的那类"小方块"。 */
 static void synth_frame_h(uint8_t *buf)
 {
     int i, x;
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_BG;
+    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_UI_BG;
     for (x = 0; x < TILE_W; x++) { buf[7 * TILE_W + x] = PAL_LINE; buf[8 * TILE_W + x] = PAL_LINE; }
 }
 
 static void synth_frame_v(uint8_t *buf)
 {
     int i, y;
-    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_BG;
+    for (i = 0; i < TILE_BYTES; i++) buf[i] = PAL_UI_BG;
     for (y = 0; y < TILE_W; y++) { buf[y * TILE_W + 7] = PAL_LINE; buf[y * TILE_W + 8] = PAL_LINE; }
 }
 
@@ -333,10 +371,133 @@ static void synth_icon(uint8_t *buf, int color, int hi_color)
                 int hx = dx + 4, hy = dy + 4;             /* 高光圆心左/上偏 2px */
                 buf[y * TILE_W + x] = (uint8_t)((hx * hx + hy * hy <= 16) ? hi_color : color);
             } else {
-                buf[y * TILE_W + x] = PAL_BG;
+                /* 2026-10-18：图标现在只出现在深色 UI 上（标题屏菜单 + 对局 HUD），
+                 * 背景跟着 FONT_BG 走，否则会出现一个个木色小方块。 */
+                buf[y * TILE_W + x] = PAL_UI_BG;
             }
         }
     }
+}
+
+/* ---------------------------------------------------------------------------
+ * 标题屏装饰：4x 大 logo / 金色选中框 / 金色分隔线（2026-10-18）
+ * ---------------------------------------------------------------------------
+ * [!] 全部在 render_init() 里现算，源码里只有一小段循环，**没有 24 块 × 256B
+ *     的常量表**（那会把 RT-Thread 镜像顶爆，见任务书 §2.4）。
+ * [!] 图块是 16x16，没有精灵层、没有半透明 —— 所以"投影"是在合成时把
+ *     字模/棋子整体往右下偏 2 像素再画一遍，不是运行时叠加。
+ * ------------------------------------------------------------------------- */
+
+/* logo 一个字母（或一颗棋子）占 2x2 图块 = 32x32 像素。 */
+#define LOGO_CELL (RENDER_LOGO_TILE_W * TILE_W)          /* 32 */
+#define LOGO_OX   ((LOGO_CELL - FONT_W * RENDER_LOGO_SCALE) / 2)   /* 6  */
+#define LOGO_OY   ((LOGO_CELL - FONT_H * RENDER_LOGO_SCALE) / 2)   /* 2  */
+#define LOGO_SHADOW 2                                    /* 投影偏移（像素） */
+
+/* 字模像素：gx/gy 是 0..31 的 logo 内坐标。1 = 亮。 */
+static int logo_glyph_px(const uint8_t *rows, int gx, int gy)
+{
+    int fx, fy;
+    if (gx < LOGO_OX || gy < LOGO_OY) return 0;           /* 先挡住负下标 —— C 的
+                                                          * 负数除法朝 0 截断，
+                                                          * 会错误地落回 fx=0 */
+    fx = (gx - LOGO_OX) / RENDER_LOGO_SCALE;
+    fy = (gy - LOGO_OY) / RENDER_LOGO_SCALE;
+    if (fx >= FONT_W || fy >= FONT_H) return 0;
+    return (rows[fy] >> (FONT_W - 1 - fx)) & 1;
+}
+
+/* 棋子像素：stone = 1 黑 / 2 白。返回该像素该用的调色板下标，0xFF = 不属于棋子。 */
+static uint8_t logo_stone_px(int gx, int gy, int stone)
+{
+    int dx = 2 * gx - (LOGO_CELL - 1);
+    int dy = 2 * gy - (LOGO_CELL - 1);
+    int d2 = dx * dx + dy * dy;
+    int hx, hy;
+
+    if (d2 > 900) return 0xFF;                            /* r = 15 之外 */
+    if (d2 >= 676) return (uint8_t)PAL_GOLD;              /* r 13..15：金边
+                                                           * （深底上黑子没有边
+                                                           *  就看不见） */
+    hx = dx + 8; hy = dy + 8;                             /* 高光偏左上 4px */
+    if (hx * hx + hy * hy <= 64)
+        return (uint8_t)(stone == 1 ? PAL_BLACK_HI : PAL_WHITE_EDGE);
+    return (uint8_t)(stone == 1 ? PAL_BLACK : PAL_WHITE);
+}
+
+/* 合成一块 logo 图块：ch 为字符；stone != 0 时忽略字模、画棋子。 */
+static void synth_logo_tile(uint8_t *buf, char ch, int stone, int qx, int qy)
+{
+    const uint8_t *rows = FONT_GLYPH[(int)ch - FONT_BASE];
+    int x, y;
+
+    for (y = 0; y < TILE_W; y++) {
+        for (x = 0; x < TILE_W; x++) {
+            int gx = qx * TILE_W + x;
+            int gy = qy * TILE_W + y;
+            uint8_t v = (stone ? logo_stone_px(gx, gy, stone)
+                               : (logo_glyph_px(rows, gx, gy) ? (uint8_t)PAL_GOLD : 0xFF));
+            if (v == 0xFF) {
+                /* 投影：本像素的左上 LOGO_SHADOW 处有笔画 ⇒ 这里落阴影。
+                 * 效果 = 笔画整体往右下偏 2px 的那一份。 */
+                int sgx = gx - LOGO_SHADOW, sgy = gy - LOGO_SHADOW;
+                int ink = 0;
+                if (sgx >= 0 && sgy >= 0)
+                    ink = stone ? (logo_stone_px(sgx, sgy, stone) != 0xFF)
+                                : logo_glyph_px(rows, sgx, sgy);
+                v = (uint8_t)(ink ? PAL_SHADOW : PAL_UI_BG);
+            }
+            buf[y * TILE_W + x] = v;
+        }
+    }
+}
+
+/* 选中框的 8 块图块：2px 金色描边，底是 UI 深色。
+ * kind: 0=TL 1=T 2=TR 3=L 4=R 5=BL 6=B 7=BR
+ *   上排三块的横线在**底部**（紧贴文字行），下排三块的横线在**顶部**。 */
+static void synth_box(uint8_t *buf, int kind)
+{
+    int x, y;
+    int hline_bottom = (kind <= 2);
+    int hline_top    = (kind >= 5);
+    int vleft        = (kind == 0 || kind == 3 || kind == 5);
+    int vright       = (kind == 2 || kind == 4 || kind == 7);
+
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            buf[y * TILE_W + x] = PAL_UI_BG;
+
+    if (hline_bottom) {
+        for (x = 0; x < TILE_W; x++) {
+            buf[14 * TILE_W + x] = PAL_GOLD;
+            buf[15 * TILE_W + x] = PAL_GOLD;
+        }
+    }
+    if (hline_top) {
+        for (x = 0; x < TILE_W; x++) {
+            buf[0 * TILE_W + x] = PAL_GOLD;
+            buf[1 * TILE_W + x] = PAL_GOLD;
+        }
+    }
+    for (y = 0; y < TILE_W; y++) {
+        if (vleft)  { buf[y * TILE_W + 0] = PAL_GOLD; buf[y * TILE_W + 1] = PAL_GOLD; }
+        if (vright) { buf[y * TILE_W + 14] = PAL_GOLD; buf[y * TILE_W + 15] = PAL_GOLD; }
+    }
+}
+
+/* 金色分隔线：中间两行金色，其余 UI 底。 */
+static void synth_rule(uint8_t *buf)
+{
+    int x, y;
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            buf[y * TILE_W + x] = (uint8_t)((y == 7 || y == 8) ? PAL_GOLD : PAL_UI_BG);
+}
+
+/* 把一块图块写进显存（合成一遍写一次，只在 init 调）。 */
+static void put_pat(uint16_t tile, const uint8_t *buf)
+{
+    vid_bulk_write(VID_REGION_PAT, (uint16_t)(tile * TILE_BYTES), buf, (uint16_t)TILE_BYTES);
 }
 
 void render_init(void)
@@ -411,4 +572,83 @@ void render_init(void)
         synth_icon(tile, PAL_WHITE, PAL_WHITE_EDGE);
         vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_ICON_WHITE * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
     }
+
+    /* ---- 标题屏装饰（编号 154..186，运行时合成）---- */
+    {
+        /* 4x 大 logo："GOMOKU"，两个 O 换成黑/白棋子（第 2 个字母黑、第 4 个白）。 */
+        static const char LOGO[] = "GOMOKU";
+        int gi, qx, qy;
+
+        for (gi = 0; gi < 6; gi++) {
+            int stone = 0;
+            if (LOGO[gi] == 'O') stone = (gi == 1) ? 1 : 2;
+            for (qy = 0; qy < RENDER_LOGO_TILE_H; qy++) {
+                for (qx = 0; qx < RENDER_LOGO_TILE_W; qx++) {
+                    synth_logo_tile(tile, LOGO[gi], stone, qx, qy);
+                    put_pat((uint16_t)(RENDER_TILE_LOGO_BASE + gi * 4 + qy * 2 + qx), tile);
+                }
+            }
+        }
+
+        for (gi = 0; gi < 8; gi++) {
+            synth_box(tile, gi);
+            put_pat((uint16_t)(RENDER_TILE_BOX_TL + gi), tile);
+        }
+
+        synth_rule(tile);
+        put_pat((uint16_t)RENDER_TILE_RULE, tile);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * 标题屏绘制原语（只写 nametable，图块在 render_init 已经合成好）
+ * ------------------------------------------------------------------------- */
+void render_logo(int row, int col)
+{
+    uint8_t line[RENDER_LOGO_TILE_W * 6];
+    int i, half;
+
+    /* 一行 12 格 = 6 个字母 × 每字 2 格；qy=half 决定取上半还是下半图块。 */
+    for (half = 0; half < RENDER_LOGO_TILE_H; half++) {
+        for (i = 0; i < 6 * RENDER_LOGO_TILE_W; i++)
+            line[i] = (uint8_t)(RENDER_TILE_LOGO_BASE + (i / RENDER_LOGO_TILE_W) * 4
+                                + half * RENDER_LOGO_TILE_W + (i % RENDER_LOGO_TILE_W));
+        vid_bulk_write(VID_REGION_NT, (uint16_t)((row + half) * 256 + col),
+                       line, (uint16_t)sizeof(line));
+    }
+}
+
+void render_rule(int row, int col, int len)
+{
+    uint8_t line[SCREEN_COLS];
+    int i;
+    if (len > SCREEN_COLS) len = SCREEN_COLS;
+    for (i = 0; i < len; i++) line[i] = (uint8_t)RENDER_TILE_RULE;
+    vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256 + col), line, (uint16_t)len);
+}
+
+void render_box(int row, int col, int w)
+{
+    uint8_t line[SCREEN_COLS];
+    int i;
+
+    if (w < 2 || w > SCREEN_COLS) return;
+
+    /* 上边（横线在底部）*/
+    for (i = 1; i < w - 1; i++) line[i] = (uint8_t)RENDER_TILE_BOX_T;
+    line[0] = (uint8_t)RENDER_TILE_BOX_TL;
+    line[w - 1] = (uint8_t)RENDER_TILE_BOX_TR;
+    vid_bulk_write(VID_REGION_NT, (uint16_t)((row - 1) * 256 + col), line, (uint16_t)w);
+
+    /* 左右竖线：盖在文字行两端（所以本函数必须在 render_text 之后调）*/
+    if (row >= 0) {
+        put_abs(row, col, (uint8_t)RENDER_TILE_BOX_L);
+        put_abs(row, col + w - 1, (uint8_t)RENDER_TILE_BOX_R);
+    }
+
+    /* 下边（横线在顶部）*/
+    for (i = 1; i < w - 1; i++) line[i] = (uint8_t)RENDER_TILE_BOX_B;
+    line[0] = (uint8_t)RENDER_TILE_BOX_BL;
+    line[w - 1] = (uint8_t)RENDER_TILE_BOX_BR;
+    vid_bulk_write(VID_REGION_NT, (uint16_t)((row + 1) * 256 + col), line, (uint16_t)w);
 }

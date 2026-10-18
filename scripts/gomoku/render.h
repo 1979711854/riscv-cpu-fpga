@@ -64,6 +64,34 @@ void vid_bulk_write(uint8_t region, uint16_t offset, const uint8_t *data, uint16
 #define RENDER_TILE_ICON_BLACK 152   /* 纯底黑子图标 */
 #define RENDER_TILE_ICON_WHITE 153   /* 纯底白子图标 */
 
+/* ---- 标题屏装饰图块（2026-10-18 加，任务书 §2.2）---------------------------
+ * 全部在 render_init() 里**运行时合成**（不写进 .rodata —— 否则 RT-Thread 镜像
+ * 会涨，装不进 64KB 区；见任务书 §2.4）。编号接在 153 之后。
+ *
+ *   154..177  4x 大 logo：154 + 字序*4 + (qy*2+qx)
+ *            6 个字 × 2x2 图块 = 24 块。"O" 画成黑白棋子（见 render_logo）。
+ *   178..185  菜单选中框：3 行高的一圈金色描边（TL/T/TR/L/R/BL/B/BR）
+ *   186       金色分隔线（logo 下面那条）
+ *
+ * 合计用到 0..186 共 187 块，远低于 256 的上限（剩余 69 块）。
+ * -------------------------------------------------------------------------- */
+#define RENDER_TILE_LOGO_BASE  154
+#define RENDER_TILE_BOX_TL     178
+#define RENDER_TILE_BOX_T      179
+#define RENDER_TILE_BOX_TR     180
+#define RENDER_TILE_BOX_L      181
+#define RENDER_TILE_BOX_R      182
+#define RENDER_TILE_BOX_BL     183
+#define RENDER_TILE_BOX_B      184
+#define RENDER_TILE_BOX_BR     185
+#define RENDER_TILE_RULE       186
+#define RENDER_TILE_MAX        187   /* 已用图块数（编号 0..186），必须 ≤ 256 */
+
+/* 大 logo 的几何：字模 5x7 放大 4 倍 = 20x28 像素，占 2x2 个图块（32x32）。 */
+#define RENDER_LOGO_SCALE      4
+#define RENDER_LOGO_TILE_W     2
+#define RENDER_LOGO_TILE_H     2
+
 /* 交叉点 (r,c) 的网格线形状（0..8）—— 由"四条边有没有线"决定，见 gen_tiles.py */
 uint8_t render_shape(int r, int c);
 
@@ -124,5 +152,30 @@ void render_board_frame(void);
 
 /* 画坐标轴：列 A-O（顶，外框上方）+ 行 1-15（左，外框左侧）。 */
 void render_board_labels(void);
+
+/* ---- 标题屏专用（2026-10-18）--------------------------------------------
+ * 这几个函数只被标题屏用；对局画面一个都不调，所以"对局不受影响"是结构性的。 */
+
+/* 画 4x 大 logo "GOMOKU"：从 (row,col) 起占 2 行 × 12 列的图块区。
+ * 两个 "O" 画成黑/白棋子（黑在前、白在后），带深色投影。图块已在 render_init 合成。 */
+void render_logo(int row, int col);
+
+/* 画一条金色分隔线（1 行 × len 个图块）。 */
+void render_rule(int row, int col, int len);
+
+/* 菜单选中框：以 row 为【文字那一行】，画 3 行高（row-1 / row / row+1）、
+ * 宽 w 个图块的一圈金色描边。**必须在 render_text 写完文字行之后调** ——
+ * 左右两条竖线要盖在文字行两端的空格图块上。 */
+void render_box(int row, int col, int w);
+
+/* 只画棋盘的某个子区域（r0/c0 起 rows×cols 个交叉点），落到屏幕上
+ * (sr,sc) 起的图块区。标题屏右侧的 7x7 自动对弈小棋盘用它；
+ * **不画光标、不画星位、不画最后一手标记**（小盘只要素净的棋子）。 */
+void render_board_region(const gomoku_t *g, int r0, int c0, int rows, int cols,
+                         int sr, int sc);
+
+/* 在 (r0,c0) 起画一个 n×n 交叉点的棋盘外框（四角复用棋盘边角图块）。
+ * 标题屏小棋盘用它；render_board_frame() 就是 n = GOMOKU_N、位置固定的特例。 */
+void render_frame_at(int r0, int c0, int n);
 
 #endif /* GOMOKU_RENDER_H */
