@@ -5,7 +5,25 @@
 器件：紫光同创 **Logos2 PG2L200H-6FBB676**　工具：**Pango Design Suite 2022.2-SP6.4**
 处理器：**RV32IMA**（+ Zicsr/Zifencei），5 级流水线（IF/ID/EX/MEM/WB），**顺序双发射**
 
-## 当前成绩
+## 当前成绩（2026-10-19，最新交付 + T7 演示线）
+
+| 项目 | 结果 |
+|---|---|
+| CPU 架构 | **RV32IMA**（+ Zicsr/Zifencei），5 级流水线，**顺序双发射** |
+| 生产主频 | **76.5052 MHz**（`STATIC_RATIO0=15.0`，`UART_DIV=664`） |
+| 时序 / Fmax | CPU 域 **WNS +0.304 ns / 0 失败端点（21,135）**，Estimated **Fmax 78.3269 MHz**，`All Constraints Met` |
+| CoreMark 跑分 | **352.5**（ITER=3900，`Total ticks 846,440,591` = 11.0638 s） |
+| 执行效率 | **4.6075 CoreMark/MHz**（每迭代 217,036 拍，仿真 217,088） |
+| 资源 | **LUT 7,740 / 159,800（4.84%）**，FF 3,692，DRM 165.5 |
+| 操作系统 | **RT-Thread 已移植**：render/AI 双线程 + CoreMark 终端监控屏（`UI TICK` / `UPTIME` / `HEAP FREE` 均为 `rt_tick_get()` / `rt_memory_info()` 实时值） |
+| 外设 | **UART、HDMI（PPU + TMDS）、按键** |
+| **官方交付位流** | **`b45941d6`**（rev1028，76.5052 MHz，352.5 / 4.6075 / +0.304 / 78.3269 / LUT 7,740） |
+| **T7 综合实测/演示位流** | **`6E2D6020…`**（2026-10-19 17:01，combined：boot + CoreMark + RT；RT CoreMark 监控界面；CoreMark 与交付逐位同分，RT-Thread 堆 1,440B） |
+
+> [!] **两套数据的边界**：官方交付 `b45941d6` 是 2026-10-17 的 rev1028 单一位流；T7 `6E2D6020…` 是 2026-10-19 的 combined 演示位流（同一颗 RTL/时钟，加了 CoreMark 终端监控屏）。**CoreMark 计时与四个 CRC 两者逐位相同**，不要把它们当成两次不同成绩。
+> **85.0051 MHz / 391.66 分 / 4.6064** 是更早的 rev1027 历史线（`c6af65be`），**不是当前交付**；下方“历史成绩”表只作演进对照。
+
+## 历史成绩（2026-10-16 85 MHz 线，只作对照）
 
 | 项目 | 结果 |
 |---|---|
@@ -20,8 +38,15 @@
 | ILA 硬件波形 | [OK] **已抓齐**（`doc/board/ila_hw_*.vcd`，86 探针调试版比特流 md5 `96ee7877`）—— 逐拍证据见 `doc/ila_analysis.md` |
 | **应用场景**（RT-Thread + 五子棋）| [OK] **已做成并上板**：RT-Thread Nano 跑在板上（`scripts/rtthread/`），五子棋走**板载 HDMI** 出棋盘、4 键操作、**串口棋盘镜像**（无显示器也能验）。<br>**T1/G3 双线程（render 高优 + AI 低优）2026-10-13 首次上板**（位流 `8894cdcb`）：两条线程都起、**两线程邮箱往返真通**（`AI moved, nodes=10592 depth=6 t=5068ms`）<br>[!] **"AI 思考期间画面不卡"（G3 正题）2026-10-14 已验** —— 位流 `53b81dfe` / `90944754`（`RTL=0x20261019`）：**接屏 + 真按键下完一局判出 `WHITE wins`**，AI 思考 5.7 s 期间画面与按键均正常响应；`vblank timeout` 已定性为 `video_wait_vblank()` **概率命中**（≈1 ms 采样 vs 62.7 µs vsync 脉冲，非显示故障），见 `doc/board/README.md` |
 
-> [当前口径] 板上时钟 **85.0051 MHz**（PLL `STATIC_RATIO0` = 13.5）；CPU 为**顺序双发射**
-> **[提交档声明]** 提交档 = 双发射 + `EARLY_LD` + **Cache 全关** @85.0051（跑分 `bcd8fdd2` / 演示 `8894cdcb`）；D-only@85（`56374a08`）与 I+D@76.5（`da8ffd31`）是**评估档**，引用须带"配置 + 主频" —— 权威表见 `doc/paper/论文框架_v1_20261012.md` **§0.1**
+> **[当前口径 · 2026-10-19]** 生产档 **76.5052 MHz**（`STATIC_RATIO0=15.0`）；CPU 为**顺序双发射**
+> + `EARLY_LD=1` + `LANEB_MEM=1`，**I/D Cache 默认关**（`DCACHE_EN` / `ICACHE_EN`）。
+> 官方交付位流 **`b45941d6`**（352.5 / 4.6075 / +0.304 ns / Fmax 78.3269 / LUT 7,740）；
+> T7 演示位流 **`6E2D6020…`**（combined，加 RT-Thread CoreMark 监控屏，CoreMark 逐位同分）。
+> 权威表见 `doc/paper/论文框架_v1_20261012.md` **§0 / §0.1**。
+>
+> **[历史口径 · 2026-10-16，以下仅作演进对照，不再作为交付]** 85.0051 MHz（`STATIC_RATIO0=13.5`）；
+> 提交档 = 双发射 + `EARLY_LD` + Cache 全关（跑分 `bcd8fdd2` / 演示 `8894cdcb`）；
+> D-only@85（`56374a08`）与 I+D@76.5（`da8ffd31`）是**评估档**。
 > （`rtl/top/cpu_top.v` 的 `parameter DUAL_ISSUE = 1`）+ **任务 C 的 `EARLY_LD=1`** +
 > **A1 的乘法器 II=1 流水线**（2026-10-13）+ **I/D Cache 两个 parameter 默认关**（`DCACHE_EN` / `ICACHE_EN`）。
 > **[OK] A1 已上板实测通过**（2026-10-13，位流 `bcd8fdd2` / `RTL=0x20261017`，日志 `doc/board/uart_20261013_184111.txt`）：
