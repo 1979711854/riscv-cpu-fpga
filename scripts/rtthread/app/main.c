@@ -49,8 +49,12 @@ static struct rt_mailbox mb_cmd, mb_rsp;
 static int         ai_dispatched;   /* render 线程：当前 ai_pending 是否已派给 AI 线程 */
 
 /* ---- AI 线程：低优先，纯算。收到命令→算→发结果，循环。 ----
- * 栈 4KB：6 层 α-β 递归 + 调用链实测约 2KB，留余量。 */
-#define AI_STACK    4096
+ * 栈 3KB：6 层 α-β 递归 + 调用链实测约 2KB，留 1KB 余量。
+ * [!] 2026-10-19 T7 实踩：原来两个线程栈各 4KB，把堆挤到只剩 208B ⇒
+ *     RT-Thread 连自己的 main 线程都创建不出来（`rt_application_init` 用
+ *     rt_thread_create 从堆上分配 1024B 栈 + TCB）⇒ 串口只出 banner 就没了。
+ *     两个线程各让 1KB，堆回到 ~2.2KB，main 线程 ~1.2KB 才放得下。 */
+#define AI_STACK    3072
 #define AI_PRIORITY 25            /* 低：render(12) 与主线程(10) 都会抢占它 */
 
 static rt_uint8_t  ai_stack[AI_STACK];
@@ -127,8 +131,10 @@ void video_vblank_yield(void)
     rt_thread_mdelay(1);
 }
 
-/* ---- render 线程：高优先，跑 gomoku_run()。栈与单线程版相同（4KB）。 ---- */
-#define RENDER_STACK    4096
+/* ---- render 线程：高优先，跑 gomoku_run()。3KB（见 AI_STACK 上方说明）----
+ * render_init 峰值约 1.7KB（cell32 1KB + quad 256B + tile 256B + 调用帧），
+ * 3KB 留 1.3KB 余量。 */
+#define RENDER_STACK    3072
 #define RENDER_PRIORITY 12            /* 高：必须压过 AI(25)，思考期间照样刷屏 */
 
 static rt_uint8_t  render_stack[RENDER_STACK];

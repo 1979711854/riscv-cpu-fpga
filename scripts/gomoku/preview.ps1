@@ -13,7 +13,7 @@
 # Scenes: title / submenu / game / over / all
 # ============================================================================
 param(
-    [ValidateSet("title", "submenu", "game", "over", "all")]
+    [ValidateSet("title", "submenu", "human", "game", "over", "all")]
     [string]$Scene = "title",
     [string]$Bmp = "",
     [string]$Out = "",
@@ -53,14 +53,15 @@ $srcs = @(
     (Join-Path $gomoku "render.c"),
     (Join-Path $gomoku "input.c"),
     (Join-Path $gomoku "game.c"),
+    (Join-Path $gomoku "coremark_screen.c"),
     (Join-Path $tools  "_main_preview.c")
 )
 & $gcc -std=c99 -O2 -I $gomoku -o $exe @srcs
 if ($LASTEXITCODE -ne 0) { throw "gcc compile failed" }
 
 # ---- 3) run -----------------------------------------------------------------
-$map  = @{ title = 0; submenu = 1; game = 2; over = 3 }
-$list = if ($Scene -eq "all") { @("title", "submenu", "game", "over") } else { @($Scene) }
+$map  = @{ title = 0; submenu = 1; human = 4; game = 2; over = 3 }
+$list = if ($Scene -eq "all") { @("title", "submenu", "human", "game", "over") } else { @($Scene) }
 
 foreach ($s in $list) {
     $num = $map[$s]

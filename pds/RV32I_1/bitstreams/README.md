@@ -2,6 +2,14 @@
 
 > `.sbit` 被 `.gitignore` 排除（9 MB/个）。**别人 clone 下来一个都没有，必须自己综合。**
 
+> **[OK] 2026-10-19 T7 combined 演示线 `6E2D6020…`（分支 `feat/coremark-display`）**
+> 文件名（本地）`combined_..._6E2D6020.sbit`（**`.sbit` 不入库**）；17:01:11 综合，
+> boot 30 字 + CoreMark 11,364 字 + RT-Thread **12,741 字** = **48,270 行 / 24,135 字**；
+> 76.5052 MHz、CPU 域 **+0.304 ns / 0 失败端点（21,135）/ Fmax 78.3269**、`All Constraints Met`。
+> 上板三条路径已验证（默认五子棋 / SW6 CoreMark / SW6+SW7 终端演示屏）；RT-Thread
+> 堆 **1,440B**，裸机 CoreMark **352.5**（846,440,591 ticks，四 CRC 全对）。
+> 证据 `doc/reports/2026-10-19_t7_coremark_demo_handoff.md`、`doc/board/uart_20261019_184426.txt`。
+
 > **[OK] 2026-10-16 深夜 演示档按 **T6** 重出 —— 新 `5909a2d0`，`e51ac9e5` 降为"T6 前的前一档"**
 > 文件名 `rtthread_dual_noaext_ms_earlyld_a1_ras_btb_gomoku_g3_lanebmem_85mhz_rev1027_seed5pin_5909a2d0.sbit`
 > （2026-10-16 23:18:53 综合，`scripts\build_bitstream.ps1 rtthread`）。固件换成 **T6 版** gomoku

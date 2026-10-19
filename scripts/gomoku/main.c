@@ -27,6 +27,7 @@
 #include "hw_port.h"
 #include "game.h"
 #include "cm_mailbox.h"     /* CoreMark -> 五子棋的跨复位邮箱（LAST COREMARK）*/
+#include "coremark_screen.h" /* CoreMark 终端演示屏（SW6+SW7 复位彩蛋，T7）*/
 
 #ifndef GOMOKU_AI_LEVEL
 #define GOMOKU_AI_LEVEL AI_NORMAL      /* 上板默认：4 层，棋力够看 */
@@ -110,6 +111,10 @@ static char *u32_to_str(char *buf, unsigned v)
  * 只在**棋子数变化**与**阶段变化**时打印，不刷屏 —— 于是串口留下的是一串
  * "每手一张棋盘"的记录，事后能逐手复盘。
  * [!] 别改成每帧打印：60fps 下会把串口灌爆，反而看不出东西。 */
+/* [!] RT-Thread 宿主下不编译整盘镜像：15x15 字符棋盘一次 ~1KB，串口只有
+ *     11.5KB/s，频繁打印会拖慢 UI 刷新（T7 实踩：日志被灌成乱码）。
+ *     裸机版保留，用于无显示器调试。RT 构建的宏是 __RTTHREAD__。 */
+#ifndef __RTTHREAD__
 static void uart_dump_board(const game_t *gm)
 {
     char line[3 + GOMOKU_N * 2 + 3];
@@ -143,6 +148,7 @@ static void uart_dump_board(const game_t *gm)
     uart_puts(gm->board.turn == GOMOKU_BLACK ? "BLACK" : "WHITE");
     uart_puts("\r\n");
 }
+#endif /* !__RTTHREAD__ */
 
 /* ---- HUD 文字 ----
  * 把轮次/难度/AI 统计/胜负写到屏幕上下留白区（棋盘列 12..26、行 7..21 之外）。 */
@@ -173,138 +179,158 @@ static const char *menu_item_name(const game_t *gm)
     return "";
 }
 
-/* 菜单某一项的显示文案（label + 当前值）。返回静态缓冲，立即渲染/打印，别跨项复用。 */
-static const char *menu_item_text(const game_t *gm, int i)
+/* 菜单某一项的**选项名**（左对齐 X=6）。 */
+static const char *menu_row_name(const game_t *gm, int i)
 {
-    static char buf[24];
+    switch (gm->menu_page) {
+    case MENU_PAGE_MAIN:  return i == 0 ? "HUMAN VS AI" : "AI VS AI";
+    case MENU_PAGE_HUMAN: return i == 0 ? "DIFFICULTY" :
+                                 i == 1 ? "COLOR" : "START";
+    case MENU_PAGE_AI:    return i == 0 ? "BLACK AI" :
+                                 i == 1 ? "WHITE AI" :
+                                 i == 2 ? "STEP" : "START";
+    }
+    return "";
+}
+
+/* 菜单某一项的**当前值**（< 固定 @18、值 @20 起左对齐、> 固定 @26 —— T6-R4）；START 返回空串。 */
+static const char *menu_row_value(const game_t *gm, int i)
+{
+    static char buf[12];
     char *p = buf;
 
     switch (gm->menu_page) {
     case MENU_PAGE_MAIN:
-        return i == 0 ? "HUMAN VS AI" : "AI VS AI";
+        return "";
     case MENU_PAGE_HUMAN:
-        if (i == 0) {
-            p = buf_append(p, "DIFFICULTY  ");
-            p = buf_append(p, level_name(gm->level_black));
-        } else if (i == 1) {
-            p = buf_append(p, "COLOR  ");
-            p = buf_append(p, gm->human == GOMOKU_BLACK ? "BLACK" : "WHITE");
-        } else {
-            return "START";
-        }
-        break;
+        if (i == 0) return level_name(gm->level_black);
+        if (i == 1) return gm->human == GOMOKU_BLACK ? "BLACK" : "WHITE";
+        return "";
     case MENU_PAGE_AI:
-        if (i == 0) {
-            p = buf_append(p, "BLACK AI  ");
-            p = buf_append(p, level_name(gm->level_black));
-        } else if (i == 1) {
-            p = buf_append(p, "WHITE AI  ");
-            p = buf_append(p, level_name(gm->level_white));
-        } else if (i == 2) {
-            p = buf_append(p, "STEP  ");
+        if (i == 0) return level_name(gm->level_black);
+        if (i == 1) return level_name(gm->level_white);
+        if (i == 2) {
             p = u32_to_str(p, gm->step_ms);
             p = buf_append(p, "MS");
-        } else {
-            return "START";
+            *p = '\0';
+            return buf;
         }
-        break;
-    default:
         return "";
     }
-    *p = '\0';
-    return buf;
+    return "";
+}
+
+static int level_depth(int level)
+{
+    return level == AI_HARD ? 6 : (level == AI_NORMAL ? 4 : 2);
 }
 
 /* ---------------------------------------------------------------------------
  * 标题屏（2026-10-18 改版，任务书 §2.2）
  * ---------------------------------------------------------------------------
- * 目标：一眼像个完整游戏，而不是一张文字菜单。
- *   深色 UI 底 + 4x 大 logo（O = 黑白子）+ 金色选中框 + 选中项说明行
- *   + 闪烁 PRESS ANY KEY + 底部平台信息 + 右侧 7x7 自动对弈小棋盘。
+ * 目标（v2 交接文档 §4）：深色 UI 底 + 4x 大 logo + 中文副标题 +
+ *   5x5 自动对弈小棋盘 + 金色下划线选中态 + PRESS ANY KEY + 平台信息。
  *
- * [!] 三条容易踩的坑（任务书 §2.5）：
- *   1. 字库图块背景**不透明** ⇒ 不能做整行金色底条（会被每个字的背景切成小方块），
- *      所以选中态只能用**描边框 + 棋子图标**；
+ * [!] 三条容易踩的坑：
+ *   1. 字库图块背景**不透明** ⇒ 不做整行金色底条/卡片；选中态用 ▶ + 下划线；
  *   2. 新美术**运行时合成**（render_init 里现算）⇒ 不写进 .rodata，镜像不涨；
  *   3. 小棋盘用**脚本走法**（下面的 DEMO_MOVES），不调 AI 线程 ⇒ 菜单不会被搜索卡住。
  *
- * [!] 标题屏是**整屏重画**，但只在「内容真的变了」时重画（菜单/小棋盘/邮箱），
- *     闪烁那一行单独重画 —— 否则 60fps 全屏重绘会在 vblank 窗口外写显存，看得见闪。
+ * [!] 标题屏只在「内容真的变了」时重画；左右键改值只重画当前行 + 说明行，
+ *     闪烁那一行单独重画 —— 否则 60fps 全屏重绘会在 vblank 窗口外写显存。
  * ------------------------------------------------------------------------- */
-
-/* ---- 版面（40 列 × 30 行，2026-10-18 第二轮反馈）-------------------------
- *   行 0        空（四边留白）
- *   行 1-2      GOMOKU 4x logo（12 格宽，居中）
- *   行 3        空（标题/副标题之间的空行 —— 反馈 T1）
- *   行 4        副标题 RISC-V + RT-THREAD
- *   行 5-6      空
- *   行 7        菜单第 1 项  ← MINI_BOARD_TOP 也等于这一行（反馈 T10）
- *   行 7/11/15/19  菜单 4 项，项间 gap 4（3 行选中框 + 1 行空 —— 反馈 T11）
- *   行 14/18/21 选中项说明（跟着菜单往下走，与菜单文字左对齐）
- *   行 6-14     右侧 7x7 小棋盘（外框 6/14 行、25/33 列）
- *   行 15       小棋盘标签 AI VS AI
- *   行 18/20/21 右侧 LAST COREMARK（读 0xFF00，有三行空地时）
- *   行 22/24    操作提示（中间空 1 行 —— 反馈 T7）
- *   行 26       平台信息（27~29 留白 —— 反馈 T6）
- * ------------------------------------------------------------------------- */
-#define TITLE_LOGO_ROW    1
+/* ---- 标题屏布局（40x30，2026-10-19 T6-R4 重排：标题区拉开呼吸感）----------
+ *   3~4   GOMOKU logo（2x12 tile）
+ *   6     POWERED BY RISC-V & RT-THREAD（8x8 暗金，居中）
+ *   8     五 子 棋（中文 3 字，金色；与 POWERED 行隔 1 行）
+ *   11/13 主菜单 2 项；选中项 = ▶ + 金色下划线
+ *   15    极暗分隔线（菜单区 / LAST COREMARK 区剥离，止于小棋盘左侧）
+ *   16~18 LAST COREMARK / SCORE / CRC（8x8 暗灰；'|' 竖线锚 @5、文字 @7）
+ *   12~16 右侧 5x5 小棋盘（cells，T6-R4 随菜单下移 1 行保持平齐），
+ *         外框 11/17 行、27/33 列；网格四向出头伸向外框
+ *   21    极暗分隔线
+ *   22    UP/DN: SELECT | HOLD: OK（8x8 灰，左对齐）
+ *   23    LEFT: START（8x8 灰，左对齐）
+ *   27    PRESS ANY KEY（8x8 灰，闪烁，仅主菜单）
+ * [!] 提示行拆两行是 T6-R2 的要求：按键组不与单行动作挤在一行。
+ * [!] T6-R4：logo 5->3、POWERED 7->6、五子棋 9->8、菜单 10->11 ——
+ *     标题三行与菜单之间都有空行；极暗线/CM 区/小棋盘随菜单整体下移 1 行，
+ *     否则菜单第二项的下划线（row14）会压在极暗分隔线上。 */
+#define TITLE_LOGO_ROW    3
 #define TITLE_LOGO_COL    14
-#define TITLE_LOGO_COLS   12
-#define TITLE_SUB_ROW     4
-#define TITLE_RULE_ROW    5           /* 副标题下面的金色分隔线 */
-#define TITLE_VS_ROW      6           /* ● VS ○ 小图形 */
-#define TITLE_MENU_ROW0   8           /* 第一项菜单行（与副标题拉开 3 行） */
-#define TITLE_MENU_GAP    3           /* 3 行选中框 + 1 行空，4 项也放得下 */
-#define TITLE_MENU_LEFT   1
-#define TITLE_MENU_WIDTH  23          /* 固定框宽：最长项 + 左右 padding */
-#define TITLE_MENU_ARROW_X (TITLE_MENU_LEFT + 1)   /* 金色三角 */
-#define TITLE_MENU_ICON_X  (TITLE_MENU_LEFT + 2)   /* 黑白子图标 */
-#define TITLE_MENU_TEXT_X  (TITLE_MENU_LEFT + 4)   /* 文字区左边界 */
-#define TITLE_DESC_X      TITLE_MENU_TEXT_X   /* 描述行与菜单文字左对齐 */
-#define TITLE_DESC_MAXROW 21                  /* 4 项时也不能压到提示行 */
-#define TITLE_CM_ROW      18
-#define TITLE_HINT1_ROW   23
-#define TITLE_HINT2_ROW   25
-#define TITLE_PROMPT_ROW  27          /* PRESS ANY KEY（闪烁） */
-#define TITLE_PLAT_ROW    28          /* 底部平台信息；第 29 行留空 */
+#define TITLE_POWERED_ROW 6          /* POWERED BY RISC-V & RT-THREAD（8x8 暗金） */
+#define TITLE_SUB_ROW     8          /* 中文 五子棋（与 POWERED 行隔 1 行） */
+#define TITLE_MENU_ROW0   11         /* 第一项菜单行 */
+#define TITLE_MENU_GAP    2          /* 下划线占 1 行，所以项间空 2 行 */
+#define TITLE_MENU_ARROW_X 4          /* 金色 ▶ */
+#define TITLE_MENU_TEXT_X  6          /* 选项名左对齐 X=6 */
+#define TITLE_MENU_CLEAR_W 27         /* 只清 0..26，右侧 5x5 小棋盘在 27..33 */
+#define TITLE_VALUE_LT_X  18          /* 参数 < 固定列（T6-R4：不再随值长度漂移） */
+#define TITLE_VALUE_X     20          /* 参数值左对齐起点（T6-R4） */
+#define TITLE_VALUE_END    26         /* 参数 > 固定列 */
+#define TITLE_FAINT1_ROW  15          /* 菜单区 / LAST COREMARK 区分隔（随菜单下移 1 行） */
+#define TITLE_CM_ROW      16          /* LAST COREMARK 三行 16/17/18（8x8） */
+#define TITLE_CM_BAR_X    5           /* '|' 竖线锚（三行同列，连成一条） */
+#define TITLE_CM_COL      7           /* CoreMark 文字列（竖线右空 1 格） */
+#define TITLE_SUB_DESC_ROW 18         /* 子菜单说明行（8x8 灰；AI 页 +1；随菜单下移 1 行） */
+#define TITLE_DESC_COL    8           /* 子菜单说明文字列（'>' 锚 @6、空 1 格） */
+#define TITLE_SUB_RULE_ROW 21         /* 子菜单极暗分隔线（提示行上方；随菜单下移，与主页 FAINT2 同行但不同页，不冲突） */
+#define TITLE_FAINT2_ROW  21          /* LAST COREMARK 区 / 状态区分隔 */
+#define TITLE_HINT_ROW    22          /* 操作提示第 1 行（8x8 灰，左对齐） */
+#define TITLE_PROMPT_ROW  27          /* PRESS ANY KEY（8x8 灰，闪烁） */
+#define TITLE_BAND_ROWS   0           /* row 0 / row 29 细带 */
 
-/* [!] 小棋盘顶行必须**严格等于**第一项菜单行（反馈 T10：两处各写一个行号就会漂）。
- *     编译期自检：不相等的话下面这个 typedef 会变成"负长度数组"，直接编译失败。 */
-#define MINI_BOARD_TOP    TITLE_MENU_ROW0     /* 外框顶行 = 第一项菜单行 */
-#define MINI_BOARD_LEFT   25                  /* 外框左列；格子从右边一列开始 */
-#define MINI_CELL_COL     (MINI_BOARD_LEFT + 1)   /* 26：第 0 列格子 */
-#define MINI_CELL_ROW     (MINI_BOARD_TOP + 1)    /* 9：第 0 行格子（框在 8） */
-#define TITLE_DEMO_N      7                   /* 7x7 自动对弈小棋盘 */
-#define TITLE_DEMO_MS     700u                /* 每手间隔 */
-typedef char title_layout_assert[(MINI_BOARD_TOP == TITLE_MENU_ROW0) ? 1 : -1];
+/* 小棋盘：5x5 cells，cells 从 (12,28) 起；外框 11/17 行、27/33 列。
+ * T6-R4 随菜单整体下移 1 行：框顶 row11 与菜单首项平齐、框底 row17 与
+ * AI 页末项平齐，左右视觉平衡。极暗线 row15 只画到 col26，不与小棋盘相撞。 */
+#define MINI_CELL_ROW     12
+#define MINI_CELL_COL     28
+#define TITLE_DEMO_N      5
+#define TITLE_DEMO_MS     900u
+typedef char title_layout_assert[(MINI_CELL_ROW + TITLE_DEMO_N <= TITLE_PROMPT_ROW - 1) ? 1 : -1];
 
 /* 小棋盘的对局状态。放静态区（.bss 232 字节），不占栈 —— 栈顶只有 0xF000。 */
 static gomoku_t s_demo;
 static int      s_demo_i;      /* 下一手在表里的下标 */
 static uint32_t s_demo_t;      /* 上一手落子时刻 */
 static int      s_demo_gen;    /* 每落一子 +1；主循环据此判断要不要重画 */
+static int      s_demo_ready;  /* 已放好开局 3 子（预览第一帧就能看到） */
 static int      s_prompt_on = 1;   /* PRESS ANY KEY 当前是否亮着 */
 
-/* 脚本走法：每两个字节一手 (行,列)，坐标是 7x7 子盘的 0..6。
+/* 脚本走法：每两个字节一手 (行,列)，坐标是 5x5 子盘的 0..4。
  * 走完一轮就清盘重来 —— 录像里看起来像"两个 AI 一直在下"。
  * [!] 不调 AI：标题屏不该为装饰去抢 AI 线程/CPU（任务书 §2.3）。 */
 static const uint8_t DEMO_MOVES[] = {
-    3,3,  3,4,  4,4,  2,3,  4,3,  2,2,  5,4,  1,3,
-    5,2,  5,5,  4,2,  3,1,  6,3,  2,4,  1,4,  6,4,
+    2,2,  2,3,  3,3,  1,2,  3,2,  1,3,
+    4,2,  0,2,  4,4,  0,4,  3,1,  1,1,
 };
 #define DEMO_N_MOVES  ((int)(sizeof(DEMO_MOVES) / 2))
 
-/* 选中项的说明行（填掉菜单下方的空白，任务书 §2.2.4）。
- * [!] 全部控制在 19 字符内：描述从 col 4 起，最多到 col 22，
- *     再长就会压到右侧小棋盘/LAST COREMARK 那一列（col 25+）。 */
+static int text_len(const char *s)
+{
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+/* 选中项的说明行（仅二级菜单用；主菜单不再有说明行 —— T6 按示意稿删除，
+ * 菜单区与 LAST COREMARK 区之间只留 row15 一条极暗线）。子菜单的难度说明跟着档位变。 */
 static const char *menu_desc(const game_t *gm)
 {
+    static char buf[40];
+    char *p;
+
     switch (gm->menu_page) {
-    case MENU_PAGE_MAIN:
-        return gm->menu_cursor == 0 ? "PLAY AGAINST THE CPU" : "WATCH TWO AIS PLAY";
     case MENU_PAGE_HUMAN:
-        return gm->menu_cursor == 0 ? "AI SEARCH DEPTH" :
-               gm->menu_cursor == 1 ? "YOUR STONE COLOR" : "BEGIN THE MATCH";
+        if (gm->menu_cursor == 0) {
+            p = buf;
+            p = buf_append(p, "AI SEARCH DEPTH: ");
+            p = u32_to_str(p, (unsigned)level_depth(gm->level_black));
+            p = buf_append(p, " PLY");
+            *p = '\0';
+            return buf;
+        }
+        return gm->menu_cursor == 1 ? "YOUR STONE COLOR" : "BEGIN THE MATCH";
     default:
         return gm->menu_cursor == 0 ? "BLACK SIDE STRENGTH" :
                gm->menu_cursor == 1 ? "WHITE SIDE STRENGTH" :
@@ -315,85 +341,86 @@ static const char *menu_desc(const game_t *gm)
 /* 菜单项在屏幕上的行号（0-based 第几项）。 */
 #define MENU_ROW_OF(i)  (TITLE_MENU_ROW0 + (i) * TITLE_MENU_GAP)
 
-/* 说明行行号：跟在最后一项的选中框下面（空 1 行），但不能压到提示行。 */
-static int desc_row(int n_items)
+/* AI 子菜单有 4 项（START 在 row17），说明行（AI 页）随之落到 19，避免贴着 START。 */
+static int submenu_desc_row(void)
 {
-    int r = MENU_ROW_OF(n_items - 1) + 3;      /* 框底 + 1 */
-    return r > TITLE_DESC_MAXROW ? TITLE_DESC_MAXROW : r;
+    return g_game.menu_page == MENU_PAGE_AI
+           ? TITLE_SUB_DESC_ROW + 1 : TITLE_SUB_DESC_ROW;
 }
 
-/* 一行菜单项（反馈 T3/T11）：
- *   · **所有项共用固定框宽** TITLE_MENU_WIDTH（按最长项 “DIFFICULTY  NORMAL” 定）；
- *   · 图标列、文字列**固定**（不随文本长度漂移），文字在框内左对齐；
- *   · 未选中：不画框，文字仍落在同一列 —— 换选中项时文字不会跳。 */
-static int text_len(const char *s)
+/* 一行菜单项（v2 §5.3 + T6-R4）：
+ *   选项名左对齐 X=6；值区固定列：< @18、值 @20 起左对齐、> @26 ——
+ *   值长短不一时左尖括号保持整齐（原"< value >"整体拼接右对齐会让 < 参差）。
+ *   选中项 = ▶ + 金色下划线。START 是按钮：选中时在上一行画金色分隔线。
+ *   [!] 只清 0..26 列，右侧 5x5 小棋盘在 27..33，不能被整行清掉。 */
+static void draw_menu_row(int row, const game_t *gm, int i, int selected)
 {
-    int n = 0;
-    while (s[n]) n++;
-    return n;
-}
+    const char *name = menu_row_name(gm, i);
+    const char *val  = menu_row_value(gm, i);
 
-static void draw_menu_row(int row, const char *s, int selected)
-{
-    int len  = text_len(s);
-    int area = TITLE_MENU_WIDTH - (TITLE_MENU_TEXT_X - TITLE_MENU_LEFT) - 1;
-    int col  = TITLE_MENU_TEXT_X;
+    render_clear_span(row, 0, TITLE_MENU_CLEAR_W);
+    if (selected) render_put(row, TITLE_MENU_ARROW_X, RENDER_TILE_ARROW);
+    render_text_span(row, TITLE_MENU_TEXT_X, name);
 
-    /* 文字在固定框内居中：所有项共用同一个卡片宽度，长度不同也不会左右参差。 */
-    if (len < area) col += (area - len) / 2;
+    if (val[0]) {
+        /* [!] 边界已核：值最长 6 字（NORMAL/2000MS，占 20..25，不撞 > @26）；
+         *     选项名最长 11 字（HUMAN VS AI，止于 col16，不撞 < @18）。 */
+        render_text_span(row, TITLE_VALUE_LT_X, "<");
+        render_text_span(row, TITLE_VALUE_X, val);
+        render_text_span(row, TITLE_VALUE_END, ">");
+    }
 
-    render_text(row, col, s);
-    render_put(row, TITLE_MENU_ICON_X,
-               selected ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
     if (selected) {
-        render_put(row, TITLE_MENU_ARROW_X, RENDER_TILE_ARROW);
-        render_box(row, TITLE_MENU_LEFT, TITLE_MENU_WIDTH);
+        int rule_len = (gm->menu_page == MENU_PAGE_MAIN)
+                       ? text_len(name)
+                       : TITLE_VALUE_END - TITLE_MENU_TEXT_X + 1;
+        /* [!] 2026-10-19：原来最后一项画在 row-1，HUMAN 的 START(row15) 会让
+         * 金线落在 row14（正好是 COLOR 的线），AI 的 START(row17) 落在 row16
+         * （正好是 STEP 的线）—— 看起来光标移到 START 后线没动。
+         * 一律画 row+1：HUMAN 16 / AI 18；AI 页说明行已下移到 19，不冲突。 */
+        render_rule(row + 1, TITLE_MENU_TEXT_X, rule_len);
+        /* [!] 2026-10-19 CPU 双发射 bug 绕行（RTL 暂不动）：
+         *   JALR 在 BTB 未命中时 pair_now 仍可能把 jr 的下一条 fall-through
+         *   配进 lane B 并真的执行。这里 render_rule 原本是尾调用，jr 后面
+         *   恰好是 `lw a5,264(s3)`，用调用者旧的 s3(=2) 算出 0x10A ⇒
+         *   load misaligned（mcause=4 / mtval=0x10A）。
+         *   加一条 nop 后 GCC 不能再做尾调用，fall-through 变成无害的 nop。
+         *   RTL 的正确修法（pair_now 排除 JALR）另行验证。 */
+        __asm__ volatile("nop");
     }
 }
 
-/* 底部平台信息。**主频是算出来的**，不是写死的字面量 ——
- * 换主频/换板子时只改 addr_map.h 的 CPU_HZ，这一行自己跟着变。
- * （约定 58：由 RTL/编译宏决定的数字一律算出来。） */
-static void draw_platform_row(void)
-{
-    char  buf[SCREEN_COLS + 1];
-    char *p = buf;
-    /* MHz x10：ticks/ms = Hz/1000 ⇒ Hz/1e5 = (ticks/ms)/100 */
-    uint32_t mhz10 = (hw_ticks_per_ms() * 10u) / 1000u;
-
-    p = buf_append(p, "RV32IMA | RT-THREAD | ");
-    p = u32_to_str(p, mhz10 / 10u);
-    p = buf_append(p, ".");
-    p = u32_to_str(p, mhz10 % 10u);
-    p = buf_append(p, "MHZ");
-    render_text_center(TITLE_PLAT_ROW, buf);
-}
-
 /* LAST COREMARK：读 0xFF00 的共享邮箱（CoreMark 写、跨复位保留）。
- * 放在**右侧小棋盘下方那一列**（col 26 起），不占左菜单的版面。
- * 反馈 T8：标题一行、值一行，中间空 1 行；两行都从同一列起，不再按长度居中。 */
+ * 2026-10-19 T6：8x8 暗灰三行连续排（16/17/18，T6-R4 随菜单下移 1 行），
+ * 最左侧 '|' 竖线锚 @5 三行同列连成一条，文字 @7（缩进 2 tile）
+ * ——与上方菜单区用 row15 极暗线剥离。CRC 行补对齐空格让 ':' 与 SCORE 行
+ * 对齐（排版对齐，不是撑长度）。 */
 static void draw_last_coremark(void)
 {
     volatile uint32_t *m = (volatile uint32_t *)CM_MBOX_BASE;
     char  buf[SCREEN_COLS + 1];
     char *p;
     uint32_t score;
-    int    x = MINI_BOARD_LEFT + 1;        /* 26：与小棋盘格子左对齐 */
+    int    x = TITLE_CM_BAR_X;
 
     if (m[CM_MBOX_I_MAGIC] != CM_MBOX_MAGIC) return;
 
     score = m[CM_MBOX_I_SCORE];
-    render_text_span(TITLE_CM_ROW, x, "LAST COREMARK");
+    render_text8_span(TITLE_CM_ROW, x, "| LAST COREMARK");
 
     p = buf;
-    p = buf_append(p, "SCORE: ");
+    p = buf_append(p, "| SCORE : ");
     p = u32_to_str(p, score / 100u);
     p = buf_append(p, ".");
     p = u32_to_str(p, (score % 100u) / 10u);
-    render_text_span(TITLE_CM_ROW + 2, x, buf);     /* 空一行再写值 */
+    *p = '\0';
+    render_text8_span(TITLE_CM_ROW + 1, x, buf);
 
-    render_text_span(TITLE_CM_ROW + 4, x,
-                     (m[CM_MBOX_I_FLAGS] & CM_MBOX_FLAG_CRC_OK) ? "CRC: OK" : "CRC: BAD");
+    p = buf;
+    p = buf_append(p, "| CRC   : ");
+    p = buf_append(p, (m[CM_MBOX_I_FLAGS] & CM_MBOX_FLAG_CRC_OK) ? "OK" : "BAD");
+    *p = '\0';
+    render_text8_span(TITLE_CM_ROW + 2, x, buf);
 }
 
 /* 小棋盘推进一手：走完一轮就清盘重来；落到已占的格子上就跳过（表写错了也不会崩）。 */
@@ -418,94 +445,157 @@ static void demo_advance(void)
     }
 }
 
-/* 标题屏的小 VS 图形：● VS ○，放在副标题和菜单之间。 */
-static void draw_vs_motif(void)
+/* 小棋盘开局放 3 子：预览第一帧就能看到 v2 §4.3 要的"3 颗黑白子"。 */
+static void demo_seed(void)
 {
-    render_put(TITLE_VS_ROW, 9,  RENDER_TILE_ICON_BLACK);
-    render_text_span(TITLE_VS_ROW, 11, "VS");
-    render_put(TITLE_VS_ROW, 14, RENDER_TILE_ICON_WHITE);
+    int i;
+    if (s_demo_ready) return;
+    gomoku_reset(&s_demo);
+    for (i = 0; i < 3 && i < DEMO_N_MOVES; i++)
+        gomoku_place(&s_demo, DEMO_MOVES[i * 2], DEMO_MOVES[i * 2 + 1]);
+    s_demo_i = 3;
+    s_demo_gen = 1;
+    s_demo_ready = 1;
 }
 
-/* 整屏重画标题页。只在内容变化时调（见 draw_title）。 */
+/* 只重画右侧 5x5 小棋盘（自动落子时用，不整屏刷新）。 */
+static void title_redraw_mini(void)
+{
+    demo_seed();
+    render_frame_at(MINI_CELL_ROW, MINI_CELL_COL, TITLE_DEMO_N);
+    render_board_region(&s_demo, 0, 0, TITLE_DEMO_N, TITLE_DEMO_N,
+                        MINI_CELL_ROW, MINI_CELL_COL);
+}
+
+/* PRESS ANY KEY：8x8 灰、左对齐到菜单文字列；只画这一行，不刷整屏。 */
+static void title_prompt_draw(int on)
+{
+    if (on)
+        render_text8_span(TITLE_PROMPT_ROW, TITLE_MENU_TEXT_X, "PRESS ANY KEY");
+    else
+        render_text(TITLE_PROMPT_ROW, 0, "");
+}
+
+/* 整屏重画标题页。只在页面/选中项/邮箱等"结构"变化时调。 */
 static void title_draw_all(void)
 {
     int i, n = game_menu_item_count(&g_game);
 
-    render_clear();                    /* 深色 UI 底铺满 40x30，并作废 dedup 缓存 */
+    render_clear();                    /* 深色 UI 底铺满 40x30 */
 
-    render_logo(TITLE_LOGO_ROW, TITLE_LOGO_COL);
-    render_text_center(TITLE_SUB_ROW, "RISC-V + RT-THREAD");
-    render_rule(TITLE_RULE_ROW, 6, 12);
-    draw_vs_motif();
-
-    for (i = 0; i < 4; i++) {
-        if (i < n)
-            draw_menu_row(MENU_ROW_OF(i), menu_item_text(&g_game, i),
-                          i == g_game.menu_cursor);
+    /* 顶部/底部细带：给纯色底加一点层次（row 0 / row 29）。 */
+    for (i = 0; i < SCREEN_COLS; i++) {
+        render_put(0, i, RENDER_TILE_BG_BAND);
+        render_put(SCREEN_ROWS - 1, i, RENDER_TILE_BG_BAND);
     }
-    render_text(desc_row(n), TITLE_DESC_X, menu_desc(&g_game));
 
-    draw_last_coremark();
+    if (g_game.menu_page == MENU_PAGE_MAIN) {
+        render_logo(TITLE_LOGO_ROW, TITLE_LOGO_COL);
+        render_text8g_center(TITLE_POWERED_ROW, "Powered by RISC-V & RT-Thread");
+        render_cjk(TITLE_SUB_ROW, 17, RENDER_CJK_WU);
+        render_cjk(TITLE_SUB_ROW, 19, RENDER_CJK_ZI);
+        render_cjk(TITLE_SUB_ROW, 21, RENDER_CJK_QI);
 
-    render_text_center(TITLE_HINT1_ROW, "UP/DOWN : MOVE");
-    render_text_center(TITLE_HINT2_ROW, "HOLD : OK   LEFT : START");
-    render_text_center(TITLE_PROMPT_ROW, "PRESS ANY KEY");
-    s_prompt_on = 1;
-    draw_platform_row();
+        for (i = 0; i < n; i++)
+            draw_menu_row(MENU_ROW_OF(i), &g_game, i, i == g_game.menu_cursor);
 
-    /* ---- 小棋盘放到**最后**画（反馈 T2：以前它先画，被菜单的整行 text 抹掉两行）----
-     * [!] render_text() 是**整行铺底**的：菜单行会压着小棋盘，所以顺序固定为
-     *     背景 → 文本 → 小棋盘 → （选中框在 draw_menu_row 里已画完）。
-     *     棋盘外框顶行 = TITLE_MENU_ROW0（第一项菜单行），格子从下一行开始。 */
-    render_frame_at(MINI_CELL_ROW, MINI_CELL_COL, TITLE_DEMO_N);
-    render_board_region(&s_demo, 0, 0, TITLE_DEMO_N, TITLE_DEMO_N,
-                        MINI_CELL_ROW, MINI_CELL_COL);
-    render_text_span(MINI_CELL_ROW + TITLE_DEMO_N + 1, MINI_BOARD_LEFT, "AI VS AI");
+        draw_last_coremark();
+        render_faint_rule(TITLE_FAINT1_ROW, 1, TITLE_MENU_CLEAR_W - 1);
+        title_redraw_mini();           /* 后画小棋盘：框/网格覆盖线尾区域 */
+
+        render_faint_rule(TITLE_FAINT2_ROW, 1, SCREEN_COLS - 2);
+        render_text(TITLE_HINT_ROW, 0, "");
+        render_text8_span(TITLE_HINT_ROW, 1, "UP/DN: SELECT | HOLD: OK");
+        render_text(TITLE_HINT_ROW + 1, 0, "");
+        render_text8_span(TITLE_HINT_ROW + 1, 1, "LEFT: START");
+
+        title_prompt_draw(1);
+        s_prompt_on = 1;
+    } else {
+        /* 二级菜单：标题 row6 改用 16x16 亮白大字居中（T6-R4，原为中灰 8x8
+         * 小字，作为页面标题没有区分度）；参数项 11/13/(15/17)；
+         * 说明行 18/19；极暗线 row21；提示两行 22/23（与选项左对齐）。 */
+        int drow = submenu_desc_row();
+
+        render_text(6, 0, "");                         /* 标题行整行清 */
+        render_text_center(6, g_game.menu_page == MENU_PAGE_HUMAN ? "HUMAN VS AI" : "AI VS AI");
+        for (i = 0; i < n; i++)
+            draw_menu_row(MENU_ROW_OF(i), &g_game, i, i == g_game.menu_cursor);
+        render_text(drow, 0, "");                      /* 子菜单没有小棋盘，可整行清 */
+        render_desc_arrow(drow, TITLE_MENU_TEXT_X);
+        render_text8_span(drow, TITLE_DESC_COL, menu_desc(&g_game));
+
+        render_faint_rule(TITLE_SUB_RULE_ROW, TITLE_MENU_TEXT_X, SCREEN_COLS - TITLE_MENU_TEXT_X - 2);
+        render_text(TITLE_SUB_RULE_ROW + 1, 0, "");
+        render_text8_span(TITLE_SUB_RULE_ROW + 1, TITLE_MENU_TEXT_X, "UP/DN: MOVE HOLD: OK");
+        render_text(TITLE_SUB_RULE_ROW + 2, 0, "");
+        render_text8_span(TITLE_SUB_RULE_ROW + 2, TITLE_MENU_TEXT_X, "LEFT: BACK");
+        s_prompt_on = 0;
+    }
 }
 
-/* 内容签名：只有它变了才整屏重画。闪烁单独处理（只重画一行）。 */
-static int title_sig_changed(void)
+/* 左右键改值：只重画当前项 + 说明行，不整屏刷新（v2 §5.3）。 */
+static void title_redraw_value_rows(void)
 {
-    static int s_page = -1, s_cursor = -1, s_mode = -1, s_human = -1;
-    static int s_lb = -1, s_lw = -1, s_step = -1, s_demo = -1, s_cm = -1;
-    volatile uint32_t *m = (volatile uint32_t *)CM_MBOX_BASE;
-    int cm = (m[CM_MBOX_I_MAGIC] == CM_MBOX_MAGIC) ? (int)m[CM_MBOX_I_SCORE] : -1;
-    int ch = 0;
-
-    if (s_page   != g_game.menu_page  || s_cursor != g_game.menu_cursor ||
-        s_mode   != g_game.mode       || s_human  != g_game.human      ||
-        s_lb     != g_game.level_black || s_lw    != g_game.level_white ||
-        s_step   != (int)g_game.step_ms || s_demo != s_demo_gen || s_cm != cm)
-        ch = 1;
-
-    s_page = g_game.menu_page;  s_cursor = g_game.menu_cursor;
-    s_mode = g_game.mode;       s_human  = g_game.human;
-    s_lb   = g_game.level_black; s_lw    = g_game.level_white;
-    s_step = (int)g_game.step_ms; s_demo = s_demo_gen; s_cm = cm;
-    return ch;
+    if (g_game.menu_page == MENU_PAGE_MAIN) {
+        title_draw_all();
+        return;
+    }
+    draw_menu_row(MENU_ROW_OF(g_game.menu_cursor), &g_game,
+                  g_game.menu_cursor, 1);
+    render_text(submenu_desc_row(), 0, "");
+    render_desc_arrow(submenu_desc_row(), TITLE_MENU_TEXT_X);
+    render_text8_span(submenu_desc_row(), TITLE_DESC_COL, menu_desc(&g_game));
 }
 
 /* 标题页的一拍：推进小棋盘、按需重画。返回 1 = 这一拍画了东西。 */
 static int draw_title(uint32_t now, int force)
 {
+    static int s_page = -1, s_cursor = -1, s_mode = -1, s_human = -1;
+    static int s_lb = -1, s_lw = -1, s_step = -1, s_demo = -1, s_cm = -1;
+    volatile uint32_t *m = (volatile uint32_t *)CM_MBOX_BASE;
+    int cm = (m[CM_MBOX_I_MAGIC] == CM_MBOX_MAGIC) ? (int)m[CM_MBOX_I_SCORE] : -1;
+    int main_page = (g_game.menu_page == MENU_PAGE_MAIN);
+    int structural, value_changed, demo_changed;
     int drew = 0;
 
-    if (now - s_demo_t >= TITLE_DEMO_MS * hw_ticks_per_ms()) {
+    if (main_page &&
+        (uint32_t)(now - s_demo_t) >= TITLE_DEMO_MS * hw_ticks_per_ms()) {
         s_demo_t = now;
         demo_advance();
     }
 
-    if (force || title_sig_changed()) {
+    structural = force || s_page != g_game.menu_page ||
+                 s_cursor != g_game.menu_cursor || s_mode != g_game.mode ||
+                 s_cm != cm;
+    value_changed = (s_lb != g_game.level_black) ||
+                    (s_lw != g_game.level_white) ||
+                    (s_human != g_game.human) ||
+                    (s_step != (int)g_game.step_ms);
+    demo_changed = (s_demo != s_demo_gen);
+
+    if (structural) {
         title_draw_all();
+        drew = 1;
+    } else if (value_changed) {
+        title_redraw_value_rows();
+        drew = 1;
+    } else if (demo_changed && main_page) {
+        title_redraw_mini();
         drew = 1;
     }
 
-    /* PRESS ANY KEY：500ms 亮 / 500ms 灭。只重画这一行，不整屏重绘。 */
-    {
+    s_page = g_game.menu_page;  s_cursor = g_game.menu_cursor;
+    s_mode = g_game.mode;       s_human  = g_game.human;
+    s_lb   = g_game.level_black; s_lw    = g_game.level_white;
+    s_step = (int)g_game.step_ms; s_demo = s_demo_gen; s_cm = cm;
+
+    /* PRESS ANY KEY：500ms 亮 / 500ms 灭；只重画这一行。子菜单不显示。 */
+    if (main_page) {
         int on = ((now / (500u * hw_ticks_per_ms())) & 1u) == 0;
         if (on != s_prompt_on) {
             s_prompt_on = on;
-            render_text_center(TITLE_PROMPT_ROW, on ? "PRESS ANY KEY" : "");
+            title_prompt_draw(on);
             drew = 1;
         }
     }
@@ -513,102 +603,262 @@ static int draw_title(uint32_t now, int force)
     return drew;
 }
 
-/* 对局 HUD（标题屏在 draw_title 里画，**不经过这里**）。
- * [!] 进对局时 draw_frame 已经整屏抹过一次，所以这里只负责"当前该显示什么"。 */
-static void draw_hud(void)
+/* 对局 HUD：右侧 10 列（30..39），棋盘占 0..29。
+ * [!] 不能用整行 render_text —— 它会把左侧棋盘一起铺成空格。
+ * [!] T6 2026-10-19 行表（严格按坐标规范）：
+ *      1  GOMOKU    16x16 金，居中（X=32）
+ *      3  turn      8x8 暗灰 @32；4  图标 @31 + 16x16 值 @33
+ *      6  level     8x8 @32；7  值 16x16 @33
+ *      9  depth     8x8 @32；10 值 16x16 @33
+ *      12 nodes     8x8 @32；13 值 16x16 @33
+ *      15 time      8x8 @32；16 值 16x16 @33
+ *      21 THINKING  16x16 绿（闪烁）X=32 / YOUR TURN 16x16 白 X=30
+ *                   （T6-R3：18 -> 21，与 time 值之间留 4 行呼吸感；
+ *                    T6-R4：THINKING 右移 2 列留白，不再贴棋盘网格；
+ *                    YOUR TURN 9 字满宽，保持 X=30 不动）
+ *      25 UP/DN MOVE 8x8 @30（横向一行写完）
+ *      26 HOLD PLACE 8x8 @30
+ *   AI vs AI 观战用同款节奏：black/white（带图标）/step/nodes/time 五组；
+ *   depth 可由档位推出（EASY=2/NORMAL=4/HARD=6），不再单列。
+ *   GAME_OVER 后胜负由棋盘中央弹窗负责，18 行清空。
+ * [!] 提示行渲染为 "UP/DN MOVE" / "HOLD PLACE"：8x8 字库没有 [ ] 字模，
+ *     且 HUD 宽 10 列放不下 12 字符 —— 去括号后各 10 字符正好满宽。 */
+#define HUD_COL 30
+#define HUD_W   10
+
+static void hud_clear(int row)
 {
-    char line[SCREEN_COLS + 1];
-    char *p;
+    render_clear_span(row, HUD_COL, HUD_W);
+}
+static void hud_text8(int row, const char *s)
+{
+    hud_clear(row);
+    render_text8_span(row, HUD_COL, s);
+}
+/* 8x8 灰标签：规范要求标签比值缩进 2 列（X=32）。 */
+static void hud_label8(int row, const char *s)
+{
+    hud_clear(row);
+    render_text8_span(row, HUD_COL + 2, s);
+}
+/* 16x16 亮白值：统一绝对左对齐 X=33 —— 与图标行（图标 @31、文字 @33）
+ * 的文字列对齐。T6-R3：原来是 X=32，与图标行的 33 差 1 列，WHITE/HARD/
+ * 6 PLY 左边缘不齐；现在所有值一概 X=33，无任何居中计算。 */
+static void hud_value16(int row, const char *s)
+{
+    hud_clear(row);
+    render_text_span(row, HUD_COL + 3, s);
+}
+/* 图标行：图标 @31、16x16 值 @33（规范 X=31 / X=33）。 */
+static void hud_icon16(int row, uint8_t icon, const char *s)
+{
+    hud_clear(row);
+    render_put(row, HUD_COL + 1, icon);
+    render_text_span(row, HUD_COL + 3, s);
+}
 
-    /* [2026-10-17] 下面几行改用【幂等写】，且必须与后面 HUD 用【同一批槽位】。
-     * [!] 若这里用普通 render_text、而下面 HUD 用 render_text_dedup，
-     *     缓存就和实际屏幕对不上 ⇒ 下一帧 HUD 以为"没变"而跳过 ⇒ 该行永远空白。
-     *     槽位约定：0=行1  1=行2(空) 2=行3  3=行4  4=行27(统计)  5=行24(胜负横幅)。
-     *     2026-10-18 第二轮反馈 H2：TURN / LEVEL 之间空一行（行 2），
-     *     所以数值行从行 2 挪到行 3（AI 模式的 BLACK/WHITE 占行 3/4）。 */
-    render_text_dedup(1, 2,  0, "");          /* 行 2：组间空行 */
-    render_text_dedup(5, 24, 0, "");          /* 上一局的胜负横幅 */
-
-    /* 顶部：轮次/对局类型（行 1）+ 空一行（行 2）+ 难度（行 3/4）。
-     *   [!] render_text 会整行铺空格，所以图标必须在 render_text 之后用 render_put 盖上。
-     *   [!] 反馈 T5/H1：WHITE AI 那一行也要有**白子图标**，与 BLACK 行对称。 */
-    if (g_game.mode == GAME_MODE_AI) {
-        render_text_dedup(0, 1, 5, "AI VS AI");
-        p = line; p = buf_append(p, "BLACK AI: "); p = buf_append(p, level_name(g_game.level_black));
-        render_text_dedup(2, 3, 3, line);
-        render_put(3, 1, RENDER_TILE_ICON_BLACK);
-        p = line; p = buf_append(p, "WHITE AI: "); p = buf_append(p, level_name(g_game.level_white));
-        render_text_dedup(3, 4, 3, line);
-        render_put(4, 1, RENDER_TILE_ICON_WHITE);
-        /* STEP 并进底部统计行（行 4 让给 WHITE AI，行距才拉得开）*/
-        p = line; p = buf_append(p, "STEP ");
-        p = u32_to_str(p, g_game.step_ms);
-        p = buf_append(p, "MS  AI ");
-        p = u32_to_str(p, g_game.ai_nodes);
-        p = buf_append(p, " N D");
-        p = u32_to_str(p, (unsigned)g_game.ai_depth);
-        p = buf_append(p, " ");
-        p = u32_to_str(p, g_game.ai_ms);
-        p = buf_append(p, "MS");
+/* 节点数压缩：12874 -> "12.8K"，1234567 -> "1.2M"。无浮点。 */
+static char *fmt_nodes(char *p, uint32_t v)
+{
+    if (v >= 1000000u) {
+        uint32_t x = v / 100000u;                 /* 12.3M 的 123 */
+        p = u32_to_str(p, x / 10u);
+        p = buf_append(p, ".");
+        p = u32_to_str(p, x % 10u);
+        p = buf_append(p, "M");
+    } else if (v >= 1000u) {
+        uint32_t x = v / 100u;
+        p = u32_to_str(p, x / 10u);
+        p = buf_append(p, ".");
+        p = u32_to_str(p, x % 10u);
+        p = buf_append(p, "K");
     } else {
-        int who = g_game.board.turn;
-        render_text_dedup(0, 1, 3, who == GOMOKU_BLACK ? "TURN: BLACK" : "TURN: WHITE");
-        render_put(1, 1, who == GOMOKU_BLACK ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
-        p = line; p = buf_append(p, "LEVEL: "); p = buf_append(p, level_name(g_game.level_black));
-        render_text_dedup(2, 3, 3, line);
-        render_put(3, 1, who == GOMOKU_BLACK ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE);
-        render_text_dedup(3, 4, 0, "");
-        /* 底部：AI 统计（最有展示价值的一行）*/
-        p = line; p = buf_append(p, "AI: NODES ");
-        p = u32_to_str(p, g_game.ai_nodes);
-        p = buf_append(p, " DEPTH ");
-        p = u32_to_str(p, (unsigned)g_game.ai_depth);
-        p = buf_append(p, " ");
-        p = u32_to_str(p, g_game.ai_ms);
+        p = u32_to_str(p, v);
+    }
+    return p;
+}
+
+/* 毫秒压缩：569 -> "569MS"，1234 -> "1.2S"。 */
+static char *fmt_ms(char *p, uint32_t v)
+{
+    if (v >= 1000u) {
+        uint32_t x = v / 100u;
+        p = u32_to_str(p, x / 10u);
+        p = buf_append(p, ".");
+        p = u32_to_str(p, x % 10u);
+        p = buf_append(p, "S");
+    } else {
+        p = u32_to_str(p, v);
         p = buf_append(p, "MS");
     }
-    /* 行 27 写统计（行 28/29 留白 —— 反馈 H3：底部不贴边）*/
-    render_text_dedup(4, 27, 1, line);
+    return p;
+}
 
-    /* 胜负横幅 */
-    if (g_game.phase == GAME_OVER) {
-        const char *msg = g_game.winner == GOMOKU_BLACK ? "BLACK WINS" :
-                          g_game.winner == GOMOKU_WHITE ? "WHITE WINS" : "DRAW";
-        render_text_dedup_center(5, 24, msg);
+static void draw_hud(int think_on)
+{
+    char line[HUD_W + 2];
+    char *p;
+    int who = g_game.board.turn;
+    int r;
+
+    /* 先整块清 2..24 行（30..39 列），再按行表画 —— 行号调整不留残影。 */
+    for (r = 2; r <= 24; r++) hud_clear(r);
+
+    render_gold16_span(1, HUD_COL + (HUD_W - 6) / 2, "GOMOKU");   /* 16x16 金，X=32 */
+
+    if (g_game.mode == GAME_MODE_AI) {
+        /* AI vs AI 观战：同款节奏五组（Q2=A 决策），black/white 带图标。 */
+        hud_label8(3, "BLACK");
+        hud_icon16(4, RENDER_TILE_ICON_BLACK, level_name(g_game.level_black));
+        hud_label8(6, "WHITE");
+        hud_icon16(7, RENDER_TILE_ICON_WHITE, level_name(g_game.level_white));
+
+        hud_label8(9, "STEP");
+        p = line; p = u32_to_str(p, g_game.step_ms);
+        p = buf_append(p, "MS"); *p = '\0';
+        hud_value16(10, line);
+
+        hud_label8(12, "NODES");
+        p = line; p = fmt_nodes(p, g_game.ai_nodes); *p = '\0';
+        hud_value16(13, line);
+
+        hud_label8(15, "TIME");
+        p = line; p = fmt_ms(p, g_game.ai_ms); *p = '\0';
+        hud_value16(16, line);
+    } else {
+        /* 人类 vs AI：turn/level/depth/nodes/time 五组（坐标规范原样）。 */
+        hud_label8(3, "TURN");
+        hud_icon16(4,
+                   who == GOMOKU_BLACK ? RENDER_TILE_ICON_BLACK : RENDER_TILE_ICON_WHITE,
+                   who == GOMOKU_BLACK ? "BLACK" : "WHITE");
+
+        hud_label8(6, "LEVEL");
+        hud_value16(7, level_name(g_game.level_black));
+
+        hud_label8(9, "DEPTH");
+        p = line;
+        p = u32_to_str(p, (unsigned)level_depth(g_game.level_black));
+        p = buf_append(p, " PLY"); *p = '\0';
+        hud_value16(10, line);
+
+        hud_label8(12, "NODES");
+        p = line; p = fmt_nodes(p, g_game.ai_nodes); *p = '\0';
+        hud_value16(13, line);
+
+        hud_label8(15, "TIME");
+        p = line; p = fmt_ms(p, g_game.ai_ms); *p = '\0';
+        hud_value16(16, line);
     }
+
+    /* 21 行：AI 思考中 = THINKING（16x16 绿，500ms 闪）；轮到玩家 = YOUR TURN。
+     * [T6-R3] 从 18 下移到 21：与 time/569MS（row16）之间隔 4 行留白，
+     * 独立成一个提示区块；与底部按键提示（25/26）之间留 3 行。
+     * 其它（含 GAME_OVER，胜负由弹窗显示）保持空。 */
+    if (g_game.phase == GAME_PLAYING && game_ai_turn(&g_game)) {
+        if (think_on) render_green16_span(21, HUD_COL + 2, "THINKING");  /* T6-R4：+2 列留白 */
+    } else if (g_game.phase == GAME_PLAYING && g_game.mode != GAME_MODE_AI) {
+        render_text_span(21, HUD_COL, "YOUR TURN");
+    }
+
+    /* 按键提示：横向一行一个，8x8 灰，HUD 最底（25/26）。 */
+    hud_text8(25, "UP/DN MOVE");
+    hud_text8(26, "HOLD PLACE");
+}
+
+/* 胜负弹窗（T6 2026-10-19）：棋盘正中央 16 列 x 5 行暗色底板
+ * （rows 12..16 / cols 7..22；col0 = (30-16)/2、row0 = (30-5)/2）。
+ * 文字两行，X 按公式 底板左 + (16 - 文字宽) / 2 完美居中：
+ *   13  BLACK/WHITE WINS（名字 16x16 暖白 + WINS 绿字，宽 10 → X=10）
+ *   15  HOLD TO TITLE（16x16 纯白，宽 13 → X=8；原 PRESS HOLD TO TITLE 精简，
+ *       防止撑破 16 列底板） */
+static void draw_overlay(void)
+{
+    int r;
+    for (r = 12; r <= 16; r++) render_clear_span(r, 7, 16);
+
+    if (g_game.winner == 0) {
+        render_text_span(13, 13, "DRAW");              /* 宽 4 → 7+(16-4)/2 */
+    } else {
+        render_text_span(13, 10, g_game.winner == GOMOKU_BLACK ? "BLACK " : "WHITE ");
+        render_wins(13, 16);
+    }
+    render_text_span(15, 8, "HOLD TO TITLE");
+}
+
+/* HUD 内容签名：只在变化时重画，避免每帧写 30..39 列。 */
+static int hud_sig_changed(int think_on)
+{
+    static int s_phase = -1, s_turn = -1, s_stones = -1, s_winner = -1;
+    static int s_mode = -1, s_nodes = -1, s_ms = -1, s_depth = -1;
+    static int s_lb = -1, s_lw = -1, s_step = -1, s_think = -1;
+    int changed =
+        s_phase != (int)g_game.phase || s_turn != (int)g_game.board.turn ||
+        s_stones != (int)g_game.board.stones || s_winner != g_game.winner ||
+        s_mode != g_game.mode || s_nodes != (int)g_game.ai_nodes ||
+        s_ms != (int)g_game.ai_ms || s_depth != g_game.ai_depth ||
+        s_lb != g_game.level_black || s_lw != g_game.level_white ||
+        s_step != (int)g_game.step_ms || s_think != think_on;
+    s_phase = (int)g_game.phase; s_turn = (int)g_game.board.turn;
+    s_stones = (int)g_game.board.stones; s_winner = g_game.winner;
+    s_mode = g_game.mode; s_nodes = (int)g_game.ai_nodes;
+    s_ms = (int)g_game.ai_ms; s_depth = g_game.ai_depth;
+    s_lb = g_game.level_black; s_lw = g_game.level_white;
+    s_step = (int)g_game.step_ms; s_think = think_on;
+    return changed;
 }
 
 /* 画一帧。
- *   标题屏：整屏重画（logo/菜单/小棋盘），只在内容变化时落地。
- *   对局屏：光标只在"该显示"的时候才画 —— 闪烁灭那半拍、胜负之后都不画。
- * [!] 标题屏**不画 15x15 大棋盘**了（改版前它是"空棋盘 + 左上角菜单"）。
- *     所以进出对局各要**整屏抹一次**：标题屏的 logo / 小棋盘 / 说明行都在
- *     棋盘区之外，不清会留残影（任务书 §2.5.5）。 */
+ *   标题屏：按需重画（logo/菜单/小棋盘），不每帧全屏刷。
+ *   对局屏：2x2 棋盘（30x30 tile）+ 右栏 HUD；只在落子/光标/回合变化时刷。
+ * [!] 标题屏不画大棋盘，进出对局各要整屏抹一次，否则会留残影。 */
 static void draw_frame(uint32_t now)
 {
     static int last_phase = -1;
-    int cr = -1, cc = -1;
+    static int s_stones = -1, s_cr = -2, s_cc = -2, s_on = -1;
+    int cr = -1, cc = -1, on, board_changed;
+    int think_on = 1;                 /* AI 思考闪烁相位：500ms 亮/灭 */
+
+    if (g_game.phase == GAME_COREMARK) {
+        cm_screen_tick(now);          /* 终端演示屏：闪烁/进度/收尾全在里面 */
+        last_phase = GAME_COREMARK;
+        return;
+    }
+
+    if (last_phase == GAME_COREMARK) {
+        /* 离开演示屏（长按 SW6 → 标题）：把借走的图块与调色板全量恢复。
+         * 随后的 draw_title(force=1) 会整屏重画，不会留残影。 */
+        render_term_end();
+    }
 
     if (g_game.phase == GAME_TITLE) {
-        /* 从对局/胜负回来时 force 一次全体重画，把棋盘和 HUD 清干净。 */
         draw_title(now, last_phase != GAME_TITLE);
         last_phase = GAME_TITLE;
         return;
     }
 
     if (last_phase != (int)g_game.phase && last_phase == (int)GAME_TITLE) {
-        render_clear();                 /* 抹掉标题屏 */
-        render_board_frame();
-        render_board_labels();
+        render_clear();                 /* 抹掉标题屏；棋盘 + HUD 随后全画 */
     }
-    last_phase = g_game.phase;
 
-    if (game_cursor_shown(&g_game)) {
-        cr = g_game.cursor_r;
-        cc = g_game.cursor_c;
-    }
-    render_full(&g_game.board, cr, cc);
-    draw_hud();
+    on = game_cursor_shown(&g_game);
+    if (on) { cr = g_game.cursor_r; cc = g_game.cursor_c; }
+
+    if (g_game.phase == GAME_PLAYING && game_ai_turn(&g_game))
+        think_on = (int)((now / (500u * hw_ticks_per_ms())) & 1u);
+
+    board_changed = last_phase != (int)g_game.phase ||
+                    s_stones != (int)g_game.board.stones ||
+                    s_cr != cr || s_cc != cc || s_on != on;
+
+    if (board_changed) render_full2(&g_game.board, cr, cc);
+    if (hud_sig_changed(think_on) || last_phase != (int)g_game.phase)
+        draw_hud(think_on);
+    if (g_game.phase == GAME_OVER && (board_changed || last_phase != (int)g_game.phase))
+        draw_overlay();
+
+    s_stones = (int)g_game.board.stones;
+    s_cr = cr; s_cc = cc; s_on = on;
+    last_phase = g_game.phase;
 }
 
 /* ---------------------------------------------------------------------------
@@ -659,8 +909,6 @@ void gomoku_run(void)
     render_init();
     video_set_scroll(0, 0);      /* 棋类静态，滚动归零；但必须显式写一次 */
     render_clear();
-    render_board_frame();        /* 阶段 1：外框 + 坐标轴，上电画一次（在 15x15 之外）*/
-    render_board_labels();
 
     /* ---- 2) 输入与状态机 -------------------------------------------------- */
     input_init(&g_input, hw_mtime(), hw_key_raw(),
@@ -672,11 +920,24 @@ void gomoku_run(void)
     game_init(&g_game, GOMOKU_AI_LEVEL, GOMOKU_BLACK, BLINK_MS * hw_ticks_per_ms());
     /* demo_delay（AI 对弈每手间隔）在主循环里每帧按 step_ms 现算 —— 菜单可改档 */
 
-    /* 标题屏右侧的 7x7 自动对弈小棋盘：清盘 + 计时起点（脚本走法，见 DEMO_MOVES）*/
-    gomoku_reset(&s_demo);
-    s_demo_i   = 0;
-    s_demo_gen = 0;
-    s_demo_t   = hw_mtime();
+    /* 标题屏右侧的 5x5 自动对弈小棋盘：开局 3 子 + 计时起点（脚本走法，见 DEMO_MOVES）*/
+    demo_seed();
+    s_demo_t = hw_mtime();
+
+    /* ---- SW6+SW7 复位彩蛋（T7）：boot selector 写的演示标志（0xFF80）----
+     * boot.S 三路径：SW6 按住 = 官方裸机跑分（不变）；SW6+SW7 = 写标志后进
+     * RT-Thread。这里读到标志就【跳过标题屏】直接进 GAME_COREMARK 终端演示屏，
+     * 读完【立即清零】—— 一次性语义，否则普通复位会被旧标志再次拽进演示屏。
+     * 界面行为见 coremark_screen.c（A1：真实成绩的重放展示）。 */
+    {
+        volatile uint32_t *flag = (volatile uint32_t *)CM_BOOT_FLAG_ADDR;
+        if (*flag == CM_BOOT_FLAG_MAGIC) {
+            *flag = 0u;
+            g_game.phase = GAME_COREMARK;
+            cm_screen_begin();
+            uart_puts("[boot] coremark demo screen (SW6+SW7)\r\n");
+        }
+    }
 
     /* 第一行就自证版本：FW=固件名，RTL=设计版本号（来自 mimpid）。
      * 两版位流装同一份固件时，靠 RTL= 那一段区分（见上面 design_rev 的说明）。 */
@@ -684,19 +945,17 @@ void gomoku_run(void)
     uart_puthex32(design_rev());
     uart_puts("\r\n");
 
-    /* 版式自检（反馈 T10 要求"在代码里加一条自检，或启动时打印两者"）：
-     * 编译期已有 title_layout_assert 卡住 MINI_BOARD_TOP == TITLE_MENU_ROW0，
-     * 这里再把实际值打出来，上板时一眼能对。 */
+    /* 版式自检：把关键锚点打到串口，上板时一眼能对。 */
     uart_puts("[title] menu_row0=");
     uart_putdec(TITLE_MENU_ROW0);
-    uart_puts(" mini_top=");
-    uart_putdec(MINI_BOARD_TOP);
-    uart_puts(" mini_left=");
-    uart_putdec(MINI_BOARD_LEFT);
+    uart_puts(" mini_cell=");
+    uart_putdec(MINI_CELL_ROW);
+    uart_puts(",");
+    uart_putdec(MINI_CELL_COL);
     uart_puts(" gap=");
     uart_putdec(TITLE_MENU_GAP);
-    uart_puts(" width=");
-    uart_putdec(TITLE_MENU_WIDTH);
+    uart_puts(" value_end=");
+    uart_putdec(TITLE_VALUE_END);
     uart_puts("\r\n");
 
     uart_puts("=== GOMOKU on RV32I ===\r\n");
@@ -704,7 +963,9 @@ void gomoku_run(void)
     uart_puts("      title menu: up/down = move, left/right = change value, hold = OK\r\n");
     uart_puts("      play: tap = move cursor, hold = place\r\n");
     uart_puts("      SW3 = reset\r\n");
+#ifndef __RTTHREAD__
     uart_puts("board: X=black O=white .=empty *=last move  (serial mirror, no monitor needed)\r\n");
+#endif
 
     prev_phase  = (int)g_game.phase;
     prev_stones = (int)g_game.board.stones;
@@ -805,7 +1066,9 @@ void gomoku_run(void)
              * 只打一行 "start, level=N" 的话，玩家根本不知道游戏开没开、
              * 轮到谁、光标在哪 —— 因为开局时棋子数还是 0，不算"变化"，
              * 下面那段 stone-diff 的棋盘快照【不会触发】。 */
+#ifndef __RTTHREAD__
             if (g_game.phase == GAME_PLAYING) uart_dump_board(&g_game);
+#endif
             prev_phase = (int)g_game.phase;
         }
         if (g_game.board.stones != prev_stones) {
@@ -820,8 +1083,11 @@ void gomoku_run(void)
                 uart_putdec((unsigned)g_game.ai_ms);
                 uart_puts("ms\r\n");
             }
-            /* 每变一次棋子就吐一张棋盘 —— 无显示器时靠它验证棋局（见 uart_dump_board） */
+            /* 每变一次棋子就吐一张棋盘 —— 无显示器时靠它验证棋局（见 uart_dump_board）
+             * [!] RT-Thread 宿主不打印（串口带宽不够，会拖慢 UI）。 */
+#ifndef __RTTHREAD__
             uart_dump_board(&g_game);
+#endif
             prev_stones = (int)g_game.board.stones;
         }
 

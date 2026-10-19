@@ -29,7 +29,8 @@
 typedef enum {
     GAME_TITLE = 0,     /* 标题屏：多级菜单 */
     GAME_PLAYING,       /* 对局中 */
-    GAME_OVER           /* 已分胜负或平局 */
+    GAME_OVER,          /* 已分胜负或平局 */
+    GAME_COREMARK       /* CoreMark 终端演示屏（SW6+SW7 复位彩蛋，T7，见 coremark_screen.c）*/
 } game_phase_t;
 
 /* 对局模式（任务 T2）*/

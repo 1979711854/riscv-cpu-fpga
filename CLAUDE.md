@@ -19,6 +19,14 @@
   > 证据分别在 `2026-10-17_p1_ab_bypass.md` 与 `2026-10-17_lut_perf_cross.md`。
   > ⇒ 本节其余处写的 **85.0051 MHz / `c6af65be` / 391.66 分 / LUT 7,753** 全是 **2026-10-16 的历史口径**，
   > 只作对照，**不要再往交付页/PPT 搬**。分支地图与合并纪律见 `doc/reports/2026-10-17_rev1029_入口.md`。
+  > **[T7 演示线 · 2026-10-19]** 分支 `feat/coremark-display`：combined 位流 **`6E2D6020…`**
+  > （17:01:11，boot + CoreMark + RT-Thread，48,270 行 / 24,135 字），76.5052 MHz、
+  > CPU 域 **+0.304 ns / 0 失败端点（21,135）/ Fmax 78.3269**；RT-Thread 五子棋
+  > **59,980 / 61,424 B（堆 1,440B）**。同颗位流裸机 CoreMark 仍为 **352.5**
+  > （`Total ticks 846,440,591`，四 CRC 全对）；RT 终端屏是邮箱成绩**重放**，不是第二次测量。
+  > T7 修复：JALR 双发射 bug 的 nop 绕行、菜单金线、最后一手棋子渲染、监控区真实
+  > tick/uptime/heap；证据 `doc/reports/2026-10-19_t7_coremark_demo_handoff.md`、
+  > 日志 `doc/board/uart_20261019_184426.txt`。
 - 设计内容：**RV32I + M 扩展的 5 级流水线 CPU，顺序双发射**（forwarding 前递 + load-use 停顿 + 多拍除法器；2026-10-06 起 `DUAL_ISSUE=1`），集成 UART/GPIO，跑 riscv-tests 与 **CoreMark v1.0**（要求运行 ≥10s）
 - 可选加分项：2 路组相联 I/D Cache、BTB 动态分支预测 + 完整异常/中断、边缘 AI 加速
 

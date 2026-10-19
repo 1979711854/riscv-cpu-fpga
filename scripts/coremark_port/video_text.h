@@ -8,8 +8,9 @@
  *   1. **计时区间里不许写显存**：`video_init()` 必须在 `start_time()` 之前调完；
  *      计时期间的字符由 `video_mirror_set(0)` 挡掉（见 core_portme.c 的 start_time）。
  *   2. **UART 必须保留**：串口日志是回归证据，镜像只是"多加一路"，不是替换。
- *   3. **调色板/字库与五子棋共用一份**：调色板取 scripts/gomoku/palette.h、
- *      字库取 scripts/gomoku/font.h —— 否则 CoreMark 屏和五子棋屏会是两种风格。
+ *   3. **调色板与五子棋共用一份**：调色板取 scripts/gomoku/palette.h；
+ *      字库用 scripts/gomoku/font_coremark.h（完整 95 字含小写）。
+ *      五子棋 UI 的 font.h 是子集，不能给控制台用（会掉小写字母）。
  *
  * 显存地址（rtl/bus/addr_map.vh）：
  *   nametable 0x8001_0000（字节寻址 r*256+c）

@@ -103,7 +103,18 @@ rt_weak void rt_rv32_system_irq_handler(rt_uint32_t mcause)
  */
 rt_weak void rt_show_stack_frame(void)
 {
+    /* [!] 2026-10-19 T7 上板崩溃定位：原来的转储没有 mcause/mepc/mtval，
+     *     只能看到 ra/a*，无法区分 access/misaligned/illegal。
+     *     这里补上 CSR 原因，并且**只打一次**后自旋 —— 异常分发会 mret 回
+     *     出错指令，不拦就是每秒几百 KB 的重复打印，把 115200 串口灌成乱码。 */
+    static int dumped;
+    if (dumped) { for (;;) { } }
+    dumped = 1;
     rt_kprintf("Stack frame:\r\n----------------------------------------\r\n");
+    /* epc 槽位在普通异常入口没被汇编写入（只有中断切线程时才写），
+     * 可能读到栈上的旧值；**真正可信的 PC 看 mepc**。 */
+    rt_kprintf("TRAP epc=%08x mcause=%08x mepc=%08x mtval=%08x\r\n",
+               s_stack_frame->epc, read_csr(0x342), read_csr(0x341), read_csr(0x343));
     rt_kprintf("ra      : 0x%08x\r\n", s_stack_frame->ra);
     rt_kprintf("mstatus : 0x%08x\r\n", read_csr(0x300));//mstatus
     rt_kprintf("t0      : 0x%08x\r\n", s_stack_frame->t0);

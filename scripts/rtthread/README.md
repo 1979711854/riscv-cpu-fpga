@@ -1,5 +1,12 @@
 # RT-Thread 移植（scripts/rtthread/）
 
+> [!] **当前口径（2026-10-19，T7）**：板级 **76.5052 MHz**；RT-Thread 固件
+> **25,482 行 / 12,741 字**（内存 `12,741` 字口径），静态 **59,980 / 61,424 B**，
+> **堆 1,440 B**；render/AI 双线程 + CoreMark 终端监控屏（`UI TICK` / `UPTIME` /
+> `HEAP FREE` 均为 RT-Thread 官方 API 实时值）。CoreMark 仍由**裸机 SW6 档实测**
+> （352.5 / ITER=3900 / 846,440,591 ticks），RT 终端屏只做**成绩重放**，不是第二次测量。
+> 下面旧段落里的 **85.0051 MHz / 20,274 行 / UART_DIV=738** 是历史线，只作对照。
+
 把 **RT-Thread Nano（v5.3.0 内核子集）** 移植到本项目自制的 RV32IM CPU 上。
 
 > 目录分工跟 `scripts/coremark_port/` 一个路子：

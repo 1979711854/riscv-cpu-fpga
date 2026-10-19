@@ -24,6 +24,9 @@
 static int g_pass = 0;
 static int g_fail = 0;
 
+/* 16x16 子集：ASCII -> 图块号（子集下标表在 font.h）。 */
+#define T16(ch) ((unsigned)(FONT_TILE_BASE + FONT_INDEX[(unsigned char)(ch) - FONT_BASE]))
+
 #define CHECK(cond, msg)                                            \
     do {                                                            \
         if (cond) { g_pass++; }                                     \
@@ -227,7 +230,7 @@ static void test_init(void)
 
         /* 'A' 字模应有前景色像素（不是空白）*/
         {
-            int a_tile = FONT_TILE_BASE + ('A' - FONT_BASE);
+            int a_tile = (int)T16('A');
             int fg = 0;
             for (y = 0; y < TILE_W && !fg; y++)
                 for (x = 0; x < TILE_W && !fg; x++)
@@ -240,7 +243,11 @@ static void test_init(void)
             for (y = 0; y < TILE_W; y++)
                 for (x = 0; x < TILE_W; x++) {
                     uint8_t v = g_pat[(FONT_TILE_BASE + g) * TILE_BYTES + y * TILE_W + x];
-                    if (v != FONT_FG && v != FONT_BG) f_ok = 0;
+                    if (v != FONT_FG && v != FONT_BG) {
+                        f_ok = 0;
+                        printf("      [!] tile %d ('%c') 像素(%d,%d)=%d 不是 FONT_FG/BG\n",
+                               FONT_TILE_BASE + g, FONT_CHARS[g], x, y, v);
+                    }
                 }
         CHECK(f_ok, "字库图块只应含 FONT_FG/FONT_BG 两种颜色");
     }
@@ -286,34 +293,62 @@ static void test_theme(void)
           pat_at(RENDER_TILE_RULE, 8, 15) == PAL_GOLD, "分隔线中间两行应是金色");
     CHECK(pat_at(RENDER_TILE_RULE, 0, 0) == PAL_UI_BG, "分隔线上下应是 UI 底");
 
-    /* 选中框（2026-10-18 第二轮反馈 T4：竖线**只画框内侧**，不许戳出上下边框）
-     *   上排三块：横线在 y=14..15，竖线也只占 y=14..15；
-     *   下排三块：横线在 y=0..1，  竖线也只占 y=0..1；
-     *   只有左/右边（L/R）是整块通高。 */
-    CHECK(pat_at(RENDER_TILE_BOX_TL, 15, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_TL, 15, 15) == PAL_GOLD,
-          "TL 横线在底部两端都该是金色");
-    CHECK(pat_at(RENDER_TILE_BOX_TL, 0, 0) == PAL_UI_BG,
-          "TL 竖线不许戳出上边框（T4）");
-    CHECK(pat_at(RENDER_TILE_BOX_T, 15, 8) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_T, 0, 8) == PAL_UI_BG, "T 横线应在底部");
-    CHECK(pat_at(RENDER_TILE_BOX_TR, 15, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_TR, 0, 15) == PAL_UI_BG,
-          "TR 横线在底部、竖线不外露");
-    CHECK(pat_at(RENDER_TILE_BOX_L, 0, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_L, 8, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_L, 15, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_L, 8, 15) == PAL_UI_BG, "L 只有左侧竖线（通高）");
-    CHECK(pat_at(RENDER_TILE_BOX_R, 8, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_R, 8, 0) == PAL_UI_BG, "R 只有右侧竖线");
-    CHECK(pat_at(RENDER_TILE_BOX_BL, 0, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BL, 0, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BL, 15, 0) == PAL_UI_BG, "BL 横线在顶部、竖线不外露");
-    CHECK(pat_at(RENDER_TILE_BOX_B, 0, 8) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_B, 15, 8) == PAL_UI_BG, "B 横线应在顶部");
-    CHECK(pat_at(RENDER_TILE_BOX_BR, 0, 15) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BR, 0, 0) == PAL_GOLD &&
-          pat_at(RENDER_TILE_BOX_BR, 15, 15) == PAL_UI_BG, "BR 横线在顶部、竖线不外露");
+    /* v2：中文 3 字 / 8x8 灰提示 / 绿色 OK 都必须在 tile 里 */
+    {
+        int any = 0;
+        for (y = 0; y < TILE_W && !any; y++)
+            for (x = 0; x < TILE_W && !any; x++)
+                if (pat_at(FONT_CJK_TILE_BASE, y, x) == PAL_GOLD) any = 1;
+        CHECK(any, "中文「五」应有金色笔画");
+        CHECK(pat_at(FONT8_TILE_BASE, 0, 0) == FONT8_BG, "8x8 空格图块应是暗底");
+        /* [T7] 标题中灰 8x8 子集已整集退役（痛点二后无使用者）——
+         * 原"标题中灰 'H' 应含 PAL_UI_MID 像素"检查随之删除；
+         * 129/130/146..149/178..179 释放为空闲，render_init 不得再写它们。 */
+        {
+            static const uint8_t freed_tiles[] = { 129, 130, 146, 147, 148, 149, 178, 179 };
+            unsigned k;
+            int clean = 1;
+            for (k = 0; k < sizeof(freed_tiles); k++)
+                for (y = 0; y < TILE_W && clean; y++)
+                    for (x = 0; x < TILE_W && clean; x++)
+                        if (pat_at(freed_tiles[k], y, x) != 0xAA) clean = 0;
+            CHECK(clean, "退役的中灰图块（129..179 空隙）render_init 不应再写");
+        }
+
+        /* T6 变色子集：暗金 8x8（POWERED 行）/ 金 16x16（GOMOKU）/
+         * 绿 16x16（THINKING）都必须真的合成出对应前景色的笔画 */
+        any = 0;
+        {
+            int t8g = FONT8G_TILE['&' - FONT_BASE];   /* '&' 只在暗金子集里 */
+            for (y = 0; y < TILE_W && !any; y++)
+                for (x = 0; x < TILE_W && !any; x++)
+                    if (pat_at(t8g, y, x) == PAL_GOLD_DIM) any = 1;
+            CHECK(any, "暗金 8x8 '&' 应含 PAL_GOLD_DIM 像素");
+        }
+        any = 0;
+        {
+            int tg = FONT_GOLD16_TILE['G' - FONT_BASE];
+            for (y = 0; y < TILE_W && !any; y++)
+                for (x = 0; x < TILE_W && !any; x++)
+                    if (pat_at(tg, y, x) == PAL_GOLD) any = 1;
+            CHECK(any, "金色 16x16 'G' 应含 PAL_GOLD 像素");
+        }
+        any = 0;
+        {
+            int tgr = FONT_GREEN16_TILE['T' - FONT_BASE];
+            for (y = 0; y < TILE_W && !any; y++)
+                for (x = 0; x < TILE_W && !any; x++)
+                    if (pat_at(tgr, y, x) == PAL_OK) any = 1;
+            CHECK(any, "绿色 16x16 'T' 应含 PAL_OK 像素");
+        }
+        CHECK(pat_at(RENDER_TILE_FAINT_RULE, 7, 0) == PAL_UI_FAINT &&
+              pat_at(RENDER_TILE_FAINT_RULE, 0, 0) == PAL_UI_BG,
+              "极暗线应在 y=7、其余为 UI 底");
+        CHECK(pat_at(RENDER_TILE_DESC_ARROW, 4, 5) == PAL_GOLD_DIM ||
+              pat_at(RENDER_TILE_DESC_ARROW, 5, 6) == PAL_GOLD_DIM ||
+              pat_at(RENDER_TILE_DESC_ARROW, 6, 5) == PAL_GOLD_DIM,
+              "暗金锚点应含 PAL_GOLD_DIM 像素");
+    }
 
     /* 大 logo：24 块全都要有金色（字）或棋子色（O），且只出现这几种颜色 */
     for (t = 0; t < 24; t++) {
@@ -357,10 +392,11 @@ static void test_nt_address(void)
           "左上角格应是「左上角形状 + 空」");
     CHECK(g_nt[(BOARD_ROW0 + 14) * 256 + (BOARD_COL0 + 14)]
           == RENDER_TILE(TILE_SHAPE_BOTRIGHT, RENDER_ST_EMPTY), "右下角格应是「右下角形状」");
-    /* T6 起天元画星位点（render_tile_for 优先级：星位 > 空；与 tb_gomoku.v 的
-       T_STAR 断言同口径）*/
+    /* v2 起旧的 1x1 星位图块 149 已删除；星位只在对局 2x2 棋盘（245..248）。
+       这里的天元应回到普通内部空格图块。 */
     CHECK(g_nt[(BOARD_ROW0 + 7) * 256 + (BOARD_COL0 + 7)]
-          == RENDER_TILE_STAR, "正中天元应是星位点");
+          == RENDER_TILE(TILE_SHAPE_INNER, RENDER_ST_EMPTY),
+          "1x1 天元应是普通空格（星位已改 2x2）");
     /* 棋盘以外不许被碰 */
     CHECK(g_nt[(BOARD_ROW0 - 1) * 256 + BOARD_COL0] == 0xAA, "棋盘上方不该被写");
     CHECK(g_nt[BOARD_ROW0 * 256 + (BOARD_COL0 - 1)] == 0xAA, "棋盘左侧不该被写");
@@ -459,22 +495,24 @@ static void test_text(void)
     memset(g_nt, 0xAA, sizeof(g_nt));
     render_init();
 
-    /* 写一行文字，验证 nametable 里每个字符落到正确的字库图块 */
-    render_text(1, 0, "TURN: BLACK");
-    CHECK(g_nt[1 * 256 + 0] == FONT_TILE_BASE + ('T' - FONT_BASE), "第 0 列应是 'T' 字模");
-    CHECK(g_nt[1 * 256 + 4] == FONT_TILE_BASE + (':' - FONT_BASE), "第 4 列应是 ':' 字模");
-    CHECK(g_nt[1 * 256 + 5] == FONT_TILE_BASE, "第 5 列应是空格字模");
-    CHECK(g_nt[1 * 256 + 6] == FONT_TILE_BASE + ('B' - FONT_BASE), "第 6 列应是 'B' 字模");
+    /* 写一行文字，验证 nametable 里每个字符落到正确的字库图块
+     * [T6-R2] 16x16 主字库已回收 ':' 等 11 个零使用符号（':' 只出现在
+     * 8x8 文案里），测试文案同步用现行 HUD 值风格。 */
+    render_text(1, 0, "TURN BLACK");
+    CHECK(g_nt[1 * 256 + 0] == T16('T'), "第 0 列应是 'T' 字模");
+    CHECK(g_nt[1 * 256 + 4] == FONT_TILE_BASE, "第 4 列应是空格字模");
+    CHECK(g_nt[1 * 256 + 5] == T16('B'), "第 5 列应是 'B' 字模");
+    CHECK(g_nt[1 * 256 + 9] == T16('K'), "第 9 列应是 'K' 字模");
 
     /* 小写折叠到大写：'a' 应映射到 'A' 的字模 */
     render_text(2, 0, "abc");
-    CHECK(g_nt[2 * 256 + 0] == FONT_TILE_BASE + ('A' - FONT_BASE), "'a' 应折叠到 'A'");
-    CHECK(g_nt[2 * 256 + 1] == FONT_TILE_BASE + ('B' - FONT_BASE), "'b' 应折叠到 'B'");
-    CHECK(g_nt[2 * 256 + 2] == FONT_TILE_BASE + ('C' - FONT_BASE), "'c' 应折叠到 'C'");
+    CHECK(g_nt[2 * 256 + 0] == T16('A'), "'a' 应折叠到 'A'");
+    CHECK(g_nt[2 * 256 + 1] == T16('B'), "'b' 应折叠到 'B'");
+    CHECK(g_nt[2 * 256 + 2] == T16('C'), "'c' 应折叠到 'C'");
 
     /* 居中：len=5 的字符串起点应在 (40-5)/2 = 17 列 */
     render_text_center(3, "HELLO");
-    CHECK(g_nt[3 * 256 + 17] == FONT_TILE_BASE + ('H' - FONT_BASE), "居中起点应在列 17");
+    CHECK(g_nt[3 * 256 + 17] == T16('H'), "居中起点应在列 17");
 
     /* 未定义字符 -> 空格字模。用 0x7F（DEL，在 0x20..0x7E 之外）当未定义字符；
      * 别用 '@' —— '@' 是 0x40，本来就在字库范围内，会命中它自己的字模。 */
@@ -509,6 +547,133 @@ static void test_text(void)
     }
 }
 
+/* ---------------------------------------------------------------------------
+ * G. CoreMark 终端演示屏（render_term_begin / render_term_end）
+ * ---------------------------------------------------------------------------
+ * 这一段是 T7 补的：终端屏的 16x16 字形（FONT_TERM_GREEN16/GOLD16）与 8x8 暗金
+ * 子集（FONT8G）在生成侧都是 **ord(ch)-FONT_BASE** 索引，而 synth_glyph_set 的
+ * 映射模式按 **ASCII 原值** 查表 —— 直接把表传进去会整体错位 32 格（'&' 取到
+ * 0xFF 项 ⇒ 写 tile 255，真正的 tile 73 从未被写）。上面 B/B2 只覆盖 render_init
+ * 的 16x16 主字库，盖不住这条路径，所以这里直接调 begin/end 并给判据：
+ *   - 字形落到 font.h 的【借用图块号】上，且 tile 255 不被写
+ *   - 16x16 系必须是 2x（10x14，占 y=1..14），不是半高偏下
+ *   - 配色：绿 = PAL_OK / 亮金 = PAL_GOLD_BRIGHT / 灰 = PAL_UI_DIM
+ *   - render_term_end() 必须把调色板 + 全部图块逐字节还原
+ * ------------------------------------------------------------------------- */
+static int tile_has(int tile, int color)
+{
+    int y, x;
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            if (pat_at(tile, y, x) == color) return 1;
+    return 0;
+}
+
+static void test_terminal(void)
+{
+    static uint8_t pat0[PAT_BYTES];
+    static uint8_t pal0[PAL_BYTES];
+    int y, x, top = 0, bot = 0, out = 0;
+
+    printf("---- G. CoreMark 终端演示屏（借图块 / 配色 / 还原）----\n");
+    /* 0) 查表 API：ord-32 约定、小写折叠、子集外返回 0xFF（term_span 曾错位 32 格） */
+    CHECK(render_term_tile(RENDER_TERM_SET_GREEN16, '[') == 154,
+          "GREEN16 '[' 应映射到 tile 154");
+    CHECK(render_term_tile(RENDER_TERM_SET_GREEN16, 'r') == 156,
+          "小写 'r' 应折叠到 'R'（tile 156）");
+    CHECK(render_term_tile(RENDER_TERM_SET_GOLD16, '3') == 131,
+          "GOLD16 '3' 应映射到 tile 131");
+    CHECK(render_term_tile(RENDER_TERM_SET_GREEN16, '&') == 0xFF,
+          "GREEN16 子集外的字符应返回 0xFF");
+
+    memset(g_pat, 0xAA, sizeof(g_pat));
+    memset(g_pal, 0xAA, sizeof(g_pal));
+    render_init();
+    memcpy(pat0, g_pat, sizeof(g_pat));
+    memcpy(pal0, g_pal, sizeof(g_pal));
+
+    render_term_begin();
+
+    /* 1) 8x8 子集：OK 绿 / % 灰（栈上 ASCII 映射，本来就是对的，锁住） */
+    CHECK(tile_has(143, PAL_OK) && tile_has(144, PAL_OK),
+          "终端绿 8x8 'O'/'K'（143/144）应含 PAL_OK");
+    CHECK(tile_has(145, PAL_UI_DIM), "终端灰 8x8 '%'（145）应含 PAL_UI_DIM");
+
+    /* 2) 16x16 绿色子集："[]RUNIGPAS" -> 154..163；'['=154、'G'=160 */
+    CHECK(tile_has(154, PAL_OK), "终端绿 16x16 '[' 应含 PAL_OK（tile 154）");
+    CHECK(tile_has(160, PAL_OK), "终端绿 16x16 'G' 应含 PAL_OK（tile 160）");
+
+    /* 3) 16x16 亮金子集跨三个号段：'C'=164 / '3'=131 / '7'=87 / 'H'=141 */
+    CHECK(tile_has(164, PAL_GOLD_BRIGHT), "终端金 16x16 'C' 应含 PAL_GOLD_BRIGHT（164）");
+    CHECK(tile_has(131, PAL_GOLD_BRIGHT), "终端金 16x16 '3' 应含 PAL_GOLD_BRIGHT（131）");
+    CHECK(tile_has(87,  PAL_GOLD_BRIGHT), "终端金 16x16 '7' 应含 PAL_GOLD_BRIGHT（87）");
+    CHECK(tile_has(141, PAL_GOLD_BRIGHT), "终端金 16x16 'H' 应含 PAL_GOLD_BRIGHT（141）");
+
+    /* 4) 进度条：填充 = 亮绿、空轨 = 极暗，必须是整块纯色 */
+    {
+        int fill_ok = 1, track_ok = 1;
+        for (y = 0; y < TILE_W; y++)
+            for (x = 0; x < TILE_W; x++) {
+                if (pat_at(RENDER_TILE_TERM_FILL,  y, x) != PAL_OK)       fill_ok  = 0;
+                if (pat_at(RENDER_TILE_TERM_TRACK, y, x) != PAL_UI_FAINT) track_ok = 0;
+            }
+        CHECK(fill_ok,  "进度条填充块应全是 PAL_OK");
+        CHECK(track_ok, "进度条空轨块应全是 PAL_UI_FAINT");
+    }
+
+    /* 5) 16x16 几何：'[' 字模 7 行全亮，2x 后应占 y=1..14（半高 bug 会缩在 4..10） */
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            if (pat_at(154, y, x) == PAL_OK) {
+                if (y <= 2)  top = 1;
+                if (y >= 13) bot = 1;
+                if (y < 1 || y > 14) out = 1;
+            }
+    CHECK(top && bot, "16x16 字形应占满 10x14：顶部(y<=2)与底部(y>=13)都要有笔画");
+    CHECK(!out, "16x16 字形不应越出 y=1..14");
+
+    /* 6) 错位 32 格的特征就是写 tile 255（哨兵）—— 必须仍然没被写 */
+    CHECK(g_pat[(unsigned)RENDER_TILE_MAX * TILE_BYTES] == 0xAA,
+          "render_term_begin 不应写 tile 255");
+
+    /* 7) 退出必须逐字节还原（借图块策略的前提：render_init 全量重建） */
+    render_term_end();
+    CHECK(memcmp(g_pat, pat0, sizeof(g_pat)) == 0,
+          "render_term_end 应把全部图块逐字节还原");
+    CHECK(memcmp(g_pal, pal0, sizeof(g_pal)) == 0,
+          "render_term_end 应把调色板逐字节还原");
+}
+
+/* ---------------------------------------------------------------------------
+ * H. 最后一手标记：必须是“真实棋子 + 右上红三角”，不能是整块木色
+ * ------------------------------------------------------------------------- */
+static void test_lastmove(void)
+{
+    int y, x, stone = 0, red = 0;
+
+    printf("---- H. 最后一手标记（黑/白棋子保留，红三角在右上）----\n");
+    render_init();
+
+    CHECK(tile_has(RENDER_TILE_BOARD2_LAST, PAL_BLACK),
+          "黑子最后一手标记应含 PAL_BLACK（不能整块木色）");
+    CHECK(tile_has(RENDER_TILE_BOARD2_LAST, PAL_RED),
+          "黑子最后一手标记应含 PAL_RED");
+    CHECK(tile_has(RENDER_TILE_BOARD2_LAST_W, PAL_WHITE),
+          "白子最后一手标记应含 PAL_WHITE");
+    CHECK(tile_has(RENDER_TILE_BOARD2_LAST_W, PAL_RED),
+          "白子最后一手标记应含 PAL_RED");
+
+    /* 右上象限里至少要有 20 个棋子像素 —— 旧版整块 PAL_BG 会是 0 */
+    for (y = 0; y < 16; y++)
+        for (x = 0; x < 16; x++) {
+            uint8_t c = pat_at(RENDER_TILE_BOARD2_LAST, y, x);
+            if (c == PAL_BLACK || c == PAL_BLACK_HI) stone++;
+            if (c == PAL_RED) red++;
+        }
+    CHECK(stone >= 20, "黑子最后一手右上象限应保留棋子像素（>=20）");
+    CHECK(red >= 10,  "黑子最后一手右上象限应有红三角（>=10）");
+}
+
 /* ------------------------------------------------------------------------- */
 int main(void)
 {
@@ -525,6 +690,8 @@ int main(void)
     test_render_states();
     test_cursor_cost();
     test_text();
+    test_terminal();
+    test_lastmove();
 
     /* ---- 把画面显示出来（没有显示器时唯一能看见棋盘的办法）---- */
     printf("\n================ 画面预览（模拟 PPU 读显存后的结果）================\n");

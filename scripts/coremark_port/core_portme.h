@@ -46,7 +46,15 @@ typedef signed int     ee_s32;
 typedef double         ee_f32;
 typedef unsigned char  ee_u8;
 typedef unsigned int   ee_u32;
+#ifdef VIDEO_TEXT_HOST
+/* x86 主机预览：x64 上指针 64 位，ee_ptr_int 截成 32 位会让 align_mem()
+ * 的整数往返把指针打断（core_matrix 首次访问即崩）。固件构建【永不定义】
+ * VIDEO_TEXT_HOST —— 走下面的原定义（RV32 指针 32 位，ee_u32 正好）。 */
+#include <stdint.h>
+typedef uintptr_t      ee_ptr_int;
+#else
 typedef ee_u32         ee_ptr_int;
+#endif
 typedef size_t         ee_size_t;
 #define NULL ((void *)0)
 

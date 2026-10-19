@@ -71,6 +71,10 @@ void preview_render_scene(int scene)
         g_game.phase     = GAME_TITLE;
         g_game.menu_page = MENU_PAGE_AI;
         g_game.menu_cursor = 0;
+    } else if (scene == 4) {                /* human submenu */
+        g_game.phase     = GAME_TITLE;
+        g_game.menu_page = MENU_PAGE_HUMAN;
+        g_game.menu_cursor = 0;
     } else if (scene == 2) {                /* in-game */
         g_game.mode        = GAME_MODE_HUMAN;
         g_game.human       = GOMOKU_BLACK;
@@ -83,14 +87,12 @@ void preview_render_scene(int scene)
         gomoku_place(&g_game.board, 7, 9);
         gomoku_place(&g_game.board, 11, 6);
         g_game.cursor_r = 7;
-        g_game.cursor_c = 7;
+        g_game.cursor_c = 10;   /* 空格，能看见光标 */
         g_game.cursor_on = 1;
         g_game.cursor_hidden = 0;
         g_game.ai_nodes = 12874u;
         g_game.ai_depth = 6;
         g_game.ai_ms    = 569u;
-        render_board_frame();
-        render_board_labels();
     } else {                                /* game over: black wins */
         g_game.mode        = GAME_MODE_HUMAN;
         g_game.human       = GOMOKU_BLACK;
@@ -106,11 +108,14 @@ void preview_render_scene(int scene)
         g_game.ai_nodes = 12874u;
         g_game.ai_depth = 6;
         g_game.ai_ms    = 569u;
-        render_board_frame();
-        render_board_labels();
     }
 
-    draw_frame(0);
+    /* 时间轴：标题/子菜单用 0（PRESS ANY KEY 亮）；对局用 750ms，
+     * 让 THINKING 落在"亮"相位，截图能看见（固件里 500ms 交替）。 */
+    {
+        uint32_t now = (scene == 2) ? (750u * hw_ticks_per_ms()) : 0u;
+        draw_frame(now);
+    }
 }
 '''
 

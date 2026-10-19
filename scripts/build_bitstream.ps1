@@ -26,7 +26,10 @@
     gomoku   = 五子棋版（HDMI 出棋盘，4 个按键操作，串口打印 AI 节点数/耗时）
     combined = **[交付档] 单一位流**：boot selector + CoreMark + RT-Thread 三块镜像
                合成一份 mem.hex（scripts/merge_images.py 校验后合并）。
-               复位后读 GPIO 的 key[2]（SW6）：按住 → CoreMark，松开 → 五子棋。
+               复位后读 GPIO 的 key[2]/key[3]（SW6/SW7，2026-10-19 T7 起三路径）：
+                 SW6 按住 + SW7 松开 → CoreMark 官方跑分
+                 SW6 按住 + SW7 按住 → RT-Thread 的 CoreMark 终端演示屏（读 0xFF00 邮箱重放）
+                 SW6 松开（默认）    → RT-Thread 五子棋
                这一版是为了满足官方答疑第 53 问（R99）「跑分和应用同一个 bit 流」。
 [!] 各变体会自动设置 cpu_top_board 的 DEBUG_LED 开关：
          coremark -> DEBUG_LED=1（led[1:0] 显示 pll_locked/done，看跑分状态）
@@ -162,34 +165,28 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 #                 76.5052MHz ⇒ 21048 行（10524 字）← 带 Cache 的降频档
 #     （.text：gomoku 25,104 B；rtthread 40,548 → 41,901/41,905 B，静态占用
 #       52,761 B / 61,440 = 85.9%，仍留 5,144 B 堆）
-$expectLines = @{ coremark = @(22790, 22782); demo = @(326);
-                 # [!] 2026-10-18 任务 B（CoreMark 镜像上 HDMI）：CoreMark 镜像加了
-                 #     video_text.c（文本控制台 + 结果页 + 共享邮箱 + 64 位分数），
-                 #     mem.hex 17,104 -> 22,790 行（ITER=3900；ITER=1 是 22,724，
-                 #     差 66 行 = 33 字，来自 seed4 常量与对齐）。
-                 #     第二轮反馈 C1~C4 的结果页（video_text_at + 分组排版）也在这份里。
-                 #     video_text.o **排在链接最后**，benchmark 那批 .o 的地址不变 ——
-                 #     否则 Total ticks 会从 217,088 变成 217,089（见 run_coremark.ps1）。
-                 # [!] 2026-10-18 任务 A（标题屏改版 + 第二轮版面反馈）后重新实测：
-                 #     rtthread mem.hex = 19,818 行（9,909 字），
-                 #     text 39,408 / data 228 / bss 11,192，_end = 0x1CBA8，
-                 #     堆 9,288 B（__heap_end 0x1EFF0）⇒ 满足"堆 >= 8KB"。
-                 #     比改版前小 2,500 行：36 块棋盘图块从 .rodata 的 9,216 B 常量表
-                 #     改成 render.c 的运行时合成（与 gen_tiles.py 逐像素一致，
-                 #     test_render 用 tiles_data.h 对拍）。
-                 #     [重点] 这个数必须用【非 -Sim】的 rtthread\build.ps1 -Firmware 量。
-                  rtthread = @(19818, 20100);
-                  boot = @(34);
-                 # combined = 三块的**行数之和**（elf2mem 每字 2 行，且 merge_images.py
-                 # 已断言三块不重叠 ⇒ 合并后行数 = 行数之和，不会多也不会少）：
-                 #   boot 34 + coremark 22,790 + rtthread 19,818 = 42,642
-                 combined = @(42642, 42916);
-                  video = @(758); gomoku = @(11834) }
-$expectDesc  = @{ coremark = "11391 字（含 HDMI 文本控制台 + 分组结果页，2026-10-18 主界面改版后实测）"; demo = "163 字";
-                  rtthread = "10050 字（0x10000 重定位 + 76.5MHz，2026-10-18 主界面改版后实测）";
-                  boot = "17 字（boot selector）";
-                  combined = "21,458 字 = boot 17 + coremark 11391 + rtthread 10050";
-                  video = "379 字"; gomoku = "5917 字（第二轮界面改版后）" }
+# [!] 2026-10-19 T7-R3 重新实测（**本节数字为准**；上面的 10-18 注释是历史口径）：
+#       boot.hex      = 60 行（30 字：T7 boot 三路径选路，17 -> 30 字）
+#       coremark.hex  = 22,728 行（11,364 字，ITER=3900，T7 结果页改版后）
+#       rtthread.hex  = 25,482 行（12,741 字；T7-R5 金线/最后一手修复后：
+#                       text 50,668 + data 296 + bss 9,016，静态 59,980 / 61,424，
+#                       堆余 1,440 B。**必须 ≥~1.3KB**，否则 RT-Thread 的 main
+#                       线程（rt_thread_create 从堆取 1024B 栈 + TCB）创建失败，
+#                       串口只出 banner 就停 —— 2026-10-19 实踩）
+#       gomoku.hex    = 18,508 行（9,254 字，T7-R5；text+data = 37,016 B）
+#     combined = 三块行数之和（elf2mem 每字 2 行，merge_images.py 断言不重叠）：
+#       60 + 22,728 + 25,482 = 48,270 行（24,135 字）
+#     [重点] rtthread 的数必须用【非 -Sim】的 `rtthread\build.ps1 -Firmware` 量。
+$expectLines = @{ coremark = @(22728); demo = @(326);
+                  rtthread = @(25482);
+                  boot = @(60);
+                  combined = @(48270);
+                  video = @(758); gomoku = @(18508) }
+$expectDesc  = @{ coremark = "11,364 字（ITER=3900，T7 结果页改版后实测）"; demo = "163 字";
+                  rtthread = "12,741 字（0x10000 + 76.5MHz，T7-R5，堆 1,440B）";
+                  boot = "30 字（boot selector，T7 三路径）";
+                  combined = "24,135 字 = boot 30 + coremark 11,364 + rtthread 12,741";
+                  video = "379 字"; gomoku = "9,254 字（T7-R5 实测）" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，
 # 命令行没法传 -D 宏，所以这里**直接改默认值再综合**，结束后还原。
@@ -514,10 +511,11 @@ if ($Variant -eq "coremark" -or $Variant -eq "combined") {
     Write-Host "       分数预期：经典分 $([math]::Round($score, 1)) / 主分 $([math]::Round($perMhz, 4)) CoreMark/MHz（DUAL_ISSUE=$dualIssue，LANEB_MEM=$laneBMem；主分与频率无关）"
     if ($Variant -eq "combined") {
         Write-Host ""
-        Write-Host " [单一位流] 复位后由 boot selector 选路（key[2] = 丝印 SW6，低有效）："
-        Write-Host "     **按住 SW6 再按 SW3 复位** → CoreMark 跑分（上面这条期望值）"
-        Write-Host "     **直接按 SW3 复位**       → RT-Thread 五子棋（HDMI + 按键）"
-        Write-Host "   验收：同一颗位流里两条路径都要跑通，录视频时先跑分再复位进五子棋。"
+        Write-Host " [单一位流] 复位后由 boot selector 选路（key[2]=SW6 / key[3]=SW7，低有效）："
+        Write-Host "     **按住 SW6（SW7 松开）+ SW3 复位** → CoreMark 跑分（上面这条期望值）"
+        Write-Host "     **按住 SW6 + 按住 SW7 + SW3 复位** → CoreMark 终端演示屏（重放邮箱成绩）"
+        Write-Host "     **直接按 SW3 复位**               → RT-Thread 五子棋（HDMI + 按键）"
+        Write-Host "   验收：同一位流三条路径都要跑通；演示屏需先跑过一次官方 SW6 档（邮箱才有成绩）。"
     }
 } elseif ($Variant -eq "rtthread") {
     Write-Host "  2) 烧完开串口，应打印 RT-Thread banner + gomoku 的 render/AI 两条线程："

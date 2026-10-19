@@ -22,11 +22,30 @@ volatile ee_s32 seed4_volatile = ITERATIONS;
 volatile ee_s32 seed5_volatile = 0;
 
 /* 读 MMIO 周期计数器（0xFFF4，跟上系统时钟自由跑） */
+#ifdef VIDEO_TEXT_HOST
+/* x86 主机预览：没有 mtime 外设，直读字面地址会崩。返回合成计数器，让
+ * stop-start = ITERATIONS × VIDEO_TEXT_HOST_TICKS_PER_ITER（默认 217,088 =
+ * 板上实测每迭代拍数），结果页数字与板级口径自洽（版式全真、数字示意）。
+ * [!] 该计数器只在 start_time/stop_time 各被读一次（ee_printf 的忙等在
+ *     主机预览里已被短路，见 ee_printf.c）。 */
+#ifndef VIDEO_TEXT_HOST_TICKS_PER_ITER
+#define VIDEO_TEXT_HOST_TICKS_PER_ITER 217088u
+#endif
+CORETIMETYPE
+barebones_clock(void)
+{
+    static unsigned long long host_clock = 0;
+    CORETIMETYPE              now        = (CORETIMETYPE)host_clock;
+    host_clock += (unsigned long long)ITERATIONS * VIDEO_TEXT_HOST_TICKS_PER_ITER;
+    return now;
+}
+#else
 CORETIMETYPE
 barebones_clock(void)
 {
     return (CORETIMETYPE)(*(volatile ee_u32 *)0xFFF4);
 }
+#endif
 
 #define GETMYTIME(_t)              (*_t = barebones_clock())
 #define MYTIMEDIFF(fin, ini)       ((fin) - (ini))
@@ -99,6 +118,24 @@ portable_init(core_portable *p, int *argc, char *argv[])
      *     所有流水线分解数据静默失效（而 `Total ticks` 仍然是对的，所以看不出来）。
      *     所以这里**直接写 UART 口、不忙等**：这 30 来个字符进的是 1024 深的
      *     FIFO，而后头还有十几秒的 CoreMark 要跑，早在程序结束前就发完了。 */
+#ifdef VIDEO_TEXT_HOST
+    /* x86 主机预览：无 UART/CSR 外设（0xFFFC 直写与 csrr 在主机上都会崩）。
+     * banner 只走显存镜像（与板上画面一致）；版本号填当前 DESIGN_REV
+     * （rtl/core/csr_file.v = 0x20261027）。 */
+    {
+        static const char pre[] = "[build] FW=COREMARK RTL=0x";
+        static const char hx[]  = "0123456789abcdef";
+        const char *p;
+        unsigned    rev = 0x20261027u;
+        int         i;
+
+        video_text_init();
+        for (p = pre; *p; p++) video_text_putc(*p);
+        for (i = 28; i >= 0; i -= 4) video_text_putc(hx[(rev >> i) & 0xF]);
+        video_text_putc('\n');          /* putc 忽略 '\r'，只处理 '\n' */
+        video_text_mirror(0);
+    }
+#else
     {
         volatile ee_u8 *uart = (volatile ee_u8 *)0xFFFC;   /* 兼容区 UART 发送口 */
         static const char pre[] = "[build] FW=COREMARK RTL=0x";
@@ -132,6 +169,7 @@ portable_init(core_portable *p, int *argc, char *argv[])
          *   · 又不必往 start_time() 里加指令（加了会让计时区间多 1 拍，见上面的注释）。 */
         video_text_mirror(0);
     }
+#endif /* VIDEO_TEXT_HOST */
 
     (void)argc;
     (void)argv;
@@ -155,6 +193,11 @@ static const core_results *results_from_port(core_portable *p)
  * [!] **magic 最后写** —— 读的一方（五子棋）据此判断"这是一份完整结果"。 */
 static void mailbox_publish(const core_results *r, ee_u32 score_x100, ee_u16 seedcrc)
 {
+#ifdef VIDEO_TEXT_HOST
+    /* x86 主机预览：0xFF00 邮箱是字面地址直写（主机上会崩），跳过 —— 不影响屏幕。 */
+    (void)r; (void)score_x100; (void)seedcrc;
+    return;
+#else
     volatile ee_u32 *m = (volatile ee_u32 *)CM_MBOX_BASE;
 
     m[CM_MBOX_I_MAGIC] = 0u;                       /* 先撤销，别让旧 magic 骗到人 */
@@ -167,6 +210,7 @@ static void mailbox_publish(const core_results *r, ee_u32 score_x100, ee_u16 see
     m[CM_MBOX_I_CRCSTATE] = (ee_u32)r->crcstate;
     m[CM_MBOX_I_FLAGS]    = (r->err == 0) ? (ee_u32)CM_MBOX_FLAG_CRC_OK : 0u;
     m[CM_MBOX_I_MAGIC]    = (ee_u32)CM_MBOX_MAGIC; /* 最后 */
+#endif /* VIDEO_TEXT_HOST */
 }
 
 /* ---- 结果页用的小工具：自己拼串（固件没有 sprintf）---- */
@@ -320,6 +364,7 @@ portable_fini(core_portable *p)
      *   计数器是 mem_bus 里的只读 MMIO（0x8000_0018~0x24，见 scripts/demo/addr_map.h）；
      *   DCACHE_EN/ICACHE_EN=0 时它们恒 0，所以这里无条件打也无害。
      *   同样直写 0xFFFC、不走 ee_printf（理由见 portable_init 的长注释）。 */
+#ifndef VIDEO_TEXT_HOST /* x86 主机预览：0xFFFC/0x80000018 字面地址直读写会崩，跳过 */
     {
         volatile ee_u8 *uart = (volatile ee_u8 *)0xFFFC;
         static const char hx[] = "0123456789abcdef";
@@ -340,5 +385,6 @@ portable_fini(core_portable *p)
             *uart = (ee_u8)'\n';
         }
     }
+#endif /* VIDEO_TEXT_HOST */
     p->portable_id = 0;
 }

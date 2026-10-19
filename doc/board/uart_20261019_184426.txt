@@ -1,0 +1,374 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-19 18:44:26
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+item=AI
+mode=AI
+item=HUMAN
+mode=HUMAN
+item=AI
+mode=AI
+menu=AI
+item=BLACK
+item=WHITE
+item=STEP
+item=START
+[hb] alive, uptime 10000 ticks
+item=STEP
+item=START
+[hb] alive, uptime 15000 ticks
+item=STEP
+item=START
+AI match: black=NORMAL white=NORMAL step=1000ms
+[hb] alive, uptime 20000 ticks
+AI moved, nodes=416 depth=4 t=195ms
+AI moved, nodes=1287 depth=4 t=630ms
+AI moved, nodes=1355 depth=4 t=713ms
+[hb] alive, uptime 25000 ticks
+AI moved, nodes=830 depth=4 t=440ms
+AI moved, nodes=805 depth=4 t=453ms
+AI moved, nodes=983 depth=4 t=598ms
+[hb] alive, uptime 30000 ticks
+AI moved, nodes=1010 depth=4 t=666ms
+AI moved, nodes=1083 depth=4 t=741ms
+AI moved, nodes=1087 depth=4 t=770ms
+[hb] alive, uptime 35000 ticks
+AI moved, nodes=1279 depth=4 t=895ms
+AI moved, nodes=1720 depth=4 t=1282ms
+AI moved, nodes=1161 depth=4 t=839ms
+[hb] alive, uptime 40000 ticks
+AI moved, nodes=901 depth=4 t=655ms
+AI moved, nodes=652 depth=4 t=489ms
+AI moved, nodes=946 depth=4 t=758ms
+[hb] alive, uptime 45000 ticks
+AI moved, nodes=832 depth=4 t=709ms
+AI moved, nodes=536 depth=4 t=474ms
+AI moved, nodes=293 depth=4 t=248ms
+[hb] alive, uptime 50000 ticks
+AI moved, nodes=1159 depth=4 t=1021ms
+AI moved, nodes=425 depth=4 t=403ms
+[hb] alive, uptime 55000 ticks
+AI moved, nodes=1135 depth=4 t=1107ms
+AI moved, nodes=464 depth=4 t=468ms
+AI moved, nodes=1379 depth=4 t=1440ms
+[hb] alive, uptime 60000 ticks
+AI moved, nodes=1153 depth=4 t=1228ms
+AI moved, nodes=1042 depth=4 t=1110ms
+[hb] alive, uptime 65000 ticks
+AI moved, nodes=798 depth=4 t=829ms
+AI moved, nodes=889 depth=4 t=941ms
+[hb] alive, uptime 70000 ticks
+AI moved, nodes=1464 depth=4 t=1626ms
+AI moved, nodes=373 depth=4 t=401ms
+AI moved, nodes=504 depth=4 t=559ms
+[hb] alive, uptime 75000 ticks
+AI moved, nodes=794 depth=4 t=892ms
+AI moved, nodes=783 depth=4 t=881ms
+AI moved, nodes=403 depth=4 t=463ms
+[hb] alive, uptime 80000 ticks
+AI moved, nodes=1475 depth=4 t=1747ms
+AI moved, nodes=470 depth=4 t=572ms
+[hb] alive, uptime 85000 ticks
+AI moved, nodes=891 depth=4 t=1106ms
+AI moved, nodes=772 depth=4 t=941ms
+[hb] alive, uptime 90000 ticks
+AI moved, nodes=1562 depth=4 t=1932ms
+AI moved, nodes=1232 depth=4 t=1496ms
+AI moved, nodes=745 depth=4 t=909ms
+[hb] alive, uptime 95000 ticks
+AI moved, nodes=382 depth=4 t=476ms
+AI moved, nodes=928 depth=4 t=1179ms
+[hb] alive, uptime 100000 ticks
+AI moved, nodes=1141 depth=4 t=1430ms
+AI moved, nodes=1411 depth=4 t=1765ms
+[hb] alive, uptime 105000 ticks
+AI moved, nodes=896 depth=4 t=1108ms
+AI moved, nodes=909 depth=4 t=1125ms
+[hb] alive, uptime 110000 ticks
+AI moved, nodes=1036 depth=4 t=1299ms
+AI moved, nodes=1329 depth=4 t=1643ms
+[hb] alive, uptime 115000 ticks
+AI moved, nodes=801 depth=4 t=1009ms
+AI moved, nodes=978 depth=4 t=1225ms
+AI moved, nodes=1023 depth=4 t=1281ms
+[hb] alive, uptime 120000 ticks
+AI moved, nodes=445 depth=4 t=548ms
+AI moved, nodes=425 depth=4 t=509ms
+AI moved, nodes=431 depth=4 t=514ms
+[hb] alive, uptime 125000 ticks
+AI moved, nodes=342 depth=4 t=398ms
+AI moved, nodes=1012 depth=4 t=1208ms
+[hb] alive, uptime 130000 ticks
+AI moved, nodes=1217 depth=4 t=1467ms
+AI moved, nodes=363 depth=4 t=433ms
+AI moved, nodes=516 depth=4 t=608ms
+[hb] alive, uptime 135000 ticks
+AI moved, nodes=782 depth=4 t=930ms
+AI moved, nodes=1021 depth=4 t=1208ms
+AI moved, nodes=340 depth=4 t=397ms
+[hb] alive, uptime 140000 ticks
+AI moved, nodes=1571 depth=4 t=1886ms
+AI moved, nodes=360 depth=4 t=416ms
+[hb] alive, uptime 145000 ticks
+AI moved, nodes=1108 depth=4 t=1308ms
+AI moved, nodes=386 depth=4 t=436ms
+AI moved, nodes=737 depth=4 t=840ms
+[hb] alive, uptime 150000 ticks
+AI moved, nodes=1142 depth=4 t=1305ms
+AI moved, nodes=1526 depth=4 t=1734ms
+[hb] alive, uptime 155000 ticks
+AI moved, nodes=791 depth=4 t=890ms
+AI moved, nodes=713 depth=4 t=799ms
+[hb] alive, uptime 160000 ticks
+AI moved, nodes=762 depth=4 t=839ms
+AI moved, nodes=681 depth=4 t=738ms
+AI moved, nodes=1065 depth=4 t=1160ms
+[hb] alive, uptime 165000 ticks
+AI moved, nodes=694 depth=4 t=748ms
+AI moved, nodes=863 depth=4 t=921ms
+AI moved, nodes=590 depth=4 t=629ms
+[hb] alive, uptime 170000 ticks
+AI moved, nodes=504 depth=4 t=532ms
+AI moved, nodes=554 depth=4 t=573ms
+[hb] alive, uptime 175000 ticks
+AI moved, nodes=999 depth=4 t=1038ms
+AI moved, nodes=835 depth=4 t=866ms
+AI moved, nodes=1432 depth=4 t=1483ms
+[hb] alive, uptime 180000 ticks
+AI moved, nodes=615 depth=4 t=638ms
+AI moved, nodes=364 depth=4 t=377ms
+AI moved, nodes=634 depth=4 t=664ms
+[hb] alive, uptime 185000 ticks
+AI moved, nodes=349 depth=4 t=356ms
+AI moved, nodes=794 depth=4 t=829ms
+AI moved, nodes=548 depth=4 t=574ms
+[hb] alive, uptime 190000 ticks
+AI moved, nodes=119 depth=4 t=112ms
+AI moved, nodes=279 depth=4 t=277ms
+AI moved, nodes=468 depth=4 t=475ms
+AI moved, nodes=42 depth=4 t=30ms
+[hb] alive, uptime 195000 ticks
+BLACK wins
+AI moved, nodes=14 depth=4 t=1ms
+[hb] alive, uptime 200000 ticks
+[hb] alive, uptime 205000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+menu=HUMAN
+[hb] alive, uptime 5000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+menu=HUMAN
+[build] FW=COREMARK RTL=0x20261028
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 846440591
+Total time (secs): 11
+Iterations/Sec   : 354
+Iterations       : 3900
+Compiler version : GCC15.2.0
+Compiler flags   : -O3 -funroll-loops -funroll-all-loops -fpeel-loops -falign-functions=4 -falign-loops=4 -march=rv32im_zicsr -mabi=ilp32
+Memory location  : Static
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xbd59
+Correct operation validated. See README.md for run and reporting rules.
+[cache] D hits=0x00000000
+[cache] D miss=0x00000000
+[cache] I hits=0x00000000
+[cache] I miss=0x00000000
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+menu=HUMAN
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+[boot] coremark demo screen (SW6+SW7)
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+[hb] alive, uptime 15000 ticks
+[hb] alive, uptime 20000 ticks
+[hb] alive, uptime 25000 ticks
+[hb] alive, uptime 30000 ticks
+[hb] alive, uptime 35000 ticks
+[hb] alive, uptime 40000 ticks
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:49:39
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1440 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[!] vblank timeout -- video not running (check D18 video_locked)
+[hb] alive, uptime 5000 ticks
+[hb] alive, uptime 10000 ticks
+# 结束于 2026-10-19 18:49:46，共 372 行

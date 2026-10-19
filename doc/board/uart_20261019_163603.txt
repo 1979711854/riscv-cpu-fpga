@@ -1,0 +1,159 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-19 16:36:03
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:20:17
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1424 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+menu=MAIN
+item=HUMAN
+mode=HUMAN
+you=BLACK
+black=NORMAL
+white=NORMAL
+step=1000ms
+[hb] alive, uptime 5000 ticks
+item=AI
+mode=AI
+[hb] alive, uptime 10000 ticks
+menu=AI
+item=BLACK
+item=START
+item=STEP
+[hb] alive, uptime 15000 ticks
+item=WHITE
+item=BLACK
+item=WHITE
+item=STEP
+item=START
+item=BLACK
+[hb] alive, uptime 20000 ticks
+black=EASY
+item=WHITE
+item=STEP
+item=START
+[hb] alive, uptime 25000 ticks
+AI match: black=EASY white=NORMAL step=1000ms
+AI moved, nodes=1 depth=1 t=0ms
+AI moved, nodes=1287 depth=4 t=630ms
+AI moved, nodes=14 depth=1 t=0ms
+[hb] alive, uptime 30000 ticks
+AI moved, nodes=810 depth=4 t=436ms
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=1069 depth=4 t=673ms
+AI moved, nodes=14 depth=1 t=0ms
+[hb] alive, uptime 35000 ticks
+AI moved, nodes=697 depth=4 t=417ms
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=729 depth=4 t=464ms
+AI moved, nodes=14 depth=1 t=0ms
+[hb] alive, uptime 40000 ticks
+AI moved, nodes=703 depth=4 t=486ms
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=960 depth=4 t=721ms
+[hb] alive, uptime 45000 ticks
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=894 depth=4 t=741ms
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=798 depth=4 t=679ms
+[hb] alive, uptime 50000 ticks
+AI moved, nodes=14 depth=1 t=0ms
+AI moved, nodes=418 depth=4 t=354ms
+AI moved, nodes=14 depth=1 t=0ms
+[hb] alive, uptime 55000 ticks
+AI moved, nodes=966 depth=4 t=926ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=671 depth=4 t=665ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 60000 ticks
+AI moved, nodes=364 depth=4 t=354ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=1485 depth=4 t=1517ms
+[hb] alive, uptime 65000 ticks
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=617 depth=4 t=669ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 70000 ticks
+AI moved, nodes=1249 depth=4 t=1329ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=563 depth=4 t=615ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 75000 ticks
+AI moved, nodes=1206 depth=4 t=1319ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 80000 ticks
+AI moved, nodes=1170 depth=4 t=1376ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=1141 depth=4 t=1286ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 85000 ticks
+AI moved, nodes=536 depth=4 t=600ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=1176 depth=4 t=1287ms
+[hb] alive, uptime 90000 ticks
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=360 depth=4 t=381ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 95000 ticks
+AI moved, nodes=674 depth=4 t=751ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=879 depth=4 t=970ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 100000 ticks
+AI moved, nodes=427 depth=4 t=458ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=373 depth=4 t=421ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 105000 ticks
+AI moved, nodes=1182 depth=4 t=1364ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 110000 ticks
+AI moved, nodes=1163 depth=4 t=1345ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=1432 depth=4 t=1653ms
+[hb] alive, uptime 115000 ticks
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=389 depth=4 t=442ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=984 depth=4 t=1166ms
+[hb] alive, uptime 120000 ticks
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=347 depth=4 t=396ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 125000 ticks
+AI moved, nodes=940 depth=4 t=1101ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=476 depth=4 t=575ms
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 130000 ticks
+AI moved, nodes=279 depth=4 t=334ms
+AI moved, nodes=14 depth=1 t=1ms
+AI moved, nodes=42 depth=4 t=36ms
+BLACK wins
+AI moved, nodes=14 depth=1 t=1ms
+[hb] alive, uptime 135000 ticks
+[hb] alive, uptime 140000 ticks
+title
+AI moved, nodes=14 depth=1 t=1ms
+menu=MAIN
+item=HUMAN
+[hb] alive, uptime 145000 ticks
+# 结束于 2026-10-19 16:38:32，共 157 行

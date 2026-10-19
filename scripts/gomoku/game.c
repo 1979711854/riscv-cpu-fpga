@@ -376,6 +376,13 @@ void game_tick(game_t *gm, uint32_t now, uint8_t short_mask, uint8_t long_mask)
     switch (gm->phase) {
     case GAME_TITLE:   tick_title(gm, now, short_mask, long_mask);   break;
     case GAME_PLAYING: tick_playing(gm, now, short_mask, long_mask); break;
+    case GAME_COREMARK:
+        /* CoreMark 终端演示屏（T7）：唯一交互 = 长按 SW6（key[2]）回标题。
+         * [!] 画面与进度由 coremark_screen.c 的 cm_screen_tick 负责
+         *     （draw_frame 每帧调），这里只管输入与相位切换；
+         * [!] 其它按键一律吞掉 —— 演示屏后面没有对局状态可操作。 */
+        if (long_mask & (1u << 2)) gm->phase = GAME_TITLE;
+        break;
     default:           tick_over(gm, now, long_mask);                break;
     }
 }

@@ -50,15 +50,23 @@ PAL = [
     0xF8F8F8,   # 4  白子主体
     0xA8A8A8,   # 5  白子描边
     0xD02020,   # 6  光标（红）
-    0x1A1A1E,   # 7  UI 底（炭黑）—— FONT_BG
+    0x18202C,   # 7  UI 底（深墨蓝）—— FONT_BG
     0xEDE3C8,   # 8  UI 文字（暖白）—— FONT_FG
     0xD8A93C,   # 9  金色强调（logo / 选中框 / 分隔线）
-    0x0E0E10,   # 10 阴影（比 UI 底更深）
-    0x3A3A40,   # 11 细分隔线
+    0x0C1117,   # 10 阴影（比 UI 底更深）
+    0x33404F,   # 11 细分隔线
+    0x1E2836,   # 12 标题屏顶部/底部细带
+    0x2ECC71,   # 13 OK / WINS（柔和绿，替掉高饱和 #00FF00）
+    0x888888,   # 14 8x8 提示文字（暗灰）
+    0x202A38,   # 15 极暗分隔线（只比 UI 底亮一丁点）
+    0x8A6D2F,   # 16 暗金（说明行 > 锚点）
+    0xA0A0A0,   # 17 标题中灰（二级菜单大标题，比 14 亮一档）
+    0xFFD700,   # 18 亮金（CoreMark 终端演示屏大分数，GAME_COREMARK 专用）
 ]
 
 (P_BG, P_LINE, P_BLACK, P_BLACK_HI, P_WHITE, P_WHITE_EDGE, P_CURSOR,
- P_UI_BG, P_UI_FG, P_GOLD, P_SHADOW, P_UI_LINE) = range(12)
+ P_UI_BG, P_UI_FG, P_GOLD, P_SHADOW, P_UI_LINE, P_UI_BAND,
+ P_OK, P_UI_DIM, P_UI_FAINT, P_GOLD_DIM, P_UI_MID, P_GOLD_BRIGHT) = range(19)
 
 # ---- 9 种网格线形状 --------------------------------------------------------
 # 每个 shape 说明"四条边哪几条有线"：(上, 下, 左, 右)
@@ -157,8 +165,198 @@ FONT_W = 5
 FONT_H = 7
 FONT_SCALE = 2
 FONT_BASE = 0x20
-FONT_N_GLYPHS = 95          # 0x20..0x7E
+
+# ---------------------------------------------------------------------------
+# [T6-R3] 8x8 系小字"加宽"：字模从 5x7 拉伸到 8x7。
+# 动机：nametable 每字符占 1 个 16x16 图块 = 16px 步进，5px 字形意味着
+# 字间空 11px（≈2 倍字宽），视觉上像 P O W E R E D。字形拉宽到 8px 后
+# 字距 = 16-8 = 8px = 字宽，密度与正常英文一致。
+# 拉伸在【生成脚本层】做（本文件），font.h 里的 8x8 系字模直接就是 8 位宽：
+#   WIDEN5_8[d] = 目标列 d 取的源列。左右缘/中列各占 2px、次列 1px，
+#   无裂缝（每个目标列都有源），竖线/点 2px、笔画加粗均匀。
+# 覆盖：FONT8（暗灰提示）/ FONT8G（暗金 POWERED 行）/ FONT_TITLE_GRAY
+# （标题中灰）三个子集；16x16 主字库与中文**保持 5x7 原样**（logo 还要用）。
+# ---------------------------------------------------------------------------
+FONT8_W = 8
+WIDEN5_8 = (0, 0, 1, 2, 2, 3, 4, 4)
+
+
+def font_row_bits8(ch, fy):
+    """8x8 系字形第 fy 行打包成 8 位：bit7..bit0 = 列0..列7（拉伸后）。"""
+    s = font_rows(ch)[fy]
+    b = 0
+    for dx in range(FONT8_W):
+        if s[WIDEN5_8[dx]] == '#':
+            b |= 1 << (FONT8_W - 1 - dx)
+    return b
+
+# ---------------------------------------------------------------------------
+# 五子棋 UI 的 16x16 字库：**只做子集**（v2 交接文档 §2.2/§6.1）。
+# 只收大写、数字和 UI 实际用到的符号；小写运行时折叠到大写。
+# CoreMark 的控制台需要完整 95 字（含小写），单独生成 font_coremark.h，
+# 不进五子棋镜像 —— 两边虽是同一块显存，但固件是两颗独立镜像，互不占位。
+# ---------------------------------------------------------------------------
+# [!] 2026-10-19 T6：回收 J/Q/X/Z（16x16 界面文案均不使用），51 -> 47 字，
+#     36..86 区缩到 36..82，尾部 83..86 让给暗金 8x8 子集。
+# [!] 2026-10-19 T6-R2：再回收 11 个符号 : - / | + % ( ) , ? ! —— 已全局搜索
+#     确认 16x16 渲染调用（菜单/值/弹窗/HUD/GOMOKU/THINKING）零使用，其中
+#     % ( ) , ? ! 的字模本来就是空表；未收录字符渲染时自动落空格图块，不会缺字。
+#     47 -> 36 字（36..71），72..86 空出给暗金字库搬新家。
+#     保留 . < > 三个：12.8K 的小数点、菜单值 < NORMAL > 的括号。
+FONT_CHARS = " 0123456789ABCDEFGHIJKLMNOPRSTUVWY.<>"
+FONT_N_GLYPHS = len(FONT_CHARS)
 FONT_TILE_BASE = N_TILE     # 36：棋盘图块 0..35 之后
+
+# ASCII 0x20..0x7E -> 子集下标；0xFF = 该字符不在子集里（运行时落空格）。
+FONT_INDEX = [0xFF] * 95
+for _i, _ch in enumerate(FONT_CHARS):
+    FONT_INDEX[ord(_ch) - FONT_BASE] = _i
+for _i in range(ord('A'), ord('Z') + 1):
+    # 小写折叠到大写：渲染层先折叠，这里也建一份，方便生成/测试共用。
+    FONT_INDEX[_i - FONT_BASE + 32] = FONT_INDEX[_i - FONT_BASE]
+
+# ---------------------------------------------------------------------------
+# 8x8 提示字库：5x7 位图按 1x 放在 16x16 图块中央（一个字符一块）。
+# 只收 HUD 标签/提示用得上的字符；颜色是 PAL_UI_DIM（暗灰）。
+# ---------------------------------------------------------------------------
+# [!] 2026-10-19：回收 J/Q/X 三块（界面文案不用），给 8x16 小字腾 tile。
+# [!] 2026-10-19 T6：回收 Z/-（全部界面文案均不使用；含 '-' 的 RISC-V
+#     由下面的暗金子集负责渲染；F 要保留 —— 提示行 "LEFT" 用）。
+# [!] 2026-10-19 T7：CoreMark 终端演示屏（GAME_COREMARK）要写 RISC-V / MHZ /
+#     分隔线，'-','Z' 回归 —— 90..127 共 38 字（127 由暗金子集让出，见下）。
+FONT8_CHARS = " 0123456789ABCDEFGHIKLMNOPRSTUVWY:-Z/|."
+FONT8_N_GLYPHS = len(FONT8_CHARS)
+FONT8_TILE_BASE = 90          # 16x16 子集 36..86 / 中文 87..89 之后
+FONT8_INDEX = [0xFF] * 95
+for _i, _ch in enumerate(FONT8_CHARS):
+    FONT8_INDEX[ord(_ch) - FONT_BASE] = _i
+for _i in range(ord('A'), ord('Z') + 1):
+    FONT8_INDEX[_i - FONT_BASE + 32] = FONT8_INDEX[_i - FONT_BASE]
+
+# ---------------------------------------------------------------------------
+# [T6 2026-10-19] 8x16 小字整库退役（LAST COREMARK 区改用 8x8 后再无使用者），
+# 释放 135..149 / 178..185 / 251..252 共 25 块；加上 8x8 缩容腾出的 127..128、
+# 16x16 主子集回收 J/Q/X/Z 腾出的 83..86，共 31 块重新分配（用掉 28，空闲 3）：
+#   FONT_GREEN16  绿色 16x16（HUD "THINKING"）：135..140（6 字 THINGK）
+#   FONT_GOLD16   金色 16x16（HUD "GOMOKU" 标题）：141..145（5 字 GOMKU）
+#   FONT8G        暗金 8x8（标题屏 "POWERED BY RISC-V & RT-THREAD"）：
+#                 17 字 &-ABCDEHIOPRSTVWY -> 83..86 / 127 / 146..149 / 178..185
+# 空闲：128、251..252。
+# ---------------------------------------------------------------------------
+FONT_GREEN16_CHARS = "THINGK"
+GREEN16_TILE_NUMS = list(range(135, 141))
+assert len(GREEN16_TILE_NUMS) == len(FONT_GREEN16_CHARS), "绿色 16x16 图块号数量必须等于字符数"
+FONT_GREEN16_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_GREEN16_CHARS):
+    FONT_GREEN16_TILE[ord(_ch) - FONT_BASE] = GREEN16_TILE_NUMS[_i]
+for _i in range(ord('A'), ord('Z') + 1):
+    FONT_GREEN16_TILE[_i - FONT_BASE + 32] = FONT_GREEN16_TILE[_i - FONT_BASE]
+
+FONT_GOLD16_CHARS = "GOMKU"
+GOLD16_TILE_NUMS = list(range(141, 146))
+assert len(GOLD16_TILE_NUMS) == len(FONT_GOLD16_CHARS), "金色 16x16 图块号数量必须等于字符数"
+FONT_GOLD16_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_GOLD16_CHARS):
+    FONT_GOLD16_TILE[ord(_ch) - FONT_BASE] = GOLD16_TILE_NUMS[_i]
+for _i in range(ord('A'), ord('Z') + 1):
+    FONT_GOLD16_TILE[_i - FONT_BASE + 32] = FONT_GOLD16_TILE[_i - FONT_BASE]
+
+# 暗金 8x8：只收 "POWERED BY RISC-V & RT-THREAD" 用到的 17 个字形。
+# [T6-R2] 图块号搬到 73..86（16x16 主字库缩容腾出）+ 127/128/251，
+# 腾出的 146..149 / 178..185 让给标题中灰子集。
+# [T7] 127/128 让回给 8x8 灰字库（'-','Z'），换 180/181 两块空闲块
+# （72 实际是 16x16 子集末字符 '>' 的图块 —— T6-R2 注释"72 空闲"已过时；
+#   255 不能用 —— test_render 断言 RENDER_TILE_MAX=255 之后必须从未被写）。
+FONT8G_CHARS = "&-ABCDEHIOPRSTVWY"
+FONT8G_N_GLYPHS = len(FONT8G_CHARS)
+FONT8G_TILE_NUMS = (list(range(73, 87)) + [180, 181, 251])
+assert len(FONT8G_TILE_NUMS) == FONT8G_N_GLYPHS, "暗金 8x8 图块号数量必须等于字符数"
+FONT8G_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT8G_CHARS):
+    FONT8G_TILE[ord(_ch) - FONT_BASE] = FONT8G_TILE_NUMS[_i]
+for _i in range(ord('A'), ord('Z') + 1):
+    FONT8G_TILE[_i - FONT_BASE + 32] = FONT8G_TILE[_i - FONT_BASE]
+
+# [T7 2026-10-19] 标题中灰 8x8 子集（T6-R2 的 AHIMNSUV @ 129/130/146..149/178/179）
+# 【整集退役】：痛点二把二级菜单大标题改用 16x16 亮白（render_text_center）之后
+# 全库再无使用者。图块号 129/130/146..149/178..179 释放为空闲；PAL_UI_MID
+# 调色板项保留（免得 reindex，只是没人引用）。
+
+# ---------------------------------------------------------------------------
+# [2026-10-19 T7] CoreMark 终端演示屏（GAME_COREMARK，SW6+SW7 复位进入）专用
+# 变色子集。图块是「借」的：演示屏期间覆写【标题屏专用】图块（4x logo /
+# WINS / 中文 / GOMKU / THINKING 的一部分）—— 这些借主在演示屏上都不出现，
+# 退出时 render_term_end() 调 render_init() 全量重建恢复。
+#   TERM_GREEN16  亮绿 16x16（[ RUNNING ] / [ PASS ]）：[]RUNIGPAS 10 字
+#                 -> 154..163（4x logo 前 10 块）
+#   TERM_GOLD16   亮金 16x16（COREMARK SCORE / COREMARK/MHZ 两行大字）：
+#                 COREMAKS/:.0123456789HZ 23 字
+#                 -> 164..177（logo 后 14 块）+ 131..134（WINS）
+#                    + 87..89（中文 3 字）+ 141..142（GOMKU 前 2 块）
+#   TERM_GREEN8   亮绿 8x8（CRC OK）：OK 2 字 -> 143..144（GOMKU 中 2 块）
+#   TERM_GRAY8    暗灰 8x8（进度百分比 %）：1 字 -> 145（GOMKU 末块）
+# 实心块（进度条填充/空轨）不是字形：编号 135/136（THINKING 的 T/H），
+# 定义在 render.h（RENDER_TILE_TERM_FILL/TRACK），同样由 render_init 恢复。
+# 前景色：绿 = P_OK（#2ECC71，与规格完全相同）、亮金 = P_GOLD_BRIGHT（#FFD700）。
+# ---------------------------------------------------------------------------
+FONT_TERM_GREEN16_CHARS = "[]RUNIGPAS"
+FONT_TERM_GREEN16_N = len(FONT_TERM_GREEN16_CHARS)
+FONT_TERM_GREEN16_TILE_NUMS = list(range(154, 164))
+FONT_TERM_GREEN16_FG = P_OK
+FONT_TERM_GREEN16_BG = P_UI_BG
+FONT_TERM_GREEN16_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_TERM_GREEN16_CHARS):
+    FONT_TERM_GREEN16_TILE[ord(_ch) - FONT_BASE] = FONT_TERM_GREEN16_TILE_NUMS[_i]
+
+FONT_TERM_GOLD16_CHARS = "COREMAKS/:.0123456789HZ"
+FONT_TERM_GOLD16_N = len(FONT_TERM_GOLD16_CHARS)
+FONT_TERM_GOLD16_TILE_NUMS = (list(range(164, 178)) + [131, 132, 133, 134] +
+                              [87, 88, 89] + [141, 142])
+FONT_TERM_GOLD16_FG = P_GOLD_BRIGHT
+FONT_TERM_GOLD16_BG = P_UI_BG
+FONT_TERM_GOLD16_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_TERM_GOLD16_CHARS):
+    FONT_TERM_GOLD16_TILE[ord(_ch) - FONT_BASE] = FONT_TERM_GOLD16_TILE_NUMS[_i]
+
+FONT_TERM_GREEN8_CHARS = "OK"
+FONT_TERM_GREEN8_N = len(FONT_TERM_GREEN8_CHARS)
+FONT_TERM_GREEN8_TILE_NUMS = [143, 144]
+FONT_TERM_GREEN8_FG = P_OK
+FONT_TERM_GREEN8_BG = P_UI_BG
+FONT_TERM_GREEN8_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_TERM_GREEN8_CHARS):
+    FONT_TERM_GREEN8_TILE[ord(_ch) - FONT_BASE] = FONT_TERM_GREEN8_TILE_NUMS[_i]
+
+FONT_TERM_GRAY8_CHARS = "%"
+FONT_TERM_GRAY8_N = len(FONT_TERM_GRAY8_CHARS)
+FONT_TERM_GRAY8_TILE_NUMS = [145]
+FONT_TERM_GRAY8_FG = P_UI_DIM
+FONT_TERM_GRAY8_BG = P_UI_BG
+FONT_TERM_GRAY8_TILE = [0xFF] * 95
+for _i, _ch in enumerate(FONT_TERM_GRAY8_CHARS):
+    FONT_TERM_GRAY8_TILE[ord(_ch) - FONT_BASE] = FONT_TERM_GRAY8_TILE_NUMS[_i]
+
+assert len(FONT_TERM_GREEN16_TILE_NUMS) == FONT_TERM_GREEN16_N
+assert len(FONT_TERM_GOLD16_TILE_NUMS) == FONT_TERM_GOLD16_N
+assert len(FONT_TERM_GREEN8_TILE_NUMS) == FONT_TERM_GREEN8_N
+assert len(FONT_TERM_GRAY8_TILE_NUMS) == FONT_TERM_GRAY8_N
+
+# ---------------------------------------------------------------------------
+# 中文 3 字：五 / 子 / 棋。16x16 1bit，离线用 SimHei 14px Bold 渲染后
+# 居中裁进 16x16（不依赖运行时字体；不引入整库中文）。
+# ---------------------------------------------------------------------------
+CJK_TILE_BASE = 87            # 16x16 子集 36..86 之后
+CJK_GLYPHS = [
+    ("五", [
+        0x0000, 0x0000, 0x0000, 0x3FF8, 0x0300, 0x0300, 0x0300, 0x3FF0,
+        0x0630, 0x0630, 0x0630, 0x0630, 0x7FFC, 0x0000, 0x0000, 0x0000]),
+    ("子", [
+        0x0000, 0x0000, 0x3FF8, 0x0038, 0x00E0, 0x0380, 0x0380, 0x7FFC,
+        0x0380, 0x0380, 0x0380, 0x0380, 0x0380, 0x0700, 0x0000, 0x0000]),
+    ("棋", [
+        0x0000, 0x0000, 0x1998, 0x1BFC, 0x7D98, 0x3998, 0x39F8, 0x3D98,
+        0x79F8, 0x7998, 0x1FFC, 0x1800, 0x19B8, 0x1F0C, 0x0000, 0x0000]),
+]
 
 # 每字 7 行 x 5 列，'#' 亮 / '.' 灭（左到右 = 列0..列4）
 FONT_GLYPHS = {
@@ -246,6 +444,13 @@ FONT_GLYPHS = {
           "....#",
           "....#",
           ".###."],
+    '&': [".##..",
+          "#..#.",
+          "#..#.",
+          ".##..",
+          "#.#.#",
+          "#..#.",
+          ".##.#"],
     'A': [".###.",
           "#...#",
           "#...#",
@@ -443,6 +648,21 @@ FONT_GLYPHS = {
           "#####",
           ".....",
           "....."],
+    # v2 子菜单的值用 < > 括起来（< NORMAL >）
+    '<': ["...#.",
+          "..#..",
+          ".#...",
+          "#....",
+          ".#...",
+          "..#..",
+          "...#."],
+    '>': ["#....",
+          ".#...",
+          "..#..",
+          "...#.",
+          "..#..",
+          ".#...",
+          "#...."],
     # 提示行用 '|' 分两段（UP/DN MOVE | L/R CHANGE）。5x7 里就是一列竖线。
     '|': ["..#..",
           "..#..",
@@ -468,6 +688,28 @@ FONT_GLYPHS = {
           "..#..",
           "..#..",
           "....."],
+    # [2026-10-19 T7] CoreMark 终端演示屏要用 [ ]（[ RUNNING ]）与 %（百分比）。
+    '[': [".###.",
+          ".#...",
+          ".#...",
+          ".#...",
+          ".#...",
+          ".#...",
+          ".###."],
+    ']': [".###.",
+          "...#.",
+          "...#.",
+          "...#.",
+          "...#.",
+          "...#.",
+          ".###."],
+    '%': ["##..#",
+          "##..#",
+          "...#.",
+          "..#..",
+          ".#...",
+          "#..##",
+          "#..##"],
     '.': [".....",
           ".....",
           ".....",
@@ -526,40 +768,214 @@ def make_font_tile(ch):
     return img
 
 
+def _c_string(s):
+    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def _emit_index(f, name, chars):
+    """输出 95 项的 ASCII -> 子集下标表（0xFF = 不在子集里）。"""
+    idx = [0xFF] * 95
+    for i, ch in enumerate(chars):
+        idx[ord(ch) - FONT_BASE] = i
+    for c in range(ord('A'), ord('Z') + 1):
+        idx[c - FONT_BASE + 32] = idx[c - FONT_BASE]
+    f.write("static const uint8_t %s[95] = {\n" % name)
+    for row in range(0, 95, 16):
+        vals = idx[row:row + 16]
+        f.write("    " + ", ".join("0x%02X" % v for v in vals) + ",\n")
+    f.write("};\n\n")
+
+
+def _emit_tile_map(f, name, chars, tiles):
+    """输出 95 项 ASCII -> 绝对图块号（0xFF = 不在子集里）。"""
+    tbl = [0xFF] * 95
+    for ch, t in zip(chars, tiles):
+        tbl[ord(ch) - FONT_BASE] = t
+    for c in range(ord('A'), ord('Z') + 1):
+        tbl[c - FONT_BASE + 32] = tbl[c - FONT_BASE]
+    f.write("static const uint8_t %s[95] = {\n" % name)
+    for row in range(0, 95, 16):
+        vals = tbl[row:row + 16]
+        f.write("    " + ", ".join("0x%02X" % v for v in vals) + ",\n")
+    f.write("};\n\n")
+
+
+def _emit_glyphs(f, name, chars, w=FONT_W):
+    """输出子集字模位图。w=FONT_W(5) → 原始 5x7（16x16 系）；
+    w=FONT8_W(8) → 8x7 拉宽（T6-R3，8x8 系三个子集）。"""
+    bits_fn = font_row_bits if w == FONT_W else font_row_bits8
+    f.write("static const uint8_t %s[%d][FONT_H] = {\n" % (name, len(chars)))
+    for ch in chars:
+        bits = [bits_fn(ch, fy) for fy in range(FONT_H)]
+        f.write("    { %s },   /* '%s' 0x%02X */\n"
+                % (", ".join("0x%02X" % b for b in bits), ch, ord(ch)))
+    f.write("};\n\n")
+
+
 def emit_font(path):
-    """生成 font.h：紧凑 5x7 位图 + 展开参数。16x16 图块由固件 render_init 放大。"""
+    """生成五子棋 UI 的 font.h：16x16 子集 + 8x8 提示子集 + 中文 3 字。
+
+    [!] CoreMark 的控制台**不 include 这个文件**（它要完整 95 字含小写），
+        见 emit_font_coremark() 生成的 font_coremark.h。
+    """
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("/* " + "=" * 74 + "\n")
-        f.write(" * font.h —— HUD 用的 ASCII 字库（紧凑 5x7 位图）\n")
+        f.write(" * font.h —— 五子棋 UI 字库（16x16 子集 / 8x8 提示 / 暗金·中灰·金绿子集 / 中文 3 字）\n")
         f.write(" *\n")
         f.write(" * [!] 本文件由 scripts/gomoku/gen_tiles.py **自动生成，不要手改**。\n")
-        f.write(" *     改字形改那个脚本再重跑。\n")
-        f.write(" *\n")
-        f.write(" * 只存紧凑位图（%d 字 x %d 字节 = %d 字节）；render_init() 上电时\n"
-                % (FONT_N_GLYPHS, FONT_H, FONT_N_GLYPHS * FONT_H))
-        f.write(" * 放大 %dx 成 16x16 图块写进显存 tile %d..%d。\n"
-                % (FONT_SCALE, FONT_TILE_BASE, FONT_TILE_BASE + FONT_N_GLYPHS - 1))
-        f.write(" * 前景 FONT_FG / 背景 FONT_BG 的**下标**定义在 palette.h（调色板本体），\n")
-        f.write(" * 这里直接写死数字是为了让 dev 板/控制台两处引用同一份下标。\n")
+        f.write(" * [!] CoreMark 控制台用 font_coremark.h（完整 95 字）；两边是独立镜像。\n")
         f.write(" * " + "=" * 74 + " */\n\n")
         f.write("#ifndef GOMOKU_FONT_H\n#define GOMOKU_FONT_H\n\n")
         f.write("#include <stdint.h>\n\n")
         f.write("#define FONT_W          %d\n" % FONT_W)
         f.write("#define FONT_H          %d\n" % FONT_H)
+        f.write("#define FONT8_W         %d   /* 8x8 系小字字模宽（T6-R3 拉宽）*/\n" % FONT8_W)
         f.write("#define FONT_SCALE      %d\n" % FONT_SCALE)
-        f.write("#define FONT_BASE       %d   /* 第一个字模 = 空格 */\n" % FONT_BASE)
-        f.write("#define FONT_N_GLYPHS   %d   /* 0x20..0x7E */\n" % FONT_N_GLYPHS)
+        f.write("#define FONT_BASE       %d   /* ASCII 表起点 */\n" % FONT_BASE)
+        f.write("#define FONT_N_GLYPHS   %d   /* 子集字数 */\n" % FONT_N_GLYPHS)
         f.write("#define FONT_TILE_BASE  %d   /* 棋盘图块 0..35 之后 */\n" % FONT_TILE_BASE)
         f.write("#define FONT_FG         %d   /* 文字前景（暖白，见 palette.h）*/\n" % P_UI_FG)
         f.write("#define FONT_BG         %d   /* 文字背景（深色 UI 底，见 palette.h）*/\n\n" % P_UI_BG)
+        f.write("/* 子集字符表（顺序 = 图块顺序）；小写运行时折叠到大写 */\n")
+        f.write("static const char FONT_CHARS[FONT_N_GLYPHS + 1] = %s;\n\n" % _c_string(FONT_CHARS))
+        f.write("/* ASCII 0x20..0x7E -> 子集下标；0xFF = 不在子集里（落空格）*/\n")
+        _emit_index(f, "FONT_INDEX", FONT_CHARS)
         f.write("/* FONT_GLYPH[字模][行] = 5 位位图：bit4..bit0 = 列0..列4，1 = 亮 */\n")
-        f.write("static const uint8_t FONT_GLYPH[FONT_N_GLYPHS][FONT_H] = {\n")
-        for code in range(FONT_BASE, FONT_BASE + FONT_N_GLYPHS):
-            bits = [font_row_bits(chr(code), fy) for fy in range(FONT_H)]
-            f.write("    { %s },   /* 0x%02X */\n"
-                    % (", ".join("%d" % b for b in bits), code))
+        _emit_glyphs(f, "FONT_GLYPH", FONT_CHARS)
+
+        # ---- 8x8 提示子集（5x7 1x，居中放进 16x16 图块）----
+        f.write("/* ---- 8x8 提示字库：5x7 按 1x 居中，一个字符一块 ---- */\n")
+        f.write("#define FONT8_N_GLYPHS   %d\n" % FONT8_N_GLYPHS)
+        f.write("#define FONT8_TILE_BASE  %d\n" % FONT8_TILE_BASE)
+        f.write("#define FONT8_FG         %d   /* 暗灰，见 palette.h */\n" % P_UI_DIM)
+        f.write("#define FONT8_BG         %d\n\n" % P_UI_BG)
+        f.write("static const char FONT8_CHARS[FONT8_N_GLYPHS + 1] = %s;\n\n" % _c_string(FONT8_CHARS))
+        _emit_index(f, "FONT8_INDEX", FONT8_CHARS)
+        _emit_glyphs(f, "FONT8_GLYPH", FONT8_CHARS, w=FONT8_W)
+
+        # ---- 暗金 8x8 子集（标题屏 POWERED 行）：同 8x8 几何，前景暗金 ----
+        f.write("/* ---- 暗金 8x8 子集（标题屏 POWERED 行）：5x7 1x 居中，暗金 ---- */\n")
+        f.write("#define FONT8G_N_GLYPHS   %d\n" % FONT8G_N_GLYPHS)
+        f.write("#define FONT8G_FG         %d   /* 暗金，见 palette.h */\n" % P_GOLD_DIM)
+        f.write("#define FONT8G_BG         %d\n\n" % P_UI_BG)
+        f.write("static const char FONT8G_CHARS[FONT8G_N_GLYPHS + 1] = %s;\n\n" % _c_string(FONT8G_CHARS))
+        _emit_glyphs(f, "FONT8G_GLYPH", FONT8G_CHARS, w=FONT8_W)
+        f.write("/* ASCII 0x20..0x7E -> 绝对图块号；0xFF = 不在子集里 */\n")
+        f.write("static const uint8_t FONT8G_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT8G_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        # ---- [T7] 标题中灰 8x8 子集已整集退役（痛点二后无使用者）----
+        f.write("/* [T7] 标题中灰 8x8 子集已退役（二级菜单大标题改 16x16 亮白）；\n")
+        f.write(" * 图块号 129/130/146..149/178..179 释放为空闲。 */\n\n")
+
+        # ---- 金色 16x16 子集（HUD 标题 GOMOKU）：2x 字模，金色 ----
+        f.write("/* ---- 金色 16x16 子集（HUD 标题 GOMOKU）：2x 字模，金色 ---- */\n")
+        f.write("#define FONT_GOLD16_N      %d\n" % len(FONT_GOLD16_CHARS))
+        f.write("#define FONT_GOLD16_FG     %d   /* 金色，见 palette.h */\n" % P_GOLD)
+        f.write("#define FONT_GOLD16_BG     %d\n\n" % P_UI_BG)
+        f.write("static const char FONT_GOLD16_CHARS[FONT_GOLD16_N + 1] = %s;\n\n" % _c_string(FONT_GOLD16_CHARS))
+        f.write("/* ASCII 0x20..0x7E -> 绝对图块号；0xFF = 不在子集里 */\n")
+        f.write("static const uint8_t FONT_GOLD16_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_GOLD16_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        # ---- 绿色 16x16 子集（HUD THINKING）：2x 字模，柔和绿 ----
+        f.write("/* ---- 绿色 16x16 子集（HUD THINKING）：2x 字模，柔和绿 ---- */\n")
+        f.write("#define FONT_GREEN16_N     %d\n" % len(FONT_GREEN16_CHARS))
+        f.write("#define FONT_GREEN16_FG    %d   /* 柔和绿，见 palette.h */\n" % P_OK)
+        f.write("#define FONT_GREEN16_BG    %d\n\n" % P_UI_BG)
+        f.write("static const char FONT_GREEN16_CHARS[FONT_GREEN16_N + 1] = %s;\n\n" % _c_string(FONT_GREEN16_CHARS))
+        f.write("/* ASCII 0x20..0x7E -> 绝对图块号；0xFF = 不在子集里 */\n")
+        f.write("static const uint8_t FONT_GREEN16_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_GREEN16_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        # ---- CoreMark 终端演示屏专用子集（T7，图块借标题屏专用块，见上）----
+        f.write("/* ---- 终端演示屏（GAME_COREMARK）：绿/亮金 16x16 + 绿/灰 8x8 ----\n")
+        f.write(" * [!] 图块号是「借」标题屏专用块的（logo/WINS/中文/GOMKU/THINKING），\n")
+        f.write(" *     只在 render_term_begin() 之后有效；render_term_end() 全量恢复。 */\n\n")
+        f.write("#define FONT_TERM_GREEN16_N  %d\n" % FONT_TERM_GREEN16_N)
+        f.write("#define FONT_TERM_GREEN16_FG %d   /* 柔和绿 #2ECC71 */\n" % FONT_TERM_GREEN16_FG)
+        f.write("#define FONT_TERM_GREEN16_BG %d\n\n" % FONT_TERM_GREEN16_BG)
+        f.write("static const char FONT_TERM_GREEN16_CHARS[FONT_TERM_GREEN16_N + 1] = %s;\n\n" % _c_string(FONT_TERM_GREEN16_CHARS))
+        _emit_glyphs(f, "FONT_TERM_GREEN16_GLYPH", FONT_TERM_GREEN16_CHARS)
+        f.write("static const uint8_t FONT_TERM_GREEN16_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_TERM_GREEN16_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        f.write("#define FONT_TERM_GOLD16_N   %d\n" % FONT_TERM_GOLD16_N)
+        f.write("#define FONT_TERM_GOLD16_FG  %d   /* 亮金 #FFD700 */\n" % FONT_TERM_GOLD16_FG)
+        f.write("#define FONT_TERM_GOLD16_BG  %d\n\n" % FONT_TERM_GOLD16_BG)
+        f.write("static const char FONT_TERM_GOLD16_CHARS[FONT_TERM_GOLD16_N + 1] = %s;\n\n" % _c_string(FONT_TERM_GOLD16_CHARS))
+        _emit_glyphs(f, "FONT_TERM_GOLD16_GLYPH", FONT_TERM_GOLD16_CHARS)
+        f.write("static const uint8_t FONT_TERM_GOLD16_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_TERM_GOLD16_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        f.write("#define FONT_TERM_GREEN8_N   %d\n" % FONT_TERM_GREEN8_N)
+        f.write("#define FONT_TERM_GREEN8_FG  %d\n" % FONT_TERM_GREEN8_FG)
+        f.write("#define FONT_TERM_GREEN8_BG  %d\n\n" % FONT_TERM_GREEN8_BG)
+        f.write("static const char FONT_TERM_GREEN8_CHARS[FONT_TERM_GREEN8_N + 1] = %s;\n\n" % _c_string(FONT_TERM_GREEN8_CHARS))
+        _emit_glyphs(f, "FONT_TERM_GREEN8_GLYPH", FONT_TERM_GREEN8_CHARS, w=FONT8_W)
+        f.write("static const uint8_t FONT_TERM_GREEN8_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_TERM_GREEN8_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        f.write("#define FONT_TERM_GRAY8_N    %d\n" % FONT_TERM_GRAY8_N)
+        f.write("#define FONT_TERM_GRAY8_FG   %d\n" % FONT_TERM_GRAY8_FG)
+        f.write("#define FONT_TERM_GRAY8_BG   %d\n\n" % FONT_TERM_GRAY8_BG)
+        f.write("static const char FONT_TERM_GRAY8_CHARS[FONT_TERM_GRAY8_N + 1] = %s;\n\n" % _c_string(FONT_TERM_GRAY8_CHARS))
+        _emit_glyphs(f, "FONT_TERM_GRAY8_GLYPH", FONT_TERM_GRAY8_CHARS, w=FONT8_W)
+        f.write("static const uint8_t FONT_TERM_GRAY8_TILE[95] = {\n")
+        for row in range(0, 95, 16):
+            f.write("    " + ", ".join("0x%02X" % v for v in FONT_TERM_GRAY8_TILE[row:row + 16]) + ",\n")
+        f.write("};\n\n")
+
+        # ---- 中文 3 字 ----
+        f.write("/* ---- 中文 3 字：五 / 子 / 棋（16x16 1bit，金色）---- */\n")
+        f.write("#define FONT_CJK_N         3\n")
+        f.write("#define FONT_CJK_TILE_BASE %d\n\n" % CJK_TILE_BASE)
+        f.write("static const uint16_t FONT_CJK_BITS[FONT_CJK_N][16] = {\n")
+        for ch, rows in CJK_GLYPHS:
+            f.write("    {   /* %s */\n        " % ch)
+            f.write(", ".join("0x%04X" % v for v in rows))
+            f.write("\n    },\n")
         f.write("};\n\n")
         f.write("#endif /* GOMOKU_FONT_H */\n")
+
+
+def emit_font_coremark(path):
+    """生成 CoreMark 控制台的 font.h 等价物：完整 95 字（含小写）。
+
+    CoreMark 的 video_text.c 按 ASCII 顺序索引字模，不能子集化。
+    """
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("/* " + "=" * 74 + "\n")
+        f.write(" * font_coremark.h —— CoreMark HDMI 控制台字库（完整 95 字）\n")
+        f.write(" *\n")
+        f.write(" * [!] 本文件由 scripts/gomoku/gen_tiles.py **自动生成，不要手改**。\n")
+        f.write(" * [!] 五子棋 UI 用 font.h（子集）；这是独立镜像，互不占 tile。\n")
+        f.write(" * " + "=" * 74 + " */\n\n")
+        f.write("#ifndef GOMOKU_FONT_COREMARK_H\n#define GOMOKU_FONT_COREMARK_H\n\n")
+        f.write("#include <stdint.h>\n\n")
+        f.write("#define FONT_W          %d\n" % FONT_W)
+        f.write("#define FONT_H          %d\n" % FONT_H)
+        f.write("#define FONT_SCALE      %d\n" % FONT_SCALE)
+        f.write("#define FONT_BASE       %d\n" % FONT_BASE)
+        f.write("#define FONT_N_GLYPHS   95\n")
+        f.write("#define FONT_TILE_BASE  %d\n" % FONT_TILE_BASE)
+        f.write("#define FONT_FG         %d\n" % P_UI_FG)
+        f.write("#define FONT_BG         %d\n\n" % P_UI_BG)
+        full = "".join(chr(c) for c in range(FONT_BASE, FONT_BASE + 95))
+        _emit_glyphs(f, "FONT_GLYPH", full)
+        f.write("#endif /* GOMOKU_FONT_COREMARK_H */\n")
 
 
 def dump_font_preview(s="GOMOKU AI 123"):
@@ -568,6 +984,13 @@ def dump_font_preview(s="GOMOKU AI 123"):
         print("   [%s]" % ch)
         for row in font_rows(ch):
             print("    " + row.replace('.', ' '))
+    print("\n--- 8x7 拉宽后（T6-R3，8x8 系小字实际字形；检查笔画清晰/无粘连）---")
+    for ch in "PRESS0:|&":
+        print("   [%s]" % ch)
+        for fy in range(FONT_H):
+            b = font_row_bits8(ch, fy)
+            print("    " + "".join('#' if (b >> (FONT8_W - 1 - dx)) & 1 else ' '
+                                   for dx in range(FONT8_W)))
     print("   放大 2x 后 'A'（16x16，'.'=背景 '#'=前景）:")
     img = make_font_tile('A')
     for row in img:
@@ -587,6 +1010,13 @@ PAL_NAMES = [
     ("PAL_GOLD",       "金色强调（logo / 选中框）"),
     ("PAL_SHADOW",     "阴影（比 UI 底更深）"),
     ("PAL_UI_LINE",    "细分隔线"),
+    ("PAL_UI_BAND",    "标题屏顶部/底部细带"),
+    ("PAL_OK",         "OK / WINS（柔和绿）"),
+    ("PAL_UI_DIM",     "8x8 提示文字（暗灰）"),
+    ("PAL_UI_FAINT",   "极暗分隔线"),
+    ("PAL_GOLD_DIM",   "暗金（说明行锚点）"),
+    ("PAL_UI_MID",     "标题中灰（子菜单大标题）"),
+    ("PAL_GOLD_BRIGHT", "亮金（CoreMark 终端演示屏大分数）"),
 ]
 
 
@@ -594,7 +1024,7 @@ def emit_palette(path):
     """调色板单独一份头文件。
 
     为什么要拆出来：CoreMark 的 HDMI 文本控制台（scripts/coremark_port/video_text.c）
-    也要写同一张调色板。让它 include 这个 12 项的小表，而不是 tiles.h —— 后者带
+    也要写同一张调色板。让它 include 这个 18 项的小表，而不是 tiles.h —— 后者带
     36 块 x 256B 的棋盘图块（9KB），CoreMark 镜像不该为了一行颜色把它装进去。
     """
     assert len(PAL_NAMES) == len(PAL)
@@ -606,7 +1036,8 @@ def emit_palette(path):
         f.write(" *     改颜色改那个脚本再重跑。\n")
         f.write(" *\n")
         f.write(" * 前 7 项是棋盘/棋子色（对局界面已上板，不要动）；\n")
-        f.write(" * 7..11 是标题屏的深色 UI 配色。\n")
+        f.write(" * 7..12 是深色 UI 配色；13=柔和绿（OK/WINS），14=8x8 提示暗灰，\n")
+        f.write(" * 15=极暗分隔线，16=暗金说明锚点。\n")
         f.write(" * [" + "!" + "] FONT_BG / FONT_FG（font.h）分别取 PAL_UI_BG / PAL_UI_FG，\n")
         f.write(" *     所以整屏文字底、CoreMark 控制台底、标题屏底色**必然是同一个颜色**。\n")
         f.write(" * " + "=" * 74 + " */\n\n")
@@ -709,6 +1140,103 @@ def dump_preview(n=2):
             print()
 
 
+# ---- 2x2 棋盘（对局 480x480 / 标题小棋盘共用）-----------------------------
+# 每个交叉点 32x32，切成 4 个 16x16 象限；去重后只输出「映射 + 描述表」。
+# render.c 在 init 时按描述表重新合成唯一图块，**不把 62 x 256B 的像素表
+# 放进 .rodata**（RT-Thread 镜像装不下）。
+def make_cell32(shape, state):
+    N = 32
+    img = [[P_BG] * N for _ in range(N)]
+    up, dn, lf, rt = SHAPES[shape]
+    if lf or rt:
+        x0 = 0 if lf else 16
+        x1 = N - 1 if rt else 15
+        for y in range(14, 18):
+            for x in range(x0, x1 + 1):
+                img[y][x] = P_LINE
+    if up or dn:
+        y0 = 0 if up else 16
+        y1 = N - 1 if dn else 15
+        for x in range(14, 18):
+            for y in range(y0, y1 + 1):
+                img[y][x] = P_LINE
+    if state in (1, 2):
+        color, hi = (P_BLACK, P_BLACK_HI) if state == 1 else (P_WHITE, P_WHITE_EDGE)
+        for y in range(N):
+            for x in range(N):
+                dx = 2 * x - (N - 1)
+                dy = 2 * y - (N - 1)
+                if dx * dx + dy * dy <= 576:          # r = 12
+                    hx = dx + 8                        # 高光圆心偏移 4px
+                    hy = dy + 8
+                    img[y][x] = hi if hx * hx + hy * hy <= 64 else color
+    elif state == 3:
+        # 金色对焦角标（v2 §5.5.8）：4 个 L 形角，替换旧的红色空心圈。
+        # 几何必须与 render.c 的 synth_cell32() 逐像素一致。
+        arm, th = 8, 3
+        for y in range(N):
+            for x in range(N):
+                tl = (2 <= x < 2 + arm and 2 <= y < 2 + th) or \
+                     (2 <= x < 2 + th and 2 <= y < 2 + arm)
+                tr = (N - 2 - arm <= x < N - 2 and 2 <= y < 2 + th) or \
+                     (N - 2 - th <= x < N - 2 and 2 <= y < 2 + arm)
+                bl = (2 <= x < 2 + arm and N - 2 - th <= y < N - 2) or \
+                     (2 <= x < 2 + th and N - 2 - arm <= y < N - 2)
+                br = (N - 2 - arm <= x < N - 2 and N - 2 - th <= y < N - 2) or \
+                     (N - 2 - th <= x < N - 2 and N - 2 - arm <= y < N - 2)
+                if tl or tr or bl or br:
+                    img[y][x] = P_GOLD
+    return img
+
+
+def quad_of(img, q):
+    qy, qx = divmod(q, 2)
+    return tuple(tuple(img[qy * 16 + y][qx * 16 + x] for x in range(16))
+                 for y in range(16))
+
+
+def emit_board2(path):
+    uniq = {}
+    order = []
+    mp = [[[0] * 4 for _ in range(4)] for _ in range(9)]
+    for shape in range(9):
+        for state in range(4):
+            img = make_cell32(shape, state)
+            for q in range(4):
+                t = quad_of(img, q)
+                if t not in uniq:
+                    uniq[t] = len(order)
+                    order.append((shape, state, q))
+                mp[shape][state][q] = uniq[t]
+    n = len(uniq)
+    if n > 68:
+        raise SystemExit("2x2 board needs %d unique tiles > 68 free" % n)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("/* Auto-generated by gen_tiles.py -- do not hand-edit. */\n")
+        f.write("#ifndef GOMOKU_BOARD2_MAP_H\n#define GOMOKU_BOARD2_MAP_H\n\n")
+        f.write("#include <stdint.h>\n\n")
+        f.write("#define BOARD2_N_UNIQUE %d\n\n" % n)
+        f.write("/* [shape][state][quad] -> unique index; quad: 0=TL 1=TR 2=BL 3=BR */\n")
+        f.write("static const uint8_t BOARD2_MAP[9][4][4] = {\n")
+        for shape in range(9):
+            f.write("  {")
+            for state in range(4):
+                f.write("{" + ",".join(str(mp[shape][state][q]) for q in range(4)) + "}")
+                if state != 3:
+                    f.write(",")
+            f.write("},\n")
+        f.write("};\n\n")
+        f.write("/* unique index -> packed (shape<<2)|state, and quadrant */\n")
+        f.write("static const uint8_t BOARD2_DESC[BOARD2_N_UNIQUE] = {\n  ")
+        f.write(",".join(str((s << 2) | st) for s, st, q in order))
+        f.write("\n};\n")
+        f.write("static const uint8_t BOARD2_QUAD[BOARD2_N_UNIQUE] = {\n  ")
+        f.write(",".join(str(q) for s, st, q in order))
+        f.write("\n};\n\n")
+        f.write("#endif /* GOMOKU_BOARD2_MAP_H */\n")
+    print("已生成 %s（unique=%d）" % (path, n))
+
+
 if __name__ == "__main__":
     import os
     here = os.path.dirname(os.path.abspath(__file__))
@@ -721,5 +1249,9 @@ if __name__ == "__main__":
     fout = os.path.join(here, "font.h")
     emit_font(fout)
     print("已生成 %s" % fout)
+    fcout = os.path.join(here, "font_coremark.h")
+    emit_font_coremark(fcout)
+    print("已生成 %s" % fcout)
+    emit_board2(os.path.join(here, "board2_map.h"))
     dump_preview(2)
     dump_font_preview()

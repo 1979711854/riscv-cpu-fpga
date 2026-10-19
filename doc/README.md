@@ -1,5 +1,11 @@
 # doc
 
+> [!] **当前口径（2026-10-19）**：生产档 **76.5052 MHz**；官方交付位流 **`b45941d6`**
+> （**352.5 / 4.6075 CoreMark/MHz / WNS +0.304 ns / Fmax 78.3269 / LUT 7,740**）；
+> T7 演示位流 **`6E2D6020…`**（combined，加 RT-Thread CoreMark 监控屏，CoreMark 与交付逐位同分，RT 堆 1,440B）。
+> 下表 `board/` 行里的 **85.0051 MHz / 365.93 / 351.86 / 325.96** 是 2026-10-16 历史线，只作演进对照；
+> 当前证据看 `doc/board/README.md` 顶部 T7 节与 `doc/reports/2026-10-19_t7_coremark_demo_handoff.md`。
+
 需求、架构、赛题要求、参考资料。
 
 | 文件 | 内容 |

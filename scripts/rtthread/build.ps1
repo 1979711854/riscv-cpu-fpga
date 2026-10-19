@@ -65,7 +65,8 @@ foreach ($d in $srcDirs) {
 #     这里的入口是 app\main.c，它建线程调 gomoku_run()。
 $gomokuDir  = Join-Path $Repo "scripts\gomoku"
 $gomokuSrcs = @("board.c", "ai.c", "render.c", "video_port.c",
-                "input.c", "hw_port.c", "game.c", "main.c") |
+                "input.c", "hw_port.c", "game.c", "main.c",
+                "coremark_screen.c") |
               ForEach-Object { Join-Path $gomokuDir $_ }
 foreach ($f in $gomokuSrcs) {
     if (-not (Test-Path $f)) { throw "五子棋源文件缺失：$f" }

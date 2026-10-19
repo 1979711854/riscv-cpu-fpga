@@ -39,4 +39,14 @@
 
 #define CM_MBOX_FLAG_CRC_OK 0x1u
 
+/* ---- boot selector 的「第三路径」标志（0xFF80，T7 2026-10-19）--------------
+ * SW6+SW7 同时按住复位：boot.S 在跳 RT-Thread 之前把 CM_BOOT_FLAG_MAGIC 写到
+ * 0xFF80 —— 五子棋 gomoku_run() 起来后读到它就进入 GAME_COREMARK（CoreMark
+ * 终端演示屏），读完**立即清零**（一次性语义：普通复位不受上一次演示影响）。
+ * 0xFF80 与邮箱同样"两边都不占"（CoreMark bss 止于 ~0xA2xx、栈顶 0xF000；
+ * RT-Thread 从 0x10000 起；兼容区 MMIO 0xFFF0 起）。boot.S 里写的是同一个
+ * 常量的字面值，改这里必须同步改 scripts/boot/boot.S。 */
+#define CM_BOOT_FLAG_ADDR   0x0000FF80u
+#define CM_BOOT_FLAG_MAGIC  0x434D4544u   /* ASCII 'C','M','E','D'（小端） */
+
 #endif /* GOMOKU_CM_MAILBOX_H */

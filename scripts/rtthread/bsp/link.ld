@@ -9,8 +9,7 @@
  *           │  CoreMark    │  跑分档（栈顶 0xF000）
  *   0x10000 ├──────────────┤  ← 本镜像起点（boot.S 里 jr 0x10000）
  *           │  .text       │  代码
- *   0x11000 ├──────────────┤  ALIGN(0x1000)
- *           │  .rodata     │  常量
+ *           │  .rodata     │  常量（T7 起 ALIGN(4)，不再吃 4KB 页对齐）
  *           │  .data       │  已初始化数据
  *           │  .bss        │  未初始化数据（含 3 条线程栈）
  *   _end    ├──────────────┤
@@ -59,7 +58,12 @@ SECTIONS
     *(.text .text.*)
   }
 
-  . = ALIGN(0x1000);
+  /* [T7 2026-10-19] 原来这里是 ALIGN(0x1000) —— 继承自 demo/coremark 链接脚本
+   *   的历史遗产（当年 imem/dmem 分柜时代按 4KB 页切）。elf2mem 按【段名】+
+   *   VMA 分桶，根本不看边界；这个 4KB 对齐在 .text 已到 50KB 的今天白白浪费
+   *   ~3.3KB 堆（镜像 101% 装不下的直接原因之一）。改成 ALIGN(4)。
+   *   代价：无 —— 代码/数据都在同一块统一 RAM 里，地址平移不改变语义。 */
+  . = ALIGN(4);
   .rodata : { *(.rodata .rodata.* .srodata .srodata.*) }
   . = ALIGN(4);
   .data   : { *(.data .data.* .sdata .sdata.*) }

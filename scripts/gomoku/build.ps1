@@ -46,7 +46,8 @@ $elf = Join-Path $prog $(if ($Sim) { "gomoku_sim.elf" } else { "gomoku.elf" })
 # [!] 入口拆成两个文件是为了同时支持裸机与 RT-Thread —— 见 main_entry.c 的文件头。
 #     **RT-Thread 的构建不能包含 main_entry.c**（那会多一个 main()）。
 $srcs = @("board.c", "ai.c", "render.c", "video_port.c",
-          "input.c", "hw_port.c", "game.c", "main.c", "main_entry.c") |
+          "input.c", "hw_port.c", "game.c", "main.c", "main_entry.c",
+          "coremark_screen.c") |
         ForEach-Object { Join-Path $PSScriptRoot $_ }
 $srcs += Join-Path $demo "start.S"
 

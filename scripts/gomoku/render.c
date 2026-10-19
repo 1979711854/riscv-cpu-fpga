@@ -37,6 +37,14 @@ static const uint8_t SHAPE_LUT[16] = {
     /*15 1111 */ 0    /* 内部 */
 };
 
+/* 16x16 系字形 = 5x7 放大 FONT_SCALE 倍。换算字模坐标时**不能直接除**：
+ * C 的整数除法向零截断，p < o 时的 -1 / 2 会变成 0，把左上角多画一条
+ * （字模第 0 列/行），几何就不是居中的 10x14 了。 */
+static int glyph_coord(int p, int o)
+{
+    return (p >= o) ? (p - o) / FONT_SCALE : -1;
+}
+
 uint8_t render_shape(int r, int c)
 {
     uint8_t m = 0;
@@ -47,20 +55,13 @@ uint8_t render_shape(int r, int c)
     return SHAPE_LUT[m];
 }
 
-/* 任意 rows x cols 子盘上的形状（标题屏 7x7 小棋盘用）。
- * [!] 不能直接给 render_shape 传 7x7 之外的尺寸 —— 它写死 GOMOKU_N，
- *     拿去画小盘会把"下边"当成内部。 */
-static uint8_t shape_dim(int r, int c, int rows, int cols)
-{
-    uint8_t m = 0;
-    if (r > 0)          m |= 8u;
-    if (r < rows - 1)   m |= 4u;
-    if (c > 0)          m |= 2u;
-    if (c < cols - 1)   m |= 1u;
-    return SHAPE_LUT[m];
-}
+/* [T6-R2] 小棋盘网格四向出头：原 shape_dim（按边缘位置挑"上边/下边/角"
+ * 图块）退役 —— 小棋盘所有交叉点一律用"内部十字"图块（shape 0，四向线
+ * 贯通到图块边缘），边缘交叉点向四个方向各出头约 7px（半个图块），
+ * 网格伸向木色外框，框与网格间隙从 15px 缩到 7px，视觉上铺满框内区域，
+ * 角部呈闭合的"+"形。 */
 
-/* 星位点：天元 + 四个小目（15x15 交叉点）。落子/光标盖在星位上时星位自然被遮。 */
+/* 星位点：天元 + 四个小目（15x15 交叉点）。2x2 棋盘用它选 245..248 四个象限。 */
 static int render_is_star(int r, int c)
 {
     return (r == 3 && c == 3) || (r == 3 && c == 11) ||
@@ -68,32 +69,80 @@ static int render_is_star(int r, int c)
            (r == 11 && c == 3) || (r == 11 && c == 11);
 }
 
-/* 字符 → 字库图块号。小写折叠到大写，范围外/不可见字符落空格图块。 */
+/* 字符 → 16x16 字库图块号。小写折叠到大写；不在子集里的字符落空格图块。 */
 static uint8_t glyph_tile(int ch)
 {
+    int idx;
     if (ch >= 'a' && ch <= 'z') ch -= 32;
-    if (ch >= FONT_BASE && ch < FONT_BASE + FONT_N_GLYPHS)
-        return (uint8_t)(FONT_TILE_BASE + (ch - FONT_BASE));
-    return (uint8_t)FONT_TILE_BASE;          /* 空格 */
+    if (ch < FONT_BASE || ch > 0x7E) return (uint8_t)FONT_TILE_BASE;
+    idx = (int)FONT_INDEX[ch - FONT_BASE];
+    if (idx < 0 || idx >= FONT_N_GLYPHS) return (uint8_t)FONT_TILE_BASE;
+    return (uint8_t)(FONT_TILE_BASE + idx);
+}
+
+/* 字符 → 16x16 子集的 5x7 位图行指针（logo 合成用）。 */
+static const uint8_t *glyph_rows(int ch)
+{
+    int idx;
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < FONT_BASE || ch > 0x7E) return FONT_GLYPH[0];
+    idx = (int)FONT_INDEX[ch - FONT_BASE];
+    if (idx < 0 || idx >= FONT_N_GLYPHS) return FONT_GLYPH[0];
+    return FONT_GLYPH[idx];
+}
+
+/* 字符 → 暗金 8x8 图块号（POWERED 行专用子集，17 字）。
+ * 空格/未收录字符落灰色 8x8 空格图块 —— 空格图块是纯底色，颜色无关。 */
+static uint8_t glyph8g_tile(int ch)
+{
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < FONT_BASE || ch > 0x7E) return (uint8_t)FONT8_TILE_BASE;
+    if (FONT8G_TILE[ch - FONT_BASE] == 0xFF)
+        return (uint8_t)FONT8_TILE_BASE;
+    return (uint8_t)FONT8G_TILE[ch - FONT_BASE];
+}
+
+/* 字符 → 金色 16x16 图块号（HUD 标题 GOMOKU，5 字）。未收录落暖白空格图块。 */
+static uint8_t glyph_gold16_tile(int ch)
+{
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < FONT_BASE || ch > 0x7E) return (uint8_t)FONT_TILE_BASE;
+    if (FONT_GOLD16_TILE[ch - FONT_BASE] == 0xFF)
+        return (uint8_t)FONT_TILE_BASE;
+    return (uint8_t)FONT_GOLD16_TILE[ch - FONT_BASE];
+}
+
+/* 字符 → 绿色 16x16 图块号（HUD THINKING，6 字）。未收录落暖白空格图块。 */
+static uint8_t glyph_green16_tile(int ch)
+{
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < FONT_BASE || ch > 0x7E) return (uint8_t)FONT_TILE_BASE;
+    if (FONT_GREEN16_TILE[ch - FONT_BASE] == 0xFF)
+        return (uint8_t)FONT_TILE_BASE;
+    return (uint8_t)FONT_GREEN16_TILE[ch - FONT_BASE];
+}
+
+/* 字符 → 8x8 提示图块号。不在 8x8 子集里就落空格图块。 */
+static uint8_t glyph8_tile(int ch)
+{
+    int idx;
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < FONT_BASE || ch > 0x7E) return (uint8_t)FONT8_TILE_BASE;
+    idx = (int)FONT8_INDEX[ch - FONT_BASE];
+    if (idx < 0 || idx >= FONT8_N_GLYPHS) return (uint8_t)FONT8_TILE_BASE;
+    return (uint8_t)(FONT8_TILE_BASE + idx);
 }
 
 uint8_t render_tile_for(const gomoku_t *g, int r, int c, int cr, int cc)
 {
     uint8_t shape = render_shape(r, c);
-    int     is_last = (g->last_r == r && g->last_c == c);   /* 最后一手 */
 
-    if (r == cr && c == cc) {                       /* 光标优先 */
+    if (r == cr && c == cc)                         /* 光标优先 */
         return RENDER_TILE(shape, RENDER_ST_CURSOR);
-    }
-    if (g->cell[r][c] == GOMOKU_BLACK) {
-        if (is_last) return (uint8_t)(RENDER_TILE_LAST_BASE + shape * 2 + 0);
+    if (g->cell[r][c] == GOMOKU_BLACK)
         return RENDER_TILE(shape, RENDER_ST_BLACK);
-    }
-    if (g->cell[r][c] == GOMOKU_WHITE) {
-        if (is_last) return (uint8_t)(RENDER_TILE_LAST_BASE + shape * 2 + 1);
+    if (g->cell[r][c] == GOMOKU_WHITE)
         return RENDER_TILE(shape, RENDER_ST_WHITE);
-    }
-    if (render_is_star(r, c)) return RENDER_TILE_STAR;
     return RENDER_TILE(shape, RENDER_ST_EMPTY);
 }
 
@@ -131,6 +180,42 @@ void render_full(const gomoku_t *g, int cr, int cc)
             put_nt(r, c, render_tile_for(g, r, c, cr, cc));
 }
 
+/* 对局屏：15x15 格 × 2x2 tile = 30x30 tile（480x480），原点 (0,0)。
+ * 每格写 4 个 nametable 字节（TL/TR/BL/BR），右侧 30..39 列留给 HUD。 */
+void render_full2(const gomoku_t *g, int cr, int cc)
+{
+    int r, c, q;
+    for (r = 0; r < GOMOKU_N; r++) {
+        for (c = 0; c < GOMOKU_N; c++) {
+            int shape = render_shape(r, c);
+            uint8_t v  = g->cell[r][c];
+            int st     = (v == GOMOKU_BLACK) ? RENDER_ST_BLACK :
+                         (v == GOMOKU_WHITE) ? RENDER_ST_WHITE : RENDER_ST_EMPTY;
+            int star   = 0;
+
+            if (r == cr && c == cc && st == RENDER_ST_EMPTY) {
+                st = RENDER_ST_CURSOR;
+            } else if (st == RENDER_ST_EMPTY && render_is_star(r, c)) {
+                star = 1;
+            }
+
+            for (q = 0; q < 4; q++) {
+                uint8_t tile = star
+                    ? (uint8_t)(RENDER_TILE_BOARD2_STAR + q)
+                    : (uint8_t)(RENDER_TILE_BOARD2_BASE + BOARD2_MAP[shape][st][q]);
+                put_abs(r * 2 + (q >> 1), c * 2 + (q & 1), tile);
+            }
+
+            /* 最后一手：右上象限盖红三角。黑/白各一张专用图块，底是真实棋子，
+             * 不再用“木色底”把棋子右上角擦掉。 */
+            if (v != GOMOKU_EMPTY && r == (int)g->last_r && c == (int)g->last_c)
+                put_abs(r * 2, c * 2 + 1,
+                        (st == RENDER_ST_WHITE) ? RENDER_TILE_BOARD2_LAST_W
+                                                : RENDER_TILE_BOARD2_LAST);
+        }
+    }
+}
+
 void render_move_cursor(const gomoku_t *g, int oldr, int oldc, int newr, int newc)
 {
     /* 旧位置按"没有光标"重画，新位置带上光标 —— 正好 2 个字节。
@@ -148,9 +233,6 @@ void render_clear(void)
     for (c = 0; c < SCREEN_COLS; c++) row[c] = (uint8_t)FONT_TILE_BASE;
     for (r = 0; r < SCREEN_ROWS; r++)
         vid_bulk_write(VID_REGION_NT, (uint16_t)(r * 256), row, (uint16_t)SCREEN_COLS);
-    /* [!] 整屏被抹平了 ⇒ 幂等写的缓存必须作废，否则下次 render_text_dedup
-     *     会认为"内容没变"而跳过，那一行就【永远空白】。 */
-    render_dedup_reset();
 }
 
 /* ---------------------------------------------------------------------------
@@ -177,12 +259,9 @@ void render_frame_at(int r0, int c0, int n)
     }
 }
 
-void render_board_frame(void)
-{
-    render_frame_at(BOARD_ROW0, BOARD_COL0, GOMOKU_N);
-}
-
 /* 子盘区域：只有棋子/空格，没有光标、星位、最后一手标记。
+ * [T6-R2] 所有交叉点用"内部十字"图块（shape 0）：边缘交叉点的线向四外
+ * 出头约 7px，网格伸向木色外框（框与网格间隙 15px -> 7px）。
  * 一行一次 vid_bulk_write（cols 个字节），比逐格写少 cols-1 次调用。 */
 void render_board_region(const gomoku_t *g, int r0, int c0, int rows, int cols,
                          int sr, int sc)
@@ -193,28 +272,13 @@ void render_board_region(const gomoku_t *g, int r0, int c0, int rows, int cols,
     if (rows > SCREEN_COLS) rows = SCREEN_COLS;
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
-            uint8_t shape = shape_dim(r, c, rows, cols);
-            uint8_t st    = RENDER_ST_EMPTY;
-            uint8_t v     = g->cell[r0 + r][c0 + c];
+            uint8_t st = RENDER_ST_EMPTY;
+            uint8_t v  = g->cell[r0 + r][c0 + c];
             if (v == GOMOKU_BLACK)      st = RENDER_ST_BLACK;
             else if (v == GOMOKU_WHITE) st = RENDER_ST_WHITE;
-            line[c] = RENDER_TILE(shape, st);
+            line[c] = RENDER_TILE(0u, st);      /* 十字图块：四向线全画 */
         }
         vid_bulk_write(VID_REGION_NT, (uint16_t)((sr + r) * 256 + sc), line, (uint16_t)cols);
-    }
-}
-
-void render_board_labels(void)
-{
-    int i;
-    /* 列坐标 A-O：外框上方一行 */
-    render_text(BOARD_ROW0 - 2, BOARD_COL0, "ABCDEFGHIJKLMNO");
-    /* 行坐标 1-15：外框左侧，右对齐到 BOARD_COL0-2 列（十位在 -3 列）*/
-    for (i = 0; i < GOMOKU_N; i++) {
-        int n   = i + 1;
-        int row = BOARD_ROW0 + i;
-        if (n >= 10) put_abs(row, BOARD_COL0 - 3, glyph_tile('0' + n / 10));
-        put_abs(row, BOARD_COL0 - 2, glyph_tile('0' + n % 10));
     }
 }
 
@@ -269,62 +333,104 @@ void render_text_center(int row, const char *s)
     render_text(row, (SCREEN_COLS - len) / 2, s);
 }
 
-/* ---------------------------------------------------------------------------
- * [2026-10-17 加] **幂等写**：内容没变就不写。
- * ---------------------------------------------------------------------------
- * 为什么需要：`draw_hud()` 是【每帧】调的，而 `render_text` 每次都整行重铺
- *   ～40 个图块（哪怕内容一模一样）。写的时候若已经出了 vblank 窗口，屏上就
- *   看得见这一行在闪 —— 2026-10-17 用户实测反馈："AI VS AI 下 STEP 那行字有闪烁"。
- *   （其它 HUD 行内容平时不变、所以看不出；AI 对弈时每帧都在推进，最容易暴露。）
- *
- * 用法：`slot` 由调用方给一个【固定编号】(0..RENDER_DEDUP_SLOTS-1)，同一槽位永远
- *   对应同一行；换行/换内容时**换槽位**，别复用 —— 否则会拿旧内容当基准比。
- *   `col` 一并参与比较（同一个 slot 换列也算变化）。
- *
- * RAM 代价：RENDER_DEDUP_SLOTS × SCREEN_COLS 字节（6×40 = 240 B），
- *   只给会频繁重画的 HUD 行用，不是全局缓存。
- * ------------------------------------------------------------------------- */
-#define RENDER_DEDUP_SLOTS 6
-static uint8_t dedup_cache[RENDER_DEDUP_SLOTS][SCREEN_COLS + 1];   /* +1 存 col */
-static uint8_t dedup_valid;
-
-void render_text_dedup(int slot, int row, int col, const char *s)
+void render_text8_span(int row, int col, const char *s)
 {
-    uint8_t line[SCREEN_COLS];
-    int     i;
-
-    if (slot < 0 || slot >= RENDER_DEDUP_SLOTS) {      /* 槽位越界就别缓存，老老实实写 */
-        render_text(row, col, s);
-        return;
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        int c = col + i;
+        if (c < 0 || c >= SCREEN_COLS) break;
+        put_abs(row, c, glyph8_tile((int)(unsigned char)s[i]));
     }
-
-    build_line(line, col, s);
-
-    if (dedup_valid & (uint8_t)(1u << slot)) {
-        if (dedup_cache[slot][SCREEN_COLS] == (uint8_t)col) {
-            for (i = 0; i < SCREEN_COLS; i++)
-                if (dedup_cache[slot][i] != line[i]) break;
-            if (i == SCREEN_COLS) return;              /* 整行一字不差 ⇒ 跳过这次写 */
-        }
-    }
-
-    for (i = 0; i < SCREEN_COLS; i++) dedup_cache[slot][i] = line[i];
-    dedup_cache[slot][SCREEN_COLS] = (uint8_t)col;
-    dedup_valid |= (uint8_t)(1u << slot);
-
-    vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256), line, (uint16_t)SCREEN_COLS);
 }
 
-void render_dedup_reset(void)
-{
-    dedup_valid = 0;
-}
-
-void render_text_dedup_center(int slot, int row, const char *s)
+void render_text8_center(int row, const char *s)
 {
     int len = 0;
     while (s[len] != '\0' && len < SCREEN_COLS) len++;
-    render_text_dedup(slot, row, (SCREEN_COLS - len) / 2, s);
+    render_text8_span(row, (SCREEN_COLS - len) / 2, s);
+}
+
+void render_text8g_span(int row, int col, const char *s)
+{
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        int c = col + i;
+        if (c < 0 || c >= SCREEN_COLS) break;
+        put_abs(row, c, glyph8g_tile((int)(unsigned char)s[i]));
+    }
+}
+
+void render_text8g_center(int row, const char *s)
+{
+    int len = 0;
+    while (s[len] != '\0' && len < SCREEN_COLS) len++;
+    render_text8g_span(row, (SCREEN_COLS - len) / 2, s);
+}
+
+/* [T7] 标题中灰 8x8 子集已整集退役（痛点二后无使用者）—— glyph_tgray_tile /
+ * render_text_tgray_span/center 与 render_init 里的合成循环一并删除；
+ * 图块号 129/130/146..149/178..179 释放为空闲。 */
+
+void render_gold16_span(int row, int col, const char *s)
+{
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        int c = col + i;
+        if (c < 0 || c >= SCREEN_COLS) break;
+        put_abs(row, c, glyph_gold16_tile((int)(unsigned char)s[i]));
+    }
+}
+
+void render_green16_span(int row, int col, const char *s)
+{
+    int i;
+    for (i = 0; s[i] != '\0'; i++) {
+        int c = col + i;
+        if (c < 0 || c >= SCREEN_COLS) break;
+        put_abs(row, c, glyph_green16_tile((int)(unsigned char)s[i]));
+    }
+}
+
+void render_faint_rule(int row, int col, int len)
+{
+    int i;
+    for (i = 0; i < len; i++) render_put(row, col + i, RENDER_TILE_FAINT_RULE);
+}
+
+void render_desc_arrow(int row, int col)
+{
+    render_put(row, col, RENDER_TILE_DESC_ARROW);
+}
+
+void render_clear_span(int row, int col, int n)
+{
+    uint8_t line[SCREEN_COLS];
+    int i;
+    if (row < 0 || row >= SCREEN_ROWS) return;
+    if (n > SCREEN_COLS) n = SCREEN_COLS;
+    for (i = 0; i < n; i++) line[i] = (uint8_t)FONT_TILE_BASE;
+    if (col < 0) { n += col; col = 0; }
+    if (col + n > SCREEN_COLS) n = SCREEN_COLS - col;
+    if (n <= 0) return;
+    vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256 + col), line, (uint16_t)n);
+}
+
+void render_cjk(int row, int col, int code)
+{
+    int idx;
+    if (code == RENDER_CJK_WU)      idx = 0;
+    else if (code == RENDER_CJK_ZI) idx = 1;
+    else if (code == RENDER_CJK_QI) idx = 2;
+    else return;
+    render_put(row, col, (uint8_t)(FONT_CJK_TILE_BASE + idx));
+}
+
+void render_wins(int row, int col)
+{
+    render_put(row, col,     RENDER_TILE_WINS_BASE);
+    render_put(row, col + 1, (uint8_t)(RENDER_TILE_WINS_BASE + 1));
+    render_put(row, col + 2, (uint8_t)(RENDER_TILE_WINS_BASE + 2));
+    render_put(row, col + 3, (uint8_t)(RENDER_TILE_WINS_BASE + 3));
 }
 
 /* ---- 阶段 1 合成图块：在 render_init 里现算，不占固件 .rodata ---------------
@@ -332,27 +438,6 @@ void render_text_dedup_center(int slot, int row, const char *s)
 
 /* 棋盘图块的合成函数（定义在下面 render_init 之前，这里先声明）。 */
 static void synth_board_tile(uint8_t *buf, int shape, int state);
-
-/* 拷贝棋盘图块并在右上角叠一个红色小三角（最后一手标记）。color: 0=黑 1=白。 */
-static void synth_last_move(uint8_t *buf, int shape, int color)
-{
-    int y, x;
-    synth_board_tile(buf, shape, color + 1);     /* BLACK=1 / WHITE=2 */
-    /* 右上角 4x4 小三角（顶点朝左下）。避开中心子（半径 6）与行/列 7-8 的网格线。 */
-    for (y = 0; y < 4; y++)
-        for (x = 12 + y; x < TILE_W; x++)
-            buf[y * TILE_W + x] = PAL_RED;
-}
-
-/* 星位点：内部空格图块 + 中心 4x4 实心点（比网格线粗，一眼能认出是星位）。 */
-static void synth_star(uint8_t *buf)
-{
-    int y, x;
-    synth_board_tile(buf, TILE_SHAPE_INNER, TILE_ST_EMPTY);
-    for (y = 6; y <= 9; y++)
-        for (x = 6; x <= 9; x++)
-            buf[y * TILE_W + x] = PAL_LINE;
-}
 
 /* 外框纯横线 / 纯竖线（2px，与棋盘线同色）。四角复用棋盘边角图块。
  * [!] 2026-10-18 保留 **PAL_BG（木色）底**，不要改成 UI 深色：
@@ -445,7 +530,7 @@ static uint8_t logo_stone_px(int gx, int gy, int stone)
 /* 合成一块 logo 图块：ch 为字符；stone != 0 时忽略字模、画棋子。 */
 static void synth_logo_tile(uint8_t *buf, char ch, int stone, int qx, int qy)
 {
-    const uint8_t *rows = FONT_GLYPH[(int)ch - FONT_BASE];
+    const uint8_t *rows = glyph_rows(ch);
     int x, y;
 
     for (y = 0; y < TILE_W; y++) {
@@ -466,45 +551,6 @@ static void synth_logo_tile(uint8_t *buf, char ch, int stone, int qx, int qy)
             }
             buf[y * TILE_W + x] = v;
         }
-    }
-}
-
-/* 选中框的 8 块图块：2px 金色描边，底是 UI 深色。
- * kind: 0=TL 1=T 2=TR 3=L 4=R 5=BL 6=B 7=BR
- *   上排三块的横线在**底部**（紧贴文字行），下排三块的横线在**顶部**。 */
-static void synth_box(uint8_t *buf, int kind)
-{
-    int x, y;
-    int hline_bottom = (kind <= 2);
-    int hline_top    = (kind >= 5);
-    int vleft        = (kind == 0 || kind == 3 || kind == 5);
-    int vright       = (kind == 2 || kind == 4 || kind == 7);
-    /* [!] 竖线只画在**框内侧**（2026-10-18 第二轮反馈 T4）：
-     *     角块如果让竖线贯穿整块 16px，就会从上下边框外面戳出去 14px，
-     *     看起来像"金条超出框"。所以上排角块的竖线只占 y=14..15（正好接上边框），
-     *     下排角块只占 y=0..1，只有左右两条边（L/R）才是整块通高。 */
-    int vy0 = hline_bottom ? 14 : 0;
-    int vy1 = hline_top    ?  1 : (TILE_W - 1);
-
-    for (y = 0; y < TILE_W; y++)
-        for (x = 0; x < TILE_W; x++)
-            buf[y * TILE_W + x] = PAL_UI_BG;
-
-    if (hline_bottom) {
-        for (x = 0; x < TILE_W; x++) {
-            buf[14 * TILE_W + x] = PAL_GOLD;
-            buf[15 * TILE_W + x] = PAL_GOLD;
-        }
-    }
-    if (hline_top) {
-        for (x = 0; x < TILE_W; x++) {
-            buf[0 * TILE_W + x] = PAL_GOLD;
-            buf[1 * TILE_W + x] = PAL_GOLD;
-        }
-    }
-    for (y = vy0; y <= vy1; y++) {
-        if (vleft)  { buf[y * TILE_W + 0] = PAL_GOLD; buf[y * TILE_W + 1] = PAL_GOLD; }
-        if (vright) { buf[y * TILE_W + 14] = PAL_GOLD; buf[y * TILE_W + 15] = PAL_GOLD; }
     }
 }
 
@@ -535,6 +581,197 @@ static void synth_arrow(uint8_t *buf)
 static void put_pat(uint16_t tile, const uint8_t *buf)
 {
     vid_bulk_write(VID_REGION_PAT, (uint16_t)(tile * TILE_BYTES), buf, (uint16_t)TILE_BYTES);
+}
+
+/* T6 新增的三个变色子集与 8x8 提示字库同几何，只换前景色：
+ *   暗金 8x8（POWERED 行，FONT8G_*，独立位图表——'&'/'-' 不在灰色子集里）
+ *   金 16x16 / 绿 16x16（5x7 放大 2x，字形用 FONT_INDEX -> FONT_GLYPH 取） */
+
+/* 极暗横线：1px，只比 UI 底亮一丁点。 */
+static void synth_faint_rule(uint8_t *buf)
+{
+    int x, y;
+    for (y = 0; y < TILE_W; y++)
+        for (x = 0; x < TILE_W; x++)
+            buf[y * TILE_W + x] = (uint8_t)(y == 7 ? PAL_UI_FAINT : PAL_UI_BG);
+}
+
+/* 暗金说明锚点：5x7 的 '>'，1x 居中。 */
+static void synth_desc_arrow(uint8_t *buf)
+{
+    const uint8_t *rows = glyph_rows('>');
+    int x, y;
+    int ox = (TILE_W - FONT_W) / 2;      /* 5 */
+    int oy = (TILE_W - FONT_H) / 2;      /* 4 */
+    for (y = 0; y < TILE_W; y++) {
+        for (x = 0; x < TILE_W; x++) {
+            uint8_t v = (uint8_t)PAL_UI_BG;
+            int fx = x - ox, fy = y - oy;
+            if (fx >= 0 && fx < FONT_W && fy >= 0 && fy < FONT_H &&
+                ((rows[fy] >> (FONT_W - 1 - fx)) & 1u))
+                v = (uint8_t)PAL_GOLD_DIM;
+            buf[y * TILE_W + x] = v;
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * CoreMark 终端演示屏（GAME_COREMARK，2026-10-19 T7）—— 见 render.h 的说明。
+ * 字形表（FONT_TERM_*）由 gen_tiles.py 生成进 font.h；图块号「借」标题屏
+ * 专用块（logo/WINS/中文/GOMKU/THINKING 前两块），退出时 render_init 恢复。
+ * ------------------------------------------------------------------------- */
+
+/* 变色子集（绿/金 16x16 + 各 8x8 系）的合成逻辑同构，抽成一个通用助手：
+ *   wide8=0 → 5x7 放大 2x（16x16 系）；wide8=1 → 8x7 按 1x（8x8 系）。
+ * glyphs 是 [n][FONT_H] 位表摊平传进来；图块号二选一：
+ *   tiles != NULL → 查 ASCII→图块号映射表；tiles == NULL → 连续编号 base+g
+ *   （chars 此时可为 NULL，仅用于映射模式）。render_init 与终端屏共用。 */
+static void synth_glyph_set(const char *chars, const uint8_t *glyphs,
+                              const uint8_t *tiles, int base, int n,
+                              int fg, int bg, int wide8)
+{
+    uint8_t tile[TILE_BYTES];
+    int g, x, y;
+    int ox = wide8 ? (TILE_W - FONT8_W) / 2
+                   : (TILE_W - FONT_W * FONT_SCALE) / 2;
+    /* [!] 16x16 系是 5x7 **放大 2x**（10x14），垂直方向也要按 FONT_SCALE 居中；
+     *     1x 的 oy 会让字形只剩半高、整体偏下（T7 重构时漏掉的一处）。 */
+    int oy = wide8 ? (TILE_W - FONT_H) / 2
+                   : (TILE_W - FONT_H * FONT_SCALE) / 2;
+    int fw = wide8 ? FONT8_W : FONT_W;
+
+    for (g = 0; g < n; g++) {
+        int tn = tiles ? (int)tiles[(int)(unsigned char)chars[g]] : base + g;
+        for (y = 0; y < TILE_W; y++) {
+            for (x = 0; x < TILE_W; x++) {
+                int fx = wide8 ? (x - ox) : glyph_coord(x, ox);
+                int fy = wide8 ? (y - oy) : glyph_coord(y, oy);
+                uint8_t v = (uint8_t)bg;
+                if (fx >= 0 && fx < fw && fy >= 0 && fy < FONT_H) {
+                    int bit = wide8 ? (FONT8_W - 1 - fx) : (FONT_W - 1 - fx);
+                    if ((glyphs[g * FONT_H + fy] >> bit) & 1u)
+                        v = (uint8_t)fg;
+                }
+                tile[y * TILE_W + x] = v;
+            }
+        }
+        put_pat((uint16_t)tn, tile);
+    }
+}
+
+/* 生成侧的字形图块表（FONT8G_TILE / FONT_TERM_*_TILE）按 **ord(ch)-FONT_BASE**
+ * 索引（95 项，对应 ASCII 32..126）；而 synth_glyph_set 的映射模式按 **ASCII 原值**
+ * 取表。这里把表摊到栈上的 ASCII 索引表再传，图块号不再整体错位 32 格。
+ * [!] 栈表必须开 127 项（不是 95）：GREEN16 含 '['(91) / ']'(93)，按 95 项开表
+ *     会越界。**不扩生成侧表** —— RT-Thread 镜像 rodata 已 99.7% 满。 */
+static void synth_glyph_set_ord32(const char *chars, const uint8_t *glyphs,
+                                  const uint8_t *tiles, int n,
+                                  int fg, int bg, int wide8)
+{
+    uint8_t m[127];
+    int i;
+
+    for (i = 0; i < 127; i++) m[i] = 0xFF;
+    for (i = 0; i < 95; i++) m[FONT_BASE + i] = tiles[i];
+    synth_glyph_set(chars, glyphs, m, 0, n, fg, bg, wide8);
+}
+
+/* 终端监控区 8x8 绿字（15 字）。图块号借 **对局 2x2 棋盘区 188..202**：
+ * 演示屏期间这些棋盘图块不用，且 render_init 会全量重建它们 ⇒
+ * render_term_end 后逐字节还原（test_render §G 的 memcmp 判据）。
+ * **不用 255**（测试哨兵），也不动 GOLD16/GREEN16 正在用的号段。 */
+static const char    TERM_G8_CHARS[16] = "0123456789.KSEC";
+static const uint8_t TERM_G8_TILES[15] = {
+    188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202
+};
+
+/* 把 8x8 的 0-9 / . / K / S / E / C 合成成亮绿字块（16x16 居中，wide8=1）。 */
+static void synth_term_green8(void)
+{
+    uint8_t m[95];
+    uint8_t g[15][FONT_H];
+    int i, j, ci, gi;
+
+    for (i = 0; i < 95; i++) m[i] = 0xFF;
+    for (i = 0; i < 15; i++) {
+        ci = (int)(unsigned char)TERM_G8_CHARS[i] - FONT_BASE;
+        gi = (ci >= 0 && ci < 95) ? (int)FONT8_INDEX[ci] : 0xFF;
+        /* [!] m 是 synth_glyph_set 的 **ASCII 原值**索引表（与 m8 同）；
+         *     ci 是 font.h 表的 ord-32 索引，只用于取位图。两者别混。 */
+        m[(int)(unsigned char)TERM_G8_CHARS[i]] = TERM_G8_TILES[i];
+        for (j = 0; j < FONT_H; j++)
+            g[i][j] = (gi >= 0 && gi < FONT8_N_GLYPHS) ? FONT8_GLYPH[gi][j] : 0;
+    }
+    synth_glyph_set(TERM_G8_CHARS, (const uint8_t *)g, m, 0, 15,
+                    PAL_OK, PAL_UI_BG, 1);
+}
+
+/* 终端借图块查询（见 render.h）。核心作用是**只在这一个 TU 里引用生成表**：
+ * coremark_screen.c 若自己拿表当指针传，同一张 95B 表会在两个 .o 里各驻留一份。 */
+uint8_t render_term_tile(int set, char ch)
+{
+    const uint8_t *map;
+    int c = (int)(unsigned char)ch;
+    int i;
+
+    if (c >= 'a' && c <= 'z') c -= 32;              /* 子集只收大写 */
+    if (set == RENDER_TERM_SET_GREEN8) {
+        for (i = 0; i < 15; i++)
+            if (TERM_G8_CHARS[i] == (char)c) return TERM_G8_TILES[i];
+        return 0xFF;
+    }
+    if (c < FONT_BASE || c > 0x7E) return 0xFF;     /* 空格/控制字符 */
+    map = (set == RENDER_TERM_SET_GREEN16) ? FONT_TERM_GREEN16_TILE
+                                           : FONT_TERM_GOLD16_TILE;
+    return map[c - FONT_BASE];
+}
+
+void render_term_begin(void)
+{
+    uint8_t pal4[4];
+    uint8_t tile[TILE_BYTES];
+    int i;
+
+    /* 1) UI 底（调色板 7）换纯黑：演示屏期间所有字库图块的底跟着变黑。
+     *    只动这一项；render_term_end() -> render_init() 会写回原值。 */
+    pal4[0] = 0x00; pal4[1] = 0x00; pal4[2] = 0x00; pal4[3] = 0;
+    vid_bulk_write(VID_REGION_PAL, (uint16_t)(PAL_UI_BG * 4), pal4, 4);
+
+    /* 2) 终端字形：亮绿/亮金 16x16 + 亮绿/暗灰 8x8（借主图块号在 font.h 表里）
+     * [T7] 两个 8x8 小子集（OK / %）只用 3 个图块号 —— 映射表在栈上现造，
+     *      不占 2×95 字节的 .rodata。 */
+    synth_glyph_set_ord32(FONT_TERM_GREEN16_CHARS, (const uint8_t *)FONT_TERM_GREEN16_GLYPH,
+                          FONT_TERM_GREEN16_TILE, FONT_TERM_GREEN16_N,
+                          FONT_TERM_GREEN16_FG, FONT_TERM_GREEN16_BG, 0);
+    synth_glyph_set_ord32(FONT_TERM_GOLD16_CHARS, (const uint8_t *)FONT_TERM_GOLD16_GLYPH,
+                          FONT_TERM_GOLD16_TILE, FONT_TERM_GOLD16_N,
+                          FONT_TERM_GOLD16_FG, FONT_TERM_GOLD16_BG, 0);
+    {
+        uint8_t m8[95];
+        for (i = 0; i < 95; i++) m8[i] = 0xFF;
+        m8['O'] = RENDER_TILE_TERM_OK_O; m8['K'] = RENDER_TILE_TERM_OK_K;
+        synth_glyph_set("OK", (const uint8_t *)FONT_TERM_GREEN8_GLYPH,
+                        m8, 0, FONT_TERM_GREEN8_N,
+                        FONT_TERM_GREEN8_FG, FONT_TERM_GREEN8_BG, 1);
+        m8['O'] = 0xFF; m8['K'] = 0xFF; m8['%'] = RENDER_TILE_TERM_PCT;
+        synth_glyph_set("%", (const uint8_t *)FONT_TERM_GRAY8_GLYPH,
+                        m8, 0, FONT_TERM_GRAY8_N,
+                        FONT_TERM_GRAY8_FG, FONT_TERM_GRAY8_BG, 1);
+    }
+    synth_term_green8();          /* 监控区数值：8x8 亮绿 */
+
+    /* 3) 进度条实心块：填充 = 亮绿，空轨 = 极暗（借 THINKING 的 T/H，见 render.h）*/
+    for (i = 0; i < TILE_BYTES; i++) tile[i] = (uint8_t)PAL_OK;
+    put_pat(RENDER_TILE_TERM_FILL, tile);
+    for (i = 0; i < TILE_BYTES; i++) tile[i] = (uint8_t)PAL_UI_FAINT;
+    put_pat(RENDER_TILE_TERM_TRACK, tile);
+
+    render_clear();                      /* 纯黑铺满 40x30 */
+}
+
+void render_term_end(void)
+{
+    render_init();                       /* 调色板 + 全部图块一次性恢复 */
 }
 
 /* ---------------------------------------------------------------------------
@@ -615,6 +852,89 @@ static void synth_board_tile(uint8_t *buf, int shape, int state)
     }
 }
 
+/* ---------------------------------------------------------------------------
+ * 对局 2x2 棋盘：32x32 格 → 4 个 16x16 象限
+ * ---------------------------------------------------------------------------
+ * 几何必须与 gen_tiles.py 的 make_cell32() 逐像素一致 —— 那边负责去重并生成
+ * BOARD2_MAP/BOARD2_DESC/BOARD2_QUAD；这边按描述表重新合成唯一图块。
+ * 这样 .rodata 只多一张 ~300B 的映射表，不会多出 62 x 256B 的像素表。
+ * ------------------------------------------------------------------------- */
+static void synth_cell32(uint8_t *buf, int shape, int state)
+{
+    const uint8_t *e = SHAPE_EDGES[shape];
+    int up = e[0], dn = e[1], lf = e[2], rt = e[3];
+    int i, x, y;
+
+    for (i = 0; i < 32 * 32; i++) buf[i] = PAL_BG;
+
+    /* 网格线 4px，中心行列 14..17；两端有线才画到边界 */
+    if (lf || rt) {
+        int x0 = lf ? 0 : 16;
+        int x1 = rt ? 31 : 15;
+        for (y = 14; y <= 17; y++)
+            for (x = x0; x <= x1; x++) buf[y * 32 + x] = PAL_LINE;
+    }
+    if (up || dn) {
+        int y0 = up ? 0 : 16;
+        int y1 = dn ? 31 : 15;
+        for (x = 14; x <= 17; x++)
+            for (y = y0; y <= y1; y++) buf[y * 32 + x] = PAL_LINE;
+    }
+
+    if (state == 1 || state == 2) {                 /* 黑/白子，半径 12px */
+        int color    = (state == 1) ? PAL_BLACK : PAL_WHITE;
+        int hi_color = (state == 1) ? PAL_BLACK_HI : PAL_WHITE_EDGE;
+        for (y = 0; y < 32; y++) {
+            for (x = 0; x < 32; x++) {
+                int dx = 2 * x - 31;
+                int dy = 2 * y - 31;
+                if (dx * dx + dy * dy <= 576) {      /* (2*12)^2 */
+                    int hx = dx + 8, hy = dy + 8;     /* 高光偏移 4px */
+                    buf[y * 32 + x] = (uint8_t)((hx * hx + hy * hy <= 64) ? hi_color : color);
+                }
+            }
+        }
+    } else if (state == 3) {
+        /* 金色对焦角标（v2 §5.5.8），与 gen_tiles.py 的 make_cell32() 逐像素一致。 */
+        int arm = 8, th = 3;
+        for (y = 0; y < 32; y++) {
+            for (x = 0; x < 32; x++) {
+                int tl = (x >= 2 && x < 2 + arm && y >= 2 && y < 2 + th) ||
+                         (x >= 2 && x < 2 + th && y >= 2 && y < 2 + arm);
+                int tr = (x >= 32 - 2 - arm && x < 30 && y >= 2 && y < 2 + th) ||
+                         (x >= 32 - 2 - th && x < 30 && y >= 2 && y < 2 + arm);
+                int bl = (x >= 2 && x < 2 + arm && y >= 32 - 2 - th && y < 30) ||
+                         (x >= 2 && x < 2 + th && y >= 32 - 2 - arm && y < 30);
+                int br = (x >= 32 - 2 - arm && x < 30 && y >= 32 - 2 - th && y < 30) ||
+                         (x >= 32 - 2 - th && x < 30 && y >= 32 - 2 - arm && y < 30);
+                if (tl || tr || bl || br) buf[y * 32 + x] = PAL_GOLD;
+            }
+        }
+    }
+}
+
+static void split_quad32(const uint8_t *cell, int q, uint8_t *out)
+{
+    int qy = q >> 1, qx = q & 1;
+    int x, y;
+    for (y = 0; y < 16; y++)
+        for (x = 0; x < 16; x++)
+            out[y * 16 + x] = cell[(qy * 16 + y) * 32 + qx * 16 + x];
+}
+
+/* 星位：内部空格的 4 个象限 + 中心 8x8 点 */
+static void synth_star_cell32(uint8_t *buf)
+{
+    int x, y;
+    synth_cell32(buf, 0, 0);
+    for (y = 12; y <= 19; y++)
+        for (x = 12; x <= 19; x++) buf[y * 32 + x] = PAL_LINE;
+}
+
+/* 最后一手标记不再单独画一张“木色底 + 红三角”的图块 —— 那会把棋子的右上
+ * 四分之一整块擦成木色（2026-10-19 实拍：棋子缺右上角）。改在 render_init 里
+ * 用真实棋子格（synth_cell32(shape=0, 黑/白)）叠红三角，只取右上象限。 */
+
 void render_init(void)
 {
     uint8_t  pal[TILE_N_PALETTE * 4];
@@ -645,54 +965,111 @@ void render_init(void)
         }
     }
 
-    /* ---- 字库图块：把紧凑 5x7 位图放大 FONT_SCALE 倍成 16x16，写到 tile 36..130。
-     * [!] 这里 95 x 256 = 24KB 是写进【显存】的；固件只存 95 x 7 字节的紧凑位图，
-     *     不占那 24KB RAM（见 build.ps1 的 28KB 限制）。 ---- */
-    {
-        int  g, y, x;
-        int  ox = (TILE_W - FONT_W * FONT_SCALE) / 2;
-        int  oy = (TILE_W - FONT_H * FONT_SCALE) / 2;
+    /* ---- 16x16 子集：5x7 放大 2x，写到 tile 36..72（T7 复用通用合成助手）----
+     * [!] 图块是写进【显存】的；固件只存 37 x 7 字节的紧凑位图。 ---- */
+    synth_glyph_set(0, (const uint8_t *)FONT_GLYPH, 0, FONT_TILE_BASE,
+                    FONT_N_GLYPHS, FONT_FG, FONT_BG, 0);
 
-        for (g = 0; g < FONT_N_GLYPHS; g++) {
+    /* ---- 中文 3 字（87..89）：16x16 1bit，金色 ---- */
+    {
+        int g, x, y;
+        for (g = 0; g < FONT_CJK_N; g++) {
             for (y = 0; y < TILE_W; y++) {
                 for (x = 0; x < TILE_W; x++) {
-                    int fx = (x - ox) / FONT_SCALE;
-                    int fy = (y - oy) / FONT_SCALE;
-                    uint8_t v = (uint8_t)FONT_BG;
-                    if (fx >= 0 && fx < FONT_W && fy >= 0 && fy < FONT_H &&
-                        ((FONT_GLYPH[g][fy] >> (FONT_W - 1 - fx)) & 1u))
-                        v = (uint8_t)FONT_FG;
-                    tile[y * TILE_W + x] = v;
+                    int on = (FONT_CJK_BITS[g][y] >> (15 - x)) & 1u;
+                    tile[y * TILE_W + x] = (uint8_t)(on ? PAL_GOLD : PAL_UI_BG);
                 }
             }
             vid_bulk_write(VID_REGION_PAT,
-                           (uint16_t)((FONT_TILE_BASE + g) * TILE_BYTES),
+                           (uint16_t)((FONT_CJK_TILE_BASE + g) * TILE_BYTES),
                            tile, (uint16_t)TILE_BYTES);
         }
     }
 
-    /* ---- 阶段 1 装饰图块：运行时合成（编号 131..153，见 render.h） ---- */
+    /* ---- 8x8 提示子集（90..127，T7 补 '-','Z'）：8x7 按 1x 居中，暗灰 ----
+     * [T6-R3] 字模生成器已拉宽到 8 位（FONT8_W）：字距 16-8=8px=字宽，
+     * 消除 "P O W E R E D" 式的松散观感；笔画加粗（竖线 2px）。
+     * [T7] 合成复用通用助手（连续编号模式）。 */
+    synth_glyph_set(0, (const uint8_t *)FONT8_GLYPH, 0, FONT8_TILE_BASE,
+                    FONT8_N_GLYPHS, FONT8_FG, FONT8_BG, 1);
+
+    /* ---- 暗金 8x8 子集（17 字，POWERED 行专用）：8x7 1x 居中，暗金 ----
+     * [T7] 合成逻辑与终端子集同构，复用 synth_glyph_set。 */
+    synth_glyph_set_ord32(FONT8G_CHARS, (const uint8_t *)FONT8G_GLYPH,
+                          FONT8G_TILE, FONT8G_N_GLYPHS,
+                          FONT8G_FG, FONT8G_BG, 1);
+
+    /* ---- 金色 / 绿色 16x16 子集：5x7 放大 2x，前景 PAL_GOLD / PAL_OK ----
+     * [T6] 金色给 HUD 标题 GOMOKU、绿色给 THINKING。字形都在 16x16 主
+     * 子集里（FONT_INDEX 有效），故直接复用 FONT_GLYPH 取位图。 */
     {
-        int shape, color;
-        for (shape = 0; shape < TILE_N_SHAPE; shape++) {
-            for (color = 0; color < 2; color++) {          /* 0=黑 1=白 */
-                synth_last_move(tile, shape, color);
-                vid_bulk_write(VID_REGION_PAT,
-                               (uint16_t)((RENDER_TILE_LAST_BASE + shape * 2 + color) * TILE_BYTES),
-                               tile, (uint16_t)TILE_BYTES);
+        int g, x, y;
+        int ox = (TILE_W - FONT_W * FONT_SCALE) / 2;
+        int oy = (TILE_W - FONT_H * FONT_SCALE) / 2;
+
+        for (g = 0; g < FONT_GOLD16_N + FONT_GREEN16_N; g++) {
+            int ch = (g < FONT_GOLD16_N) ? (int)(unsigned char)FONT_GOLD16_CHARS[g]
+                                         : (int)(unsigned char)FONT_GREEN16_CHARS[g - FONT_GOLD16_N];
+            int gi = (int)FONT_INDEX[ch - FONT_BASE];
+            int fg = (g < FONT_GOLD16_N) ? (int)FONT_GOLD16_FG : (int)FONT_GREEN16_FG;
+            int tn = (g < FONT_GOLD16_N) ? (int)FONT_GOLD16_TILE[ch - FONT_BASE]
+                                         : (int)FONT_GREEN16_TILE[ch - FONT_BASE];
+            if (gi < 0) continue;                 /* 防御：子集字符必须都在主子集里 */
+
+            for (y = 0; y < TILE_W; y++) {
+                for (x = 0; x < TILE_W; x++) {
+                    int fx = glyph_coord(x, ox);
+                    int fy = glyph_coord(y, oy);
+                    uint8_t v = (uint8_t)FONT_BG;
+                    if (fx >= 0 && fx < FONT_W && fy >= 0 && fy < FONT_H &&
+                        ((FONT_GLYPH[gi][fy] >> (FONT_W - 1 - fx)) & 1u))
+                        v = (uint8_t)fg;
+                    tile[y * TILE_W + x] = v;
+                }
             }
+            put_pat((uint16_t)tn, tile);
         }
-        synth_star(tile);
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_STAR * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
-        synth_frame_h(tile);
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_FRAME_H * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
-        synth_frame_v(tile);
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_FRAME_V * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
-        synth_icon(tile, PAL_BLACK, PAL_BLACK_HI);
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_ICON_BLACK * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
-        synth_icon(tile, PAL_WHITE, PAL_WHITE_EDGE);
-        vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_ICON_WHITE * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
     }
+
+    /* [T7] 标题中灰 8x8 子集已整集退役（痛点二后无使用者）—— 合成循环删除，
+     * 图块号 129/130/146..149/178..179 释放为空闲（不再被任何路径写入）。 */
+
+    /* ---- 绿色 WINS（131..134）：2x 字模，前景 PAL_OK ----
+     * [T6-R2] 原 OK 绿字（129/130）回收：render_ok 无调用者。 */
+    {
+        static const char WINSCH[4] = { 'W', 'I', 'N', 'S' };
+        int  k, x, y;
+        int  ox = (TILE_W - FONT_W * FONT_SCALE) / 2;
+        int  oy = (TILE_W - FONT_H * FONT_SCALE) / 2;
+
+        for (k = 0; k < 4; k++) {
+            const uint8_t *rows = glyph_rows(WINSCH[k]);
+            for (y = 0; y < TILE_W; y++) {
+                for (x = 0; x < TILE_W; x++) {
+                    int fx = glyph_coord(x, ox);
+                    int fy = glyph_coord(y, oy);
+                    uint8_t v = (uint8_t)PAL_UI_BG;
+                    if (fx >= 0 && fx < FONT_W && fy >= 0 && fy < FONT_H &&
+                        ((rows[fy] >> (FONT_W - 1 - fx)) & 1u))
+                        v = (uint8_t)PAL_OK;
+                    tile[y * TILE_W + x] = v;
+                }
+            }
+            vid_bulk_write(VID_REGION_PAT,
+                           (uint16_t)((RENDER_TILE_WINS_BASE + k) * TILE_BYTES),
+                           tile, (uint16_t)TILE_BYTES);
+        }
+    }
+
+    /* ---- 外框 / 棋子图标（150..153） ---- */
+    synth_frame_h(tile);
+    vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_FRAME_H * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
+    synth_frame_v(tile);
+    vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_FRAME_V * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
+    synth_icon(tile, PAL_BLACK, PAL_BLACK_HI);
+    vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_ICON_BLACK * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
+    synth_icon(tile, PAL_WHITE, PAL_WHITE_EDGE);
+    vid_bulk_write(VID_REGION_PAT, (uint16_t)(RENDER_TILE_ICON_WHITE * TILE_BYTES), tile, (uint16_t)TILE_BYTES);
 
     /* ---- 标题屏装饰（编号 154..186，运行时合成）---- */
     {
@@ -711,16 +1088,58 @@ void render_init(void)
             }
         }
 
-        for (gi = 0; gi < 8; gi++) {
-            synth_box(tile, gi);
-            put_pat((uint16_t)(RENDER_TILE_BOX_TL + gi), tile);
-        }
-
         synth_rule(tile);
         put_pat((uint16_t)RENDER_TILE_RULE, tile);
 
         synth_arrow(tile);
         put_pat((uint16_t)RENDER_TILE_ARROW, tile);
+
+        synth_faint_rule(tile);
+        put_pat((uint16_t)RENDER_TILE_FAINT_RULE, tile);
+
+        synth_desc_arrow(tile);
+        put_pat((uint16_t)RENDER_TILE_DESC_ARROW, tile);
+    }
+
+    /* ---- 对局 2x2 棋盘象限（188..249，运行时合成）----
+     * [!] cell32 用**栈**（1KB），不要 static：render_init 只在上电跑一次，
+     *     跑完就返回；放 .bss 会白白吃掉 1KB 堆（RT-Thread 启动时 heap 只有几 KB）。 */
+    {
+        uint8_t cell32[32 * 32];
+        uint8_t quad[TILE_BYTES];
+        int i, q, x, y;
+
+        for (i = 0; i < BOARD2_N_UNIQUE; i++) {
+            int desc = BOARD2_DESC[i];
+            synth_cell32(cell32, desc >> 2, desc & 3);
+            split_quad32(cell32, BOARD2_QUAD[i], quad);
+            put_pat((uint16_t)(RENDER_TILE_BOARD2_BASE + i), quad);
+        }
+
+        synth_star_cell32(cell32);
+        for (q = 0; q < 4; q++) {
+            split_quad32(cell32, q, quad);
+            put_pat((uint16_t)(RENDER_TILE_BOARD2_STAR + q), quad);
+        }
+
+        /* 最后一手：黑/白各一张。用真实棋子格做底，只把右上角的红三角
+         * 盖上去，棋子右上边缘完整保留（旧版整块木色会擦掉四分之一）。 */
+        for (i = 1; i <= 2; i++) {
+            synth_cell32(cell32, 0, i);          /* 1=黑 2=白，内部格 */
+            for (y = 0; y < 6; y++)
+                for (x = 26 + y; x < 32; x++)
+                    cell32[y * 32 + x] = PAL_RED;
+            split_quad32(cell32, 1, quad);       /* 右上象限 */
+            put_pat((uint16_t)((i == 1) ? RENDER_TILE_BOARD2_LAST
+                                        : RENDER_TILE_BOARD2_LAST_W), quad);
+        }
+    }
+
+    /* ---- 标题屏顶部/底部细带：16x16 纯色 ---- */
+    {
+        int i;
+        for (i = 0; i < TILE_BYTES; i++) tile[i] = PAL_UI_BAND;
+        put_pat((uint16_t)RENDER_TILE_BG_BAND, tile);
     }
 }
 
@@ -751,28 +1170,3 @@ void render_rule(int row, int col, int len)
     vid_bulk_write(VID_REGION_NT, (uint16_t)(row * 256 + col), line, (uint16_t)len);
 }
 
-void render_box(int row, int col, int w)
-{
-    uint8_t line[SCREEN_COLS];
-    int i;
-
-    if (w < 2 || w > SCREEN_COLS) return;
-
-    /* 上边（横线在底部）*/
-    for (i = 1; i < w - 1; i++) line[i] = (uint8_t)RENDER_TILE_BOX_T;
-    line[0] = (uint8_t)RENDER_TILE_BOX_TL;
-    line[w - 1] = (uint8_t)RENDER_TILE_BOX_TR;
-    vid_bulk_write(VID_REGION_NT, (uint16_t)((row - 1) * 256 + col), line, (uint16_t)w);
-
-    /* 左右竖线：盖在文字行两端（所以本函数必须在 render_text 之后调）*/
-    if (row >= 0) {
-        put_abs(row, col, (uint8_t)RENDER_TILE_BOX_L);
-        put_abs(row, col + w - 1, (uint8_t)RENDER_TILE_BOX_R);
-    }
-
-    /* 下边（横线在顶部）*/
-    for (i = 1; i < w - 1; i++) line[i] = (uint8_t)RENDER_TILE_BOX_B;
-    line[0] = (uint8_t)RENDER_TILE_BOX_BL;
-    line[w - 1] = (uint8_t)RENDER_TILE_BOX_BR;
-    vid_bulk_write(VID_REGION_NT, (uint16_t)((row + 1) * 256 + col), line, (uint16_t)w);
-}

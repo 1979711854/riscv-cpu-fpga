@@ -87,17 +87,40 @@ static void dump_ascii(FILE *f)
             int t = g_nt[r * 256 + c];
             char ch;
             if (t >= FONT_TILE_BASE && t < FONT_TILE_BASE + FONT_N_GLYPHS) {
-                ch = (char)(FONT_BASE + (t - FONT_TILE_BASE));
+                ch = FONT_CHARS[t - FONT_TILE_BASE];
                 if (ch == ' ') ch = '.';
+            } else if (t >= FONT8_TILE_BASE && t < FONT8_TILE_BASE + FONT8_N_GLYPHS) {
+                ch = FONT8_CHARS[t - FONT8_TILE_BASE];
+                if (ch == ' ') ch = '.';
+            } else if (t >= FONT_CJK_TILE_BASE && t < FONT_CJK_TILE_BASE + FONT_CJK_N) {
+                ch = 'C';                 /* 中文 3 字 */
+            } else if (t >= RENDER_TILE_WINS_BASE && t <= RENDER_TILE_WINS_BASE + 3) {
+                ch = 'G';                 /* 绿色 WINS（弹窗） */
+            } else if (t >= 135 && t <= 140) {
+                ch = '%';                 /* 绿色 16x16（THINKING） */
+            } else if (t >= 141 && t <= 145) {
+                ch = '$';                 /* 金色 16x16（GOMOKU 标题） */
+            } else if ((t >= 129 && t <= 130) || (t >= 146 && t <= 149) ||
+                       (t >= 178 && t <= 179)) {
+                ch = 'm';                 /* 标题中灰 8x8（子菜单大标题） */
+            } else if ((t >= 73 && t <= 86) || t == 127 || t == 128 || t == 251) {
+                ch = 'g';                 /* 暗金 8x8（POWERED 行） */
+            } else if (t == RENDER_TILE_FAINT_RULE) {
+                ch = '_';
+            } else if (t == RENDER_TILE_DESC_ARROW) {
+                ch = '>';
             } else if (t >= RENDER_TILE_LOGO_BASE && t < RENDER_TILE_LOGO_BASE + 24) {
                 ch = '#';
-            } else if (t >= RENDER_TILE_BOX_TL && t <= RENDER_TILE_BOX_BR) {
-                ch = '+';
             } else if (t == RENDER_TILE_RULE) {
                 ch = '=';
             } else if (t == RENDER_TILE_ARROW) {
                 ch = '>';
-            } else if (t >= 131 && t <= 153) {
+            } else if (t == RENDER_TILE_BG_BAND) {
+                ch = '-';
+            } else if (t >= RENDER_TILE_BOARD2_BASE && t <= 255) {
+                ch = 'o';                 /* 2x2 对局棋盘象限/星位/最后一手 */
+            } else if (t == RENDER_TILE_FRAME_H || t == RENDER_TILE_FRAME_V ||
+                       t == RENDER_TILE_ICON_BLACK || t == RENDER_TILE_ICON_WHITE) {
                 ch = '*';
             } else if (t < 36) {
                 ch = 'o';

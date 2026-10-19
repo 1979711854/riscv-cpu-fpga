@@ -1,0 +1,89 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-19 16:13:49
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:03:50
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1392 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+[!] vblank timeout -- video not running (check D18 video_locked)
+Stack frame:
+----------------------------------------
+TRAP epc=00012488 mcause=00000004 mepc=00018818 mtval=0000010a
+ra      : 0x00018cb0
+mstatus : 0x00001880
+t0      : 0x00000001
+t1      : 0x00017810
+t2      : 0x00000009
+a0      : 0x0000000c
+a1      : 0x00000006
+a2      : 0x0000000b
+a3      : 0x00000001
+a4      : 0x00000001
+a5      : 0x00000000
+a6      : 0x0001d71e
+a7      : 0x00000000
+t3      : 0x00000000
+t4      : 0x00000008
+t5      : 0x00000004
+t6      : 0x00000001
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 16:03:50
+ 2006 - 2026 Copyright by RT-Thread team
+
+[build] FW=RTTHREAD-GOMOKU-G3 RTL=0x20261028
+========================================
+ RV32IMA + RT-Thread + GOMOKU(G3) @76.5052MHz
+========================================
+[boot] tick         = 0
+[boot] tick period  = 1000 Hz
+[boot] heap         = 1392 bytes
+[boot] gomoku render thread running
+
+[build] FW=GOMOKU RTL=0x20261028
+[title] menu_row0=11 mini_cell=12,28 gap=2 value_end=26
+=== GOMOKU on RV32I ===
+keys: SW4/5/6/7 = left/right/up/down
+      title menu: up/down = move, left/right = change value, hold = OK
+      play: tap = move cursor, hold = place
+      SW3 = reset
+[boot] gomoku ai thread running
+Stack frame:
+----------------------------------------
+TRAP epc=00012488 mcause=00000004 mepc=00018818 mtval=0000010a
+ra      : 0x00018cb0
+mstatus : 0x00001880
+t0      : 0x00000001
+t1      : 0x00017810
+t2      : 0x00000009
+a0      : 0x0000000c
+a1      : 0x00000006
+a2      : 0x0000000b
+a3      : 0x00000001
+a4      : 0x00000001
+a5      : 0x00000000
+a6      : 0x0001d71e
+a7      : 0x00000000
+t3      : 0x00000000
+t4      : 0x00000008
+t5      : 0x00000004
+t6      : 0x00000001
+# 结束于 2026-10-19 16:14:10，共 87 行

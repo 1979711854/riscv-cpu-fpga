@@ -11,11 +11,19 @@
  * ==========================================================================*/
 #include "video_text.h"
 
-#include "../gomoku/font.h"       /* FONT_GLYPH / FONT_TILE_BASE / FONT_BG / FONT_FG */
+#include "../gomoku/font_coremark.h" /* 完整 95 字（含小写）；五子棋 UI 用 font.h 子集 */
 #include "../gomoku/palette.h"    /* TILE_PALETTE / PAL_UI_BG ... */
 
+#ifdef VIDEO_TEXT_HOST
+/* x86 主机预览（sim/tools/preview_coremark.c，-DVIDEO_TEXT_HOST）：显存直写
+ * 重定向到 harness 的假内存。固件构建【永不定义】VIDEO_TEXT_HOST —— 走原定义。 */
+#include "host_mmio.h"
+#define REG8(a)  HOST_R8(a)
+#define REG32(a) HOST_R32(a)
+#else
 #define REG8(a)  (*(volatile unsigned char  *)(a))
 #define REG32(a) (*(volatile unsigned int   *)(a))
+#endif
 
 #define VIDEO_NT       0x80010000u
 #define VIDEO_PAT      0x80020000u
@@ -92,6 +100,11 @@ static void clear_row(int row)
 void video_text_clear(void)
 {
     int r;
+#ifdef VIDEO_TEXT_HOST
+    /* 主机预览取像点：每次清屏前把当前 nametable 快照给 harness。
+     * 第 2 次清屏 = draw_result_page 抹掉滚动报告之前 —— 即"跑分过程中"的画面。 */
+    { extern void host_video_snapshot(void); host_video_snapshot(); }
+#endif
     for (r = 0; r < VIDEO_TEXT_ROWS; r++) clear_row(r);
     v_row = 0;
     v_col = 0;

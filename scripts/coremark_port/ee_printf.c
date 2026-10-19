@@ -667,6 +667,12 @@ ee_vsprintf(char *buf, const char *fmt, va_list args)
 void
 uart_send_char(char c)
 {
+#ifdef VIDEO_TEXT_HOST
+    /* x86 主机预览：无 UART 外设；下面的 0xFFF4 忙等在假内存上永不前进（会
+     * 死循环）。屏幕镜像由 ee_printf 里的 video_text_putc 负责，这里静默丢弃。 */
+    (void)c;
+    return;
+#else
     *UART_DATA_ADDR = (ee_u8)c;
     /* 忙等 2400 周期（≈1 字符发送时间，匀速 115200），保证 CPU 在所有字符
      * 真正发完前不写 done(0xFFF8)，否则远程平台可能提前停止捕获丢尾部。 */
@@ -674,6 +680,7 @@ uart_send_char(char c)
     ee_u32 wait = 2400;
     while ((ee_u32)(*UART_CYCLE_CNT - start) < wait)
         ;
+#endif /* VIDEO_TEXT_HOST */
 }
 
 int
