@@ -15,7 +15,7 @@
  *   19    SYSTEM MONITOR // RT-THREAD @4      8x8 暗灰
  *   20    UI TICK   : nnn    标签 @4、冒号 @14、数值 @16（亮金 16x16）
  *   21    UPTIME    : nn SEC 同上
- *   22    HEAP FREE : n.nK   同上（rt_memory_info 实时值）
+ *   22    HEAP FREE : n/mB   剩余/总量字节（rt_memory_info 实时值，不取整）
  *   23    分隔线
  *   24    COREMARK SCORE : 352.45           16x16 亮金（屏上最大字号）
  *   25    COREMARK/MHZ   : 4.6076           16x16 亮金
@@ -153,13 +153,18 @@ static uint32_t cm_mon_uptime(void)
 #endif
 }
 
-static uint32_t cm_mon_heap_free(void)
+/* 堆余量：返回剩余字节，可选回填 total（字节）。
+ * [!] 不再按 KB 取整 —— 本系统堆总量只有约 1.4 KB，"0.0K" 会被误读成假数据/分配失败；
+ *     屏上写成 "剩余/总量B"，量纲和真实值都可核对。 */
+static uint32_t cm_mon_heap_free(uint32_t *total_out)
 {
 #ifdef __RTTHREAD__
     rt_size_t total = 0, used = 0, max_used = 0;
     rt_memory_info(&total, &used, &max_used);
+    if (total_out != 0) *total_out = (uint32_t)total;
     return (uint32_t)(total - used);
 #else
+    if (total_out != 0) *total_out = 0u;
     return 0u;                               /* 裸机没有 RT-Thread 堆 */
 #endif
 }
@@ -177,12 +182,14 @@ static void term_span(int row, int col, const char *s, int set)
 }
 
 /* 监控区三行数值：全部来自 RT-Thread 官方 API（tick/uptime/heap）。
- * 数值用现有 GOLD16 子集（16x16 亮金），不新增图块；只清/写数值列。 */
+ * 数值用 GREEN8 子集（8x8 亮绿），不新增图块；只清/写数值列。 */
 static void cm_update_monitor(void)
 {
     char b[20];
     char *p;
-    uint32_t kb10 = (cm_mon_heap_free() * 10u) / 1024u;
+    int   n;
+    uint32_t heap_total = 0;
+    uint32_t heap_free  = cm_mon_heap_free(&heap_total);
 
     p = cm_dec(b, cm_mon_tick(), 0);
     *p = '\0';
@@ -195,13 +202,19 @@ static void cm_update_monitor(void)
     render_clear_span(CM_ROW_UPTIME, CM_MON_VALUE_COL, 10);
     term_span(CM_ROW_UPTIME, CM_MON_VALUE_COL, b, RENDER_TERM_SET_GREEN8);
 
-    p = cm_dec(b, kb10 / 10u, 0);
-    p = cm_str(p, ".");
-    p = cm_dec(p, kb10 % 10u, 1);
-    p = cm_str(p, "K");
+    /* 剩余字节用亮绿 GREEN8 画；"/总量B" 里 '/' 和 'B' 不在 GREEN8 子集
+     * （只有 0-9 . K S E C），用通用 8x8 暗灰字补，量纲一眼可读。 */
+    p = cm_dec(b, heap_free, 0);
+    n = (int)(p - b);
     *p = '\0';
-    render_clear_span(CM_ROW_HEAP, CM_MON_VALUE_COL, 10);
+    render_clear_span(CM_ROW_HEAP, CM_MON_VALUE_COL, 16);
     term_span(CM_ROW_HEAP, CM_MON_VALUE_COL, b, RENDER_TERM_SET_GREEN8);
+
+    p = cm_str(b, "/");
+    p = cm_dec(p, heap_total, 0);
+    p = cm_str(p, "B");
+    *p = '\0';
+    render_text8_span(CM_ROW_HEAP, CM_MON_VALUE_COL + n, b);
 }
 
 /* 8x8 暗灰分隔线：40 个 '-' 铺满一行。 */
