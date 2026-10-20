@@ -1,0 +1,32 @@
++----------------------------------------+
+ 0 |oooooooooooooooooooooooooooooo..........|
+ 1 |oooooooooooooooooooooooooooooo..GOMOKU..|
+ 2 |ooooooooooooooooooooooooooooooTURN......|
+ 3 |oooooooooooooooooooooooooooooo*WHITE....|
+ 4 |oooooooooooooooooooooooooooooo..........|
+ 5 |oooooooooooooooooooooooooooooo..........|
+ 6 |ooooooooooooooooooooooooooooooLEVEL.....|
+ 7 |oooooooooooooooooooooooooooooo.HARD.....|
+ 8 |oooooooooooooooooooooooooooooo..........|
+ 9 |ooooooooooooooooooooooooooooooDEPTH.....|
+10 |oooooooooooooooooooooooooooooo.6.PLY....|
+11 |oooooooooooooooooooooooooooooo..........|
+12 |oooooooooo..........ooooooooooNODES.....|
+13 |ooooooooooBLACK.GGGGoooooooooo.12.8K....|
+14 |oooooooooo..........ooooooooooTIME......|
+15 |ooooooooooPRESS.HOLDoooooooooo.569MS....|
+16 |oooooooooo.TO.TITLE.oooooooooo..........|
+17 |oooooooooo..........oooooooooo..........|
+18 |oooooooooooooooooooooooooooooo..BLACK...|
+19 |oooooooooooooooooooooooooooooo...GGGG...|
+20 |oooooooooooooooooooooooooooooo..........|
+21 |ooooooooooooooooooooooooooooooUP/DN.....|
+22 |oooooooooooooooooooooooooooooo..MOVE....|
+23 |ooooooooooooooooooooooooooooooHOLD......|
+24 |oooooooooooooooooooooooooooooo..PLACE...|
+25 |ooooooooooooooooooooooooooooooLEFT/RIGHT|
+26 |oooooooooooooooooooooooooooooo..MOVE....|
+27 |oooooooooooooooooooooooooooooo..........|
+28 |oooooooooooooooooooooooooooooo..........|
+29 |oooooooooooooooooooooooooooooo..........|
++----------------------------------------+

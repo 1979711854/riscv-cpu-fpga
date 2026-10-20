@@ -1,0 +1,7 @@
+# UART 抓取 COM4 @ 115200 8N1  开始于 2026-10-19 15:00:32
+
+ \ | /
+- RT -     Thread Operating System
+ / | \     5.3.1 build Oct 19 2026 14:32:41
+ 2006 - 2026 Copyright by RT-Thread team
+# 结束于 2026-10-19 15:01:12，共 5 行

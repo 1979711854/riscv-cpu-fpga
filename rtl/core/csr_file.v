@@ -13,17 +13,17 @@
 //    ecall-from-U(8) / from-S(9) / from-M(11) 的区分就与测试的假设不符。
 //    本设计没有特权级隔离，如实实现反而引入不一致。
 //
-// 2) CSR 写【在 EX 级提交】（本模块的 csr_we 由 core 在 EX 级给出，一拍脉冲）。
+// 2) CSR 写在 EX 级提交（本模块的 csr_we 由 core 在 EX 级给出，一拍脉冲）。
 //    原因见 core.v：riscv-tests 里 `csrw mepc, t0` 与 `mret` 之间只隔 1 条指令，
 //    若像寄存器堆那样从 WB 提交，`mret` 会读到复位值 0 → 跳回 _start → 无限重启。
 //
 // 3) 未实现的 CSR（`stvec`/`medeleg`/`mideleg`/`satp`/`pmp*`/`mnstatus` 等）
-//    → 读 0、写忽略、【不抛非法指令】。
+//    → 读 0、写忽略、不抛非法指令。
 //    riscv-tests 的 init 段会访问上述全部；按规范对未知 CSR 抛非法指令
-//    会让 50 个基线 ELF 当场全挂。**这是明知与规范有偏差的工程取舍**，
+//    会让 50 个基线 ELF 当场全挂。这是明知与规范有偏差的工程取舍，
 //    已在 doc/spec.md 的"已知限制"里记录。
 //
-// 唯一会抛非法指令的 CSR 情形：**写只读 CSR**（csr[11:10] == 2'b11），
+// 唯一会抛非法指令的 CSR 情形：写只读 CSR（csr[11:10] == 2'b11），
 // 例如 `unimp`（= `csrrw x0, cycle, x0`，写 0xC00）—— 这正是规范定义的语义。
 // ============================================================================
 module csr_file (
@@ -64,25 +64,25 @@ module csr_file (
     // ==========================================================================
     // 设计版本号 —— 由 `mimpid`（0xF13）读出。
     // --------------------------------------------------------------------------
-    // 存在的理由（2026-10-10 实踩）：两版位流可以装着**完全相同的固件**，
-    // 串口日志因此一模一样，事后分不出烧的是哪一版。把版本号放在【RTL 侧】，
+    // 存在的理由：两版位流可以装着完全相同的固件，
+    // 串口日志因此一模一样，事后分不出烧的是哪一版。把版本号放在RTL 侧，
     // 固件读出来打在第一行，日志就能自证。
-    //   [!] **改任何 RTL 后、综合前，必须把它改成新值**（见 CLAUDE.md 约定 42）。
+    //   [!] 改任何 RTL 后、综合前，必须把它改成新值（见 CLAUDE.md 约定 42）。
     //       同一天改多次就用最低字节当序号（0x2026_1010 → 0x2026_1011 → …）。
     //   为什么用 mimpid 而不是新加一个 MMIO 寄存器：它是规范里的只读 ID 寄存器，
-    //   加它**不用动地址映射、不用动 mem_bus、不用改固件的板级头文件**，
+    //   加它不用动地址映射、不用动 mem_bus、不用改固件的板级头文件，
     //   固件一条 `csrr` 就能读到。
     //   覆盖的值（从新到旧）：
     //     2026_1024  [lane B 访存 · P2] core.v 落地 lane B load 的全部"管道"
     //                （新增流水线寄存器 / 访存口 b_mem_sel mux 腿 / 前递门控 /
     //                load-use 停顿 / 未对齐异常 / WB 解包），但 parameter
-    //                **LANEB_MEM=0（开关未翻）** ⇒ 四条 CoreMark 基线
+    //                LANEB_MEM=0（开关未翻） ⇒ 四条 CoreMark 基线
     //                （229,597 / 249,982 / 300,392 / 233,013）与四 CRC
-    //                逐位不变。翻开关是 P3，判据见任务书 §6。
-    //     2026_1023  [面积优化] A 扩展（RV32A）改为 parameter，**默认关**：
+    //                逐位不变。翻开关是 P3，判据见 doc/reports/ 相应任务书。
+    //     2026_1023  A 扩展（RV32A）改为 parameter，默认关：
     //                AMO 的 opcode 判非法、`amo_unit` 用 generate 包住不例化。
     //                实测 −444 LUT / −224 FF、CPU 域余量 +0.034 → +0.160 ns，
-    //                而 CoreMark 五配置的周期数与四 CRC **逐位不变**（零性能代价）。
+    //                而 CoreMark 五配置的周期数与四 CRC 逐位不变（零性能代价）。
     //                赛题公式 Score=Iterations/(Total_Time×Frequency)=CoreMark/MHz
     //                ⇒ 主频与面积不进主分，面积进指标(3) CoreMark/LUTs（+5.8%）。
     //                开关：core/cpu_top 的 parameter A_EXT；验证口径见下文注释。
@@ -99,16 +99,16 @@ module csr_file (
     //     2026_1011  分支预测重定向提前到到达级（阶段1：taken 分支省 1 拍气泡）
     //     2026_1010  imem_addr2 位宽修复（13→14 bit，64KB 取指不再回绕）
     //     （旧的位流读出 0 —— 那时 mimpid 恒 0，正好当"修复前"的标识）
-    //     2026_1025  [P3] lane B 访存**开关翻转**：`parameter LANEB_MEM` 默认 0→1
+    //     2026_1025  [P3] lane B 访存开关翻转：`parameter LANEB_MEM` 默认 0→1
     //                （PDS/上板口径），lane B 可以放 load。7 处时序门控保留：
     //                0 档仍折成常量（rev1023 网表可复现），1 档语义不变。
     //                功能全绿：CoreMark 217,088 拍（−5.45%，效率 4.3555→4.6064
     //                CoreMark/MHz）、四 CRC 逐位一致、riscv-tests 49/1/0、own_tests
     //                6/0（含 R1/R2/R5 定向用例）、RT-Thread 四配置全 PASS。
-    //                [!] **PDS 85 MHz 时序不过**：CPU 域 WNS −0.701 ns / Fmax 80.22 MHz
+    //                [!] PDS 85 MHz 时序不过：CPU 域 WNS −0.701 ns / Fmax 80.22 MHz
     //                （P4 闸门未过）⇒ 交付位流仍是 rev1023 的 55fae69e（0 档）；
     //                修 fetch 路径上的 `alu_result_b` 锥（P3.5）之前，
-    //                **不要用本默认值出 85 MHz 交付位流**。
+    //                不要用本默认值出 85 MHz 交付位流。
     //     2026_1026  [P3.5] lane B 未对齐判定改 2 位窄加法（core.v 的
     //                `b_addr_low = rs1_val_b[1:0] + id_ex_b_imm[1:0]`）：把 32 位
     //                `alu_result_b` 加法器锥从取指路径（load_misaligned_b →
@@ -116,12 +116,12 @@ module csr_file (
     //                严格等价（OP_LOAD ⇒ alu_a_sel=0/alu_b_sel=1/alu_op=ADD，
     //                且该信号只经 load_misaligned_b 使用）；exc_tval 不用窄值
     //                （它进 CSR 寄存器、不在取指路径）。CoreMark 语义判据同 1025。
-    //                单独实测（[A]）：CPU 域 WNS −0.701 → **−0.345 ns**、Fmax
+    //                单独实测（[A]）：CPU 域 WNS −0.701 → −0.345 ns、Fmax
     //                80.22 → 82.58 MHz、LUT 8,029 → 7,763（位流 md5 a3a4d5a7；
     //                时序仍不过 ⇒ 未上板）。功能判据同 1025（CoreMark 217,088 +
     //                四 CRC 逐位一致、riscv-tests 49/1/0、own_tests 6/0）。
     //     2026_1027  [P3.5(B)] `imem_addr2 = fetch_addr[15:2] + 14'd1`：把第二取指
-    //                地址那条 14 位加法从 `imem_addr` 之后【解耦】出来（[A] 之后
+    //                地址那条 14 位加法从 `imem_addr` 之后解耦出来（[A] 之后
     //                的关键路径尾段 = if_addr_d → imem_addr → COUT → imem_addr2
     //                → BRAM ADB）。逐位等价：`imem_addr` 恒 = `fetch_addr[15:2]`，
     //                两式同为模 2^14 加法，只是把平级加法器的自由度还给综合器。
@@ -133,7 +133,7 @@ module csr_file (
     //                MMIO）；快通路 load 的 RAM 判定同步放宽到 0x0~0x1FFEF。
     //                语义上周期数不变（BRAM 仍是 1 拍读），时序需重扫 seed。
     // ==========================================================================
-    localparam [31:0] DESIGN_REV = 32'h2026_1028;   // 2026-10-17 128KB：15 位字地址 + 兼容区别名修复
+    localparam [31:0] DESIGN_REV = 32'h2026_1028;   // 128KB：15 位字地址 + 兼容区别名修复
 
     // ---- CSR 地址常量 ----
     localparam [11:0] CSR_MSTATUS  = 12'h300,
@@ -165,7 +165,7 @@ module csr_file (
     // mcycle：64 位自由跑计数器（面积可忽略，且是"读得到真实周期数"的常规做法）
     reg [63:0] mcycle_r;
 
-    // mip 的 MTIP/MEIP 是【只读】的硬件输入，绝不接受软件写
+    // mip 的 MTIP/MEIP 是只读的硬件输入，绝不接受软件写
     // （若允许软件写，会和硬件比较器抢同一位，把中断"写没"）
     wire mip_mtip = irq_timer;
     wire mip_meip = irq_ext;
@@ -187,10 +187,10 @@ module csr_file (
             CSR_MIP      : rd_data = {20'b0, mip_meip, 3'b0, mip_mtip, 7'b0};
             CSR_MCYCLE   : rd_data = mcycle_r[31:0];
             CSR_MCYCLEH  : rd_data = mcycle_r[63:32];
-            // minstret 未实现退休计数 —— **只读 0**，属已知限制（见 doc/spec.md）
+            // minstret 未实现退休计数 —— 只读 0，属已知限制（见 doc/spec.md）
             CSR_MINSTRET : rd_data = 32'd0;
             CSR_MINSTRETH: rd_data = 32'd0;
-            // 只读 ID 寄存器。mimpid 承载【设计版本号】（见上面的 DESIGN_REV），
+            // 只读 ID 寄存器。mimpid 承载设计版本号（见上面的 DESIGN_REV），
             // 其余三个恒 0。
             // mhartid 必须是 0：riscv-tests 的 RISCV_MULTICORE_DISABLE 里有
             // `csrr a0, mhartid; bnez a0, 1b`，返回非 0 会原地自旋到超时。
@@ -210,11 +210,11 @@ module csr_file (
     // （int_take 被 !id_ex_mret 门控，同步异常与 mret 不可能同拍）。
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
-            mstatus_mie_r  <= 1'b0;    // [重点] 复位必须为 0
+            mstatus_mie_r  <= 1'b0;    // [!] 复位必须为 0
             mstatus_mpie_r <= 1'b0;
-            mie_mtie_r     <= 1'b0;    // [重点] 复位必须为 0
+            mie_mtie_r     <= 1'b0;    // [!] 复位必须为 0
             mie_meie_r     <= 1'b0;
-            mtvec_r        <= 32'd0;   // [重点] 复位取 0
+            mtvec_r        <= 32'd0;   // [!] 复位取 0
             mscratch_r     <= 32'd0;
             mepc_r         <= 32'd0;
             mcause_r       <= 32'd0;
@@ -225,7 +225,7 @@ module csr_file (
 
             if (trap) begin
                 // 同步异常 / 中断的入口副作用。
-                // [重点] mstatus.MIE ← 0 是【必须】的：它让 int_take 在下一拍自动消掉。
+                // [!] mstatus.MIE ← 0 是必须的：它让 int_take 在下一拍自动消掉。
                 //   漏掉的话中断会每拍重新触发，PC 被钉死在 mtvec（handler 的
                 //   第一条指令永远进不了 EX），表现是 PC 不动、周期数暴涨。
                 mepc_r         <= trap_pc;

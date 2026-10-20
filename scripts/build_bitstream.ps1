@@ -168,24 +168,25 @@ $pdsShell = "D:\pango\PDS_2022.2-SP6.4\bin\pds_shell.exe"
 # [!] 2026-10-19 T7-R3 重新实测（**本节数字为准**；上面的 10-18 注释是历史口径）：
 #       boot.hex      = 60 行（30 字：T7 boot 三路径选路，17 -> 30 字）
 #       coremark.hex  = 22,728 行（11,364 字，ITER=3900，T7 结果页改版后）
-#       rtthread.hex  = 25,482 行（12,741 字；T7-R5 金线/最后一手修复后：
-#                       text 50,668 + data 296 + bss 9,016，静态 59,980 / 61,424，
-#                       堆余 1,440 B。**必须 ≥~1.3KB**，否则 RT-Thread 的 main
+#       rtthread.hex  = 25,500 行（12,750 字；T7-R5 之后 d4a450f
+#                       "CoreMark 监控屏堆余量改字节制显示" 使 .text 增加 36B：
+#                       text 50,704 + data 296 + bss 9,016，静态 60,016 / 61,424，
+#                       堆余 1,408 B。**必须 ≥~1.3KB**，否则 RT-Thread 的 main
 #                       线程（rt_thread_create 从堆取 1024B 栈 + TCB）创建失败，
 #                       串口只出 banner 就停 —— 2026-10-19 实踩）
 #       gomoku.hex    = 18,508 行（9,254 字，T7-R5；text+data = 37,016 B）
 #     combined = 三块行数之和（elf2mem 每字 2 行，merge_images.py 断言不重叠）：
-#       60 + 22,728 + 25,482 = 48,270 行（24,135 字）
+#       60 + 22,728 + 25,500 = 48,288 行（24,144 字）
 #     [重点] rtthread 的数必须用【非 -Sim】的 `rtthread\build.ps1 -Firmware` 量。
 $expectLines = @{ coremark = @(22728); demo = @(326);
-                  rtthread = @(25482);
+                  rtthread = @(25500);
                   boot = @(60);
-                  combined = @(48270);
+                  combined = @(48288);
                   video = @(758); gomoku = @(18508) }
 $expectDesc  = @{ coremark = "11,364 字（ITER=3900，T7 结果页改版后实测）"; demo = "163 字";
-                  rtthread = "12,741 字（0x10000 + 76.5MHz，T7-R5，堆 1,440B）";
+                  rtthread = "12,750 字（0x10000 + 76.5MHz，d4a450f 后，堆 1,408B）";
                   boot = "30 字（boot selector，T7 三路径）";
-                  combined = "24,135 字 = boot 30 + coremark 11,364 + rtthread 12,741";
+                  combined = "24,144 字 = boot 30 + coremark 11,364 + rtthread 12,750";
                   video = "379 字"; gomoku = "9,254 字（T7-R5 实测）" }
 
 # DEBUG_LED 开关（见 rtl/top/cpu_top_board.v）：PDS 综合取 parameter 默认值，

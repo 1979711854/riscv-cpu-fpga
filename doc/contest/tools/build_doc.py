@@ -217,6 +217,77 @@ S323 = [
     "终端监控屏运行中按节拍刷新进度与百分比，PASS 后画面停在结果页并提示“HOLD SW6 TO RETURN TO MENU”，便于现场拍照取证。",
 ]
 
+# ILA 硬件在环波形（2026-10-19 抓取，92 探针调试位流 a6d0d877，判读见 doc/board/README.md ILA 节）
+FIG9 = (os.path.join(BOARD, "ila_20261019_tu0_exflush_coremark.png"), 14.5,
+        "图 9  ILA 实机波形（TU0 触发，76.5052 MHz）：分支冲刷——ex_flush=1 次拍 IF/ID 与 ID/EX 两级同拍清零"
+        "（IFID_PC / IDEX_PC=0000），随后取指重定向到跳转目标（源：doc/board/ila_20261019_tu0_exflush_coremark.png）")
+FIG10 = (os.path.join(BOARD, "ila_20261019_tu1_bhthit_coremark.png"), 14.5,
+         "图 10  ILA 实机波形（TU1 触发，X=−5，绝对采样 2043）：BHT 命中并预测 taken，重定向在 ID 级提前生效，"
+         "EX 级无冲刷——预测正确时分支零惩罚（源：doc/board/ila_20261019_tu1_bhthit_coremark.png）")
+FIG11 = (os.path.join(BOARD, "ila_20261019_tu1_mispred_coremark.png"), 14.5,
+         "图 11  ILA 实机波形（TU1 触发，X=+12，绝对采样 2060）：预测误判恢复——ex_mispred=1 次拍两级同拍清零并重定向，"
+         "代价两拍冲刷（源：doc/board/ila_20261019_tu1_mispred_coremark.png）")
+FIG12 = (os.path.join(BOARD, "ila_20261019_tu1_stall_coremark.png"), 14.5,
+         "图 12  ILA 实机波形（TU1 触发，X=+4，绝对采样 2052）：load-use 停顿——stall=1、id_ex_mem_read=1，"
+         "次拍 IDEX_PC=0000 插入气泡，load 数据返回后经前递恢复（源：doc/board/ila_20261019_tu1_stall_coremark.png）")
+FIG13 = (os.path.join(BOARD, "ila_20261019_tu1_pair_coremark.png"), 14.5,
+         "图 13  ILA 实机波形（TU1 触发，X=+37，绝对采样 2085）：双发射配对成功——pair_now=1、if_id_pair=1，"
+         "A/B 两槽同拍发射（ex_mem_b_valid=1）（源：doc/board/ila_20261019_tu1_pair_coremark.png）")
+FIG14 = (os.path.join(BOARD, "ila_20261019_tu1_corebenchlist_coremark.png"), 14.5,
+         "图 14  ILA 实机波形（TU1 触发于取指 PC=0x24D0）：CoreMark 链表热点区全景——load/store/条件分支交替出现，"
+         "配对与预测持续生效（源：doc/board/ila_20261019_tu1_corebenchlist_coremark.png）")
+
+ILA_P1 = (
+    "为在真实硬件上逐拍验证微架构行为，项目另出有一颗调试位流（md5 a6d0d877…，在交付 RTL 基础上仅增加 92 根数据探针"
+    "与 2 个触发口，采样深度 4096、触发位置 2048），该位流只用于波形取证，不作为交付位流。图 9~图 14 均在生产主频 "
+    "76.5052 MHz 下经 JTAG 从板上抓取：触发口 0（TU0）以冲刷信号 ex_flush 触发；触发口 1（TU1）以取指 PC 落入 "
+    "CoreMark 最热的链表算法区 core_bench_list（0x231C~0x315C）触发。各图上方为五条总线（取指 PC、IF/ID 级 PC、"
+    "ID/EX 级 PC、EX/MEM 级 PC 与取指 opcode），下方为配对、预测、停顿与前递等单 bit 控制信号；横轴为相对触发点的"
+    "采样序号（绝对采样号 = 相对值 + 2048），图中 X 光标标出事件拍（源：doc/board/README.md ILA 节）。"
+)
+
+ILA_A9 = (
+    "图 9 为 TU0 触发的分支冲刷全景：EX 级无条件跳转（opcode 0x6F，JAL）在 X=0 拍发出冲刷 ex_flush=1，"
+    "次拍 IF/ID 与 ID/EX 两级 PC 同拍清零（0000，即两级气泡），随后取指重定向到跳转目标重新取指；"
+    "冲刷期间 B 槽发射被抑制，保证被冲刷指令不产生任何写回副作用。"
+)
+
+ILA_A10 = (
+    "图 10 捕捉到预测成功的路径（X=−5，绝对采样 2043）：BHT 命中（bht_hit_p=1）并预测 taken（bht_taken_p=1），"
+    "重定向在 ID 级提前生效（p_redirect），EX 级未发冲刷（ex_flush=0），后续指令按目标路径连续取指。"
+    "与图 11 对照可见本设计的不对称惩罚结构：预测正确时分支零代价，误判才付出冲刷代价。"
+)
+
+ILA_A11 = (
+    "图 11 为预测误判的恢复过程（X=+12，绝对采样 2060）：EX 级比较发现实际方向与预测不符（ex_mispred=1），"
+    "次拍 IF/ID 与 ID/EX 同拍清零并重定向到正确路径，代价为两拍冲刷气泡。"
+    "该两拍惩罚正是 §2.1 中“同步/异步两级冲刷”设计在实机上的直接呈现。"
+)
+
+ILA_A12 = (
+    "图 12 为 load-use 冒险（X=+4，绝对采样 2052）：后继指令的源操作数依赖正在访存的 load（id_ex_mem_read=1），"
+    "流水线停顿一拍（stall=1），次拍 ID/EX 插入气泡（IDEX_PC=0000）；load 数据自存储器返回后经前递网络直接送达 "
+    "EX 级，随后恢复双发射，停顿代价一拍。"
+)
+
+ILA_A13 = (
+    "图 13 为双发射配对成功的典型窗口（X=+37，绝对采样 2085）：IF/ID 成对取指（if_id_pair=1）、本拍配对发射"
+    "（pair_now=1），A/B 两槽同拍进入流水线，B 槽在 MEM 级有效（ex_mem_b_valid=1）。"
+    "配对与否由 pair_now 白名单与冒险检测共同决定，冲突时 B 槽自动留到下一拍，不牺牲正确性。"
+)
+
+ILA_A14 = (
+    "图 14 为 TU1 触发点（取指 PC=0x24D0，位于 core_bench_list 热点区）附近的全景窗口：窗口内 load（opcode 0x03）、"
+    "store（0x23）与条件分支（0x63）交替出现，配对与预测持续生效，stall 与 ex_flush 仅零星出现——"
+    "热点循环的稳态即“双发射为主、停顿与冲刷为例外”，与表 2 中每迭代 217,036 拍的整机口径一致。"
+)
+
+ILA_P_END = (
+    "六张波形构成一条完整的行为论据链：配对发射是稳态，预测命中使分支零惩罚，误判与 load-use 分别付出两拍与一拍的"
+    "局部代价——微观行为与 352.5 分、4.6075 CoreMark/MHz 的整机结果互相印证。逐拍原始数据（VCD 与总线导出 TXT，"
+    "4096 拍 × 94 通道）及判读记录存档于仓库 doc/board/ 目录备查。"
+)
+
 S33 = [
     ("h", "1）CoreMark 基准"),
     "裸机档 ITER=3900，Total ticks 846,440,591（11.0638 s），经典分 352.5，主分 4.6075 CoreMark/MHz；四个 CRC"
@@ -241,6 +312,15 @@ S33 = [
     "RTL 内的 4 KB/侧、2 路组相联 I/D Cache 已实现并曾上板：单独开 D-Cache 的证据位流 FF322E3D… 在 76.5052 MHz 下"
     "All Constraints Met（WNS +0.071 ns，Fmax 76.9231 MHz，网表 g_dcache 有 560 处引用、g_icache 为 0 处）；"
     "I+D 同时打开在同一频率下时序不过（-0.750 ns，Fmax 72.3537 MHz），因此不作为交付配置（源：交付页 rev1028）。",
+    ("h", "7）ILA 硬件在环波形验证"),
+    ILA_P1,
+    ("imgs", FIG9, ILA_A9),
+    ("imgs", FIG10, ILA_A10),
+    ("imgs", FIG11, ILA_A11),
+    ("imgs", FIG12, ILA_A12),
+    ("imgs", FIG13, ILA_A13),
+    ("imgs", FIG14, ILA_A14),
+    ILA_P_END,
 ]
 
 S41 = [
@@ -590,7 +670,10 @@ def build():
     replace_text(P(48), "特性成果", indent=0)
     blocks = []
     for item in S33:
-        if isinstance(item, tuple):
+        if isinstance(item, tuple) and item[0] == "imgs":
+            blocks.append(("img", item[1]))
+            blocks.append(("p", item[2]))
+        elif isinstance(item, tuple):
             blocks.append(("h", item[1]))
         elif item.startswith("riscv-tests 全量"):
             blocks.append(("p", item))
@@ -766,7 +849,10 @@ def count():
         ("2.2.3 电路各模块", sect([x for x in S223 if not isinstance(x, tuple)]), None),
         ("2.3.1 软件整体", sect(S231), None),
         ("2.3.2 软件各模块", sect([x[1] if isinstance(x, tuple) else x for x in S232]), None),
-        ("3.3 特性成果", sect([x[1] if isinstance(x, tuple) else x for x in S33]), None),
+        ("3.3 特性成果", sect([
+            x[1] if isinstance(x, tuple) and x[0] == "h"
+            else (x[2] if isinstance(x, tuple) else x)
+            for x in S33]), None),
         ("4.1 可扩展之处", sect(S41), 300),
         ("4.2 心得体会", sect(S42), 1000),
     ]

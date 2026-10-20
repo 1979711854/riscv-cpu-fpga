@@ -3,15 +3,15 @@
 // cpu_top_board —— 上板专用顶层（PDS 综合/布线的 top module）
 // ----------------------------------------------------------------------------
 // 与 cpu_top 的区别：
-//   ① **不引出 pc[31:0] 和 done 这两个板级调试口**，并把 cpu_top 的 key[7:4]
+//   ① 不引出 pc[31:0] 和 done 这两个板级调试口，并把 cpu_top 的 key[7:4]
 //      固定接 1（未按下）；
-//   ② 用 PLL 把板上 27MHz 晶振倍频到 **85.0051MHz** 作为系统时钟；
+//   ② 用 PLL 把板上 27MHz 晶振倍频到 85.0051MHz 作为系统时钟；
 //   ③ 用 DEBUG_LED 参数决定 led[2:0] 是调试信号还是 GPIO；
-//   ④ 例化 video_top 输出 HDMI 480p（**另一个独立 PLL**，见 video_top.v），
+//   ④ 例化 video_top 输出 HDMI 480p（另一个独立 PLL，见 video_top.v），
 //      并把 cpu_top 的视频口（显存读写 + scroll 寄存器）接到它上面。
 //
 // 为什么要单独一层（踩过的坑）：
-//   PDS 会把【未在 .fdc 里指定 LOC 的输出端口】自动布到 BANKR5 的任意引脚上 ——
+//   PDS 会把未在 .fdc 里指定 LOC 的输出端口自动布到 BANKR5 的任意引脚上 ——
 //   实测 pc[0]→M2、pc[10]→M5、led[0]→P6 … 而本板 BANKR5 接了 SFP/HSST 等
 //   高速接口，32 位输出乱布上去有驱动冲突风险。所以上板这一层不引出它们。
 //
@@ -29,22 +29,22 @@
 // [!] 时钟：上板 85.01MHz，仿真仍是 27MHz —— 两套口径不要混
 // ----------------------------------------------------------------------------
 //   * 仿真：测试台例化的是 cpu_top（不是本文件），不传 UART_DIV → 234（27MHz），
-//     周期数与风险分析口径全部按 27MHz。本文件**不参与仿真**。
+//     周期数与风险分析口径全部按 27MHz。本文件不参与仿真。
 //   * 上板：PLL 27MHz→76.5052MHz，UART_DIV 传 664，CoreMark 的 EE_TICKS_PER_SEC=76505200。
-//     （2026-10-17 128KB 版在 85 MHz 收敛不了，STATIC_RATIO0 13.5→15.0。）
-//   * 因此 **板上的 CoreMark 时长 = Total ticks ÷ 76,505,200**
+//     （128KB 版在 85 MHz 收敛不了，STATIC_RATIO0 13.5→15.0。）
+//   * 因此 板上的 CoreMark 时长 = Total ticks ÷ 76,505,200
 //     （不再是 ÷85,005,100，也不是 ÷27e6）。文档里所有旧除数仅适用于对应时期。
 //   * PLL 输出时钟约束由 PDS 从 IP 自动推导（`.fdc` 里只有 27MHz 的
 //     `create_clock ... -period 37.037` 输入约束，综合报告会显示 76.5052 MHz）。
 //   * 频率来历：VCO = 27 ÷ RATIOI(1) × RATIOM(2) × RATIOF(21.25) = 1147.5 MHz，
 //     CLKOUT0 = VCO ÷ STATIC_RATIO0(15.0) = 76.5 MHz。
 //     改频率只需改 ipcore/pll/pll.idf 的 STATIC_RATIO0 再跑
-//     `ip_generate.exe -i pll.idf`（**可命令行完成，不必开 GUI**）。
-//     [重点] 改完必须同步 4 处常量：本文件的 UART_DIV、
+//     `ip_generate.exe -i pll.idf`（可命令行完成，不必开 GUI）。
+//     [!] 改完必须同步 4 处常量：本文件的 UART_DIV、
 //     coremark_port/core_portme.c 的 EE_TICKS_PER_SEC、demo/addr_map.h 的 CPU_HZ、
 //     rtthread/bsp/board.h 的 BOARD_SYSTEM_CLOCK_HZ，并重算 ITER。
-//   * [!] **为什么是 85：PDS 的 P&R 是"满足约束即收敛"，Estimated Frequency
-//     从来不是设计上限，而是"这次被要求跑多快"。** 同一份 RTL、只改 PLL 分频比：
+//   * [!] 为什么是 85：PDS 的 P&R 是"满足约束即收敛"，Estimated Frequency
+//     从来不是设计上限，而是"这次被要求跑多快"。 同一份 RTL、只改 PLL 分频比：
 //         请求 62.03 → 达 66.87 (slack +1.167)   ← 原设计，被自己卡住
 //         请求 71.72 → 达 73.26 (slack +0.293)
 //         请求 85.01 → 达 91.87 (slack +0.879)   ← 本次采用
@@ -135,11 +135,11 @@ module cpu_top_board #(
     // ------------------------------------------------------------------
     // HDMI 输出：480p60 + tile PPU 背景层
     // 视频链用板上原始 27MHz 和原始 resetn，自带独立 video PLL，不碰 CPU 时钟域。
-    // 唯一的跨域接口就是下面这一组 vid_*：显存是【真双口 BRAM】，A 口吃
+    // 唯一的跨域接口就是下面这一组 vid_*：显存是真双口 BRAM，A 口吃
     // clk_sys、B 口吃 pix_clk，所以跨域不需要握手/FIFO（见 vram_b32.v 文件头）。
     // 两个 PLL 同源（都是 1147.5MHz VCO）保证 clk_sys 与 pix_clk 锁相。
     //
-    // [重点] clk_sys 必须走【CPU 那个 PLL 的输出】而不是板上 27MHz：显存 A 口
+    // [!] clk_sys 必须走CPU 那个 PLL 的输出而不是板上 27MHz：显存 A 口
     //   与 mem_bus 的 1 拍读契约是同一个时钟域里的约定，用 27MHz 会错拍。
     // ------------------------------------------------------------------
     wire video_locked;
@@ -169,12 +169,12 @@ module cpu_top_board #(
     // ---- LED 映射 ----
     // DEBUG_LED=1（默认）：
     //   led[0] = pll_locked   ：亮 = CPU PLL 已锁定；不亮 = CPU 被一直复位
-    //   led[1] = video_locked ：亮 = 视频 PLL 已锁定；**HDMI 黑屏先看这一颗**
+    //   led[1] = video_locked ：亮 = 视频 PLL 已锁定；HDMI 黑屏先看这一颗
     //   led[2] = done         ：亮 = CoreMark 已跑完（写 0xFFF8）
     //   led[7:3] = GPIO 原样
     // DEBUG_LED=0：
     //   led[7:0] = GPIO 原样 —— 演示程序 LED=KEY 的按键↔灯对应关系恢复，
-    //   但**上板现场看不到 PLL/done 这几个最关键的诊断信息**，只在演示录像时切。
+    //   但上板现场看不到 PLL/done 这几个最关键的诊断信息，只在演示录像时切。
     generate
         if (DEBUG_LED) begin : g_debug_led
             assign led[0]   = pll_locked;

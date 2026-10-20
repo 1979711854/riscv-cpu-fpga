@@ -759,3 +759,46 @@ HUD/棋盘显示无异常。串口日志覆盖不到这一块，所以单独记�
 > 用 ITER=1 的信会偏 0.018%（本例无实质影响：两种算法都取 3796）。
 > 更稳的做法：**用 `+PROF` 的 `region cycles`**（它框的是 `start_time→stop_time`
 > 之间的纯 `iterate()`，不含外层循环开销）—— 判据仍是"必须等于 `Total ticks`"。
+
+## 【[OK] 2026-10-19 ILA 硬件在环 · 92 探针 · 76.5052 MHz · CoreMark】
+
+> 调试位流：`debug_ila_92probe_76mhz_coremark_20261019_a6d0d877.sbit`
+> （md5 `a6d0d877f41b1d0c8e2451310b75b86a`，92 data channel + 2 trigger，
+> depth 4096 / position 2048，CoreMark 固件 22,728 行）。
+> **该位流只用于抓波形，不得作为交付位流。**
+
+### 触发配置
+
+| 触发口 | 信号 | 用途 |
+|---|---|---|
+| TU0 | `ila_ex_flush` | 分支/跳转冲刷 |
+| TU1 | `ila_trig_cm` | `pc ∈ [0x231C, 0x315C)`，即 `core_bench_list` |
+
+### 图片与作用
+
+| 文件 | 触发/位置 | 作用 |
+|---|---|---|
+| `ila_20261019_tu0_exflush_coremark.png` | TU0，相对 0 | 分支冲刷：`ex_flush=1`，+1 拍 `IFID_PC/IDEX_PC=0000` |
+| `ila_20261019_tu1_corebenchlist_coremark.png` | TU1，相对 0（PC=0x24D0） | CoreMark 链表热点区全景 |
+| `ila_20261019_tu1_bhthit_coremark.png` | TU1，相对 -5（绝对 2043） | BHT 命中 + 预测 taken + ID 级提前重定向，EX 不冲刷 |
+| `ila_20261019_tu1_stall_coremark.png` | TU1，相对 +4（绝对 2052） | load-use 停顿：`stall=1`、`id_ex_mem_read=1`，+1 拍 `IDEX_PC=0000` |
+| `ila_20261019_tu1_pair_coremark.png` | TU1，相对 +37（绝对 2085） | 双发射配对成功：`pair_now=1`、`if_id_pair=1`、`ex_mem_b_valid=1` |
+| `ila_20261019_tu1_mispred_coremark.png` | TU1，相对 +12（绝对 2060） | 预测误判恢复：`ex_mispred=1`，+1 拍 `IFID_PC/IDEX_PC=0000` |
+
+> [!] 横轴为**触发点相对坐标**（`Negative Time/Samples`），绝对采样 = 相对 + 2048。
+> 每张事件图的事件拍数值以左上角 **X 列**为准；O 列为辅助光标，可能停在其他采样点。
+
+### 导出文件格式
+
+- `*.vcd`：全信号存档（5 条总线 + 92 根单 bit），GTKWave 可开。
+- `*.txt`：`Waveform Buses` 导出，4096 行 × 5 列，**无表头**。
+  列顺序固定为：
+  ```
+  PC  IFID_PC  IDEX_PC  EXMEM_PC  OPCODE
+  ```
+  第 N 行 = 绝对采样 N-1（即第 2049 行 = 采样 2048）。
+- [!] VCD 头部的 `$timescale 100ns` 是 Fabric Debugger 的**合成刻度**，
+  不是真实时钟周期。真实 `clk_sys` 为 76.5052 MHz（13.071 ns）；
+  **不要用 VCD 的时间轴计算绝对时间**，只按采样序号（拍）分析。
+- `.dprj` / `.wdf` 是 Debugger 的本地工程/波形文件，已被 `.gitignore` 全局忽略，
+  不入库；需要恢复视图时用 `File → Open Project` 打开对应 `.dprj`。

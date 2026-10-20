@@ -1,0 +1,32 @@
++----------------------------------------+
+ 0 |oooooooooooooooooooooooooooooo..........|
+ 1 |oooooooooooooooooooooooooooooo..GOMOKU..|
+ 2 |ooooooooooooooooooooooooooooooTURN......|
+ 3 |oooooooooooooooooooooooooooooo*WHITE....|
+ 4 |oooooooooooooooooooooooooooooo..........|
+ 5 |oooooooooooooooooooooooooooooo..........|
+ 6 |ooooooooooooooooooooooooooooooLEVEL.....|
+ 7 |oooooooooooooooooooooooooooooo.HARD.....|
+ 8 |oooooooooooooooooooooooooooooo..........|
+ 9 |ooooooooooooooooooooooooooooooDEPTH.....|
+10 |oooooooooooooooooooooooooooooo.6.PLY....|
+11 |oooooooooooooooooooooooooooooo..........|
+12 |ooooooooooooooooooooooooooooooNODES.....|
+13 |oooooooooooooooooooooooooooooo.12.8K....|
+14 |ooooooooooooooooooooooooooooooTIME......|
+15 |oooooooooooooooooooooooooooooo.569MS....|
+16 |oooooooooooooooooooooooooooooo..........|
+17 |oooooooooooooooooooooooooooooo.THINKING.|
+18 |oooooooooooooooooooooooooooooo..........|
+19 |oooooooooooooooooooooooooooooo..........|
+20 |oooooooooooooooooooooooooooooo..........|
+21 |oooooooooooooooooooooooooooooo..........|
+22 |ooooooooooooooooooooooooooooooUP/DN.MOVE|
+23 |ooooooooooooooooooooooooooooooHOLD.PLACE|
+24 |oooooooooooooooooooooooooooooo..........|
+25 |oooooooooooooooooooooooooooooo..........|
+26 |oooooooooooooooooooooooooooooo..........|
+27 |oooooooooooooooooooooooooooooo..........|
+28 |oooooooooooooooooooooooooooooo..........|
+29 |oooooooooooooooooooooooooooooo..........|
++----------------------------------------+

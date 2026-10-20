@@ -2,6 +2,24 @@
 
 > `.sbit` 被 `.gitignore` 排除（9 MB/个）。**别人 clone 下来一个都没有，必须自己综合。**
 
+> **[OK] 2026-10-20 生产重出 `855a935e`（combined，ILA 收尾后，76.5052 MHz）**
+> 文件名（本地）`combined_t7_d4a450f_76mhz_rev1028_seed10pin_855a935e.sbit`
+> （`.sbit` 不入库）。2026-10-20 01:13:16 综合，**92 探针已移除、`.fic` 登记已撤**；
+> `mem.hex` **48,288 行 / 24,144 字** = boot 30 + CoreMark 11,364 + RT-Thread 12,750
+> （RT-Thread text 50,704 / data 296 / bss 9,016，堆余 **1,408 B** ——
+>  `d4a450f` 把监控屏堆余量改成字节制后 .text +36B）。
+> 时序/资源：76.5052 MHz、CPU 域 **+0.304 ns / 0 失败端点 / Fmax 78.3269 MHz**、
+> LUT **7,740** / FF 3,692 / DRM **165.5** / APM 4、`All Constraints Met`。
+> [ ] **板上待验**：三条路径（默认五子棋 / SW6 CoreMark / SW6+SW7 终端演示屏）。
+> 验证前，归档交付档仍是 T7 的 `6E2D6020`。
+
+> **[OK] 2026-10-19 ILA 调试版 `a6d0d877`（92 探针，76.5052 MHz）**
+> 文件名（本地）`debug_ila_92probe_76mhz_coremark_20261019_a6d0d877.sbit`
+> （`.sbit` 不入库）。92 data channel + 2 trigger，depth 4096 / position 2048，
+> CoreMark 固件 22,728 行；TU0=`ila_ex_flush`、TU1=`pc ∈ [0x231C,0x315C)`。
+> **只用于抓波形，不得作为交付位流。** 波形证据见 `doc/board/ila_20261019_*.{png,vcd,txt}`
+> 与 `doc/board/README.md` 的 ILA 小节。
+
 > **[OK] 2026-10-19 T7 combined 演示线 `6E2D6020…`（分支 `feat/coremark-display`）**
 > 文件名（本地）`combined_..._6E2D6020.sbit`（**`.sbit` 不入库**）；17:01:11 综合，
 > boot 30 字 + CoreMark 11,364 字 + RT-Thread **12,741 字** = **48,270 行 / 24,135 字**；

@@ -41,7 +41,7 @@ module cpu_top (
     input  wire [31:0] vid_rdata
 );
     // UART 波特率分频 = f_clk / 115200。
-    //   * 仿真测试台例化 cpu_top 时【不传参数】→ 取 27MHz 的 234，仿真语义不变。
+    //   * 仿真测试台例化 cpu_top 时不传参数→ 取 27MHz 的 234，仿真语义不变。
     //   * 上板顶层 cpu_top_board 传 390（45MHz），见该文件头的 PLL 说明。
     parameter [9:0] UART_DIV = 10'd234;   // 27MHz→234（误差 0.16%），45MHz→390
 
@@ -53,38 +53,38 @@ module cpu_top (
 
     // ---- A.1 假 tag 路径开关（透传给 mem_bus）----
     // 0 = 逐位不变（默认）。1 = 在访存读通路上插"假 tag 比较 + way mux"，
-    //   只为综合量时序（任务书 v7 §5.A.1），不上板、不跑分。同 DUAL_ISSUE：
+    //   只为综合量时序，不上板、不跑分。同 DUAL_ISSUE：
     //   PDS 命令行传不了 -D，所以靠这个默认值切换。
     parameter CACHE_TAG_PROBE = 0;
 
     // ---- D-Cache 开关（高阶任务①）----
-    // 0 = 【默认】不例化，跑分口径不变；1 = 开 16KB/2 路组相联 D-Cache。
+    // 0 = 默认不例化，跑分口径不变；1 = 开 16KB/2 路组相联 D-Cache。
     // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。
     parameter DCACHE_EN = 0;
 
     // ---- I-Cache 开关（高阶任务①）----
-    // 0 = 【默认】不例化，取指通路逐位不变；1 = 开 16KB/2 路组相联 I-Cache。
+    // 0 = 默认不例化，取指通路逐位不变；1 = 开 16KB/2 路组相联 I-Cache。
     parameter ICACHE_EN = 0;
 
-    // ---- [TASK-C 探针] 假 AGU 开关（透传给 core + mem_bus）。默认 0 ----
+    // ---- 假 AGU 开关（透传给 core + mem_bus）。默认 0 ----
     parameter AGU_PROBE  = 0;
 
-    // ---- [任务 C] load 地址提前（EARLY_LD，透传给 core + mem_bus）。**默认 1** ----
+    // ---- load 地址提前（EARLY_LD，透传给 core + mem_bus）。默认 1 ----
     // 0 = 逐位回退旧行为（load 数据 WB 才到、紧跟其后停一拍）。
     // 1 = load 地址算在 ID 级、专用提前读口早一拍取回 ⇒ 消掉 90% 的 load-use 停顿。
     // 切换方式同 DUAL_ISSUE：改这个默认值再综合（PDS 命令行传不了 -D）。
     // [!] 仿真侧由 tb_* 的 -DEARLYLD 决定，两边要一致，否则跑分数与板上对不上。
     parameter EARLY_LD   = 1;
 
-    // ---- [面积优化] A 扩展（RV32A）开关（透传给 core）。**默认 0 = 关** ----
-    // 依据（2026-10-15）：赛题主分 = CoreMark/MHz（主频与面积不进主分），而面积进
+    // ---- A 扩展（RV32A）开关（透传给 core）。默认 0 = 关 ----
+    // 依据：赛题主分 = CoreMark/MHz（主频与面积不进主分），而面积进
     //   指标(3) CoreMark/LUTs。两个交付固件都不含原子指令 ⇒ 关掉零性能损失、纯省面积。
     // 1 = 逐位回到原行为；`rtthread\run_sim.ps1 -Atomic`（用硬件原子验证 A 扩展）
     //   与 `sim\tb_amo_int.v` 需要它。
     parameter A_EXT      = 0;
 
-    // ---- [lane B 访存] lane B 放 load（透传给 core）。**默认 1 = 开** ----
-    // 2026-10-16 P3 翻转（此前 P2 阶段为 0）。0 = 关（lane B 只放纯 ALU，逐位回退）；
+    // ---- lane B 放 load（透传给 core）。默认 1 = 开 ----
+    // 默认已从 0 翻转为 1。0 = 关（lane B 只放纯 ALU，逐位回退）；
     // 1 = 开：lane B 可放 load（每对最多一条访存，lane B 一律走旧通路）。
     // [!] 与 DUAL_ISSUE 同一套玩法：PDS 命令行传不了 -D，板级靠这个默认值；
     //     仿真侧由 tb_* 的 -DLANEBMEM 显式决定（tb_rtthread 的 SIM CONFIG 自证）。
@@ -96,7 +96,7 @@ module cpu_top (
     wire [14:0] imem_addr2;     // 与 imem_addr 同宽（128KB = 32768 word），别改窄 —— 见 core.v 端口注释
     wire [31:0] imem_rd2;
 
-    // ---- core ↔ mem_bus：[任务 C] 提前 load 读口（C 口）----
+    // ---- core ↔ mem_bus：提前 load 读口（C 口）----
     wire [14:0] ld_addr;
     wire [31:0] ld_rdata;
 
@@ -113,12 +113,12 @@ module cpu_top (
 
     // ---- 中断 ----
     wire        irq_timer;
-    wire [31:0] agu_probe;      // [TASK-C 探针] 假 AGU 的结果（AGU_PROBE=0 时恒 0）
+    wire [31:0] agu_probe;      // 假 AGU 的结果（AGU_PROBE=0 时恒 0）
 
     // ---- 程序结束标志 ----
     // 两个来源：CoreMark 的 0xFFF8 协议（start.S 里 main 返回后写），
     // 以及程序执行 EBREAK。
-    // 注意 EBREAK 是【软停机】：只置标志、不停 PC —— 程序应在 EBREAK 后跟一个
+    // 注意 EBREAK 是软停机：只置标志、不停 PC —— 程序应在 EBREAK 后跟一个
     // 自旋循环（riscv-tests 的 pass/fail 例程、CoreMark 的 start.S 都是这么做的）。
     wire        ebreak;
     wire        done_mmio;

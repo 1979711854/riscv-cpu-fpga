@@ -1,30 +1,20 @@
 `timescale 1ns/1ps
 `include "addr_map.vh"
 // ============================================================================
-// mem_bus —— 存储总线 / 地址译码（SoC 里【唯一】做地址译码的地方）
+// mem_bus —— 存储总线 / 地址译码（SoC 里唯一做地址译码的地方）
 // ----------------------------------------------------------------------------
 // 时序契约（core.v 依赖它，改这里必须同步看 core.v 的 MEM/WB 段）：
-//
 //   第 T   拍 (MEM)：core 给出 mem_addr / mem_wdata / mem_we / mem_byte_en
 //   第 T+1 拍 (WB)：mem_rdata 必须是 mem_addr(T) 对应地址的读数据
-//
-// 由此推出两条【硬约束】，破坏任何一条都会让 load 读到错值：
-//
-//   1) 写通路零寄存器。mem_we/mem_addr/mem_wdata/mem_byte_en 必须组合打进
-//      RAM 写口。若把写地址或写数据寄存一拍，store 在 T 提交、load 在 T+1
-//      读回，就会读到旧值 —— st_ld / ld_st 这类"存完立刻读回"的用例直接翻车。
-//
-//   2) 读选择位与读数据都必须在 MEM→WB 那个沿寄存（rsel_d 一族）。不能给
-//      读通路再插一级寄存器，否则读数据被推到 T+2，而 WB 在 T+1 采样，
-//      没有任何 stall 机制能救（冒险单元不知道内存有几拍）。
-//      所有地址源（RAM / 兼容区 / 外设区）一律 1 拍延迟，不搞特例。
-//
-// 注：RAM 的读数据由 bram/unified_mem 内部在同一个沿寄存，天然满足约束 2。
-//
-//   3) 视频区（0x8001_0000 起）也遵守上面两条：写通路组合打进显存 A 口，
-//      读数据由显存 A 口自己寄存。视频区跟 RAM 一样是"1 拍必回"，所以
-//      mem_ready 对它恒 1 —— 显示不走等待状态，见 §7.1。
-//
+// 由此推出两条硬约束，破坏任何一条都会让 load 读到错值：
+//   1) 写通路零寄存器：mem_we/addr/wdata/byte_en 必须组合打进 RAM 写口。
+//      [!] 若把写地址或写数据寄存一拍，store 在 T 提交、load 在 T+1 读回旧值，
+//          st_ld / ld_st 这类"存完立刻读回"用例直接 FAIL。
+//   2) 读选择位与读数据都在 MEM→WB 沿寄存（rsel_d 一族），读通路不得再插寄存器。
+//      [!] 所有地址源（RAM/兼容区/外设区/视频区）一律 1 拍延迟，不搞特例 ——
+//          冒险单元不知道内存有几拍，T+2 才出的数据没有任何 stall 机制能救。
+//      RAM 与视频显存都是同步 BRAM，读数据在模块内部同沿寄存，天然满足约束 2；
+//      视频区"1 拍必回"，mem_ready 对它恒 1，显示不走等待状态。
 // 地址映射见 addr_map.vh。
 // ============================================================================
 module mem_bus (
@@ -39,12 +29,11 @@ module mem_bus (
     input  wire [14:0] imem_addr2,   // 与 imem_addr 同宽（128KB = 32768 word），别改窄 —— 见 core.v 端口注释
     output wire [31:0] imem_rd2,
 
-    // ---- [任务 C] 提前 load 读口（C 口，只读、同步读 1 拍）----
-    // 由 core 的 ID/EX 寄存器驱动（= load 的 EX 级），数据下一拍回来。**不做任何
-    // 译码/仲裁**：它只镜像 RAM 段，core 侧的 ld_fast 判据已保证只对 RAM 地址启用
-    // （外设/视频/兼容区一律走旧通路）。所以这里直连 unified_mem 的第三份阵列即可。
-    // [!] 它【绕过 D-Cache】—— 快通路 load 直接读真存储器，因此永远比 Cache 更新，
-    //     功能上安全（写通路本来就是写通到 BRAM）。
+    // ---- 提前 load 读口（C 口，只读、同步读 1 拍）----
+    // 由 core 的 ID/EX 寄存器驱动（= load 的 EX 级），数据下一拍回来。不做任何
+    // 译码/仲裁：只镜像 RAM 段，core 侧的 ld_fast 判据已保证只对 RAM 地址启用。
+    // [!] 它绕过 D-Cache 直接读真存储器，永远比 Cache 新；写通路本就写通到 BRAM，
+    //     功能上安全。
     input  wire [14:0] ld_addr,
     output wire [31:0] ld_rdata,
 
@@ -57,9 +46,8 @@ module mem_bus (
     output wire [31:0] mem_rdata,
 
     // ---- 访存就绪（core.v 的访存等待机制）----
-    // 恒 1 = 这次访存在固定 1 拍内完成（现在的行为，逐位不变）。
-    // 拉低 = 这次访存还没完成，core 会把 MEM/WB 和上游一起冻住，直到它拉高。
-    // 现在只有 RAM 的 b_ready 接上来（恒 1）；日后 APB/AXI 桥在这里驱动它。
+    // 1 = 本次访存在固定 1 拍内完成；0 = 未完成，core 冻住 MEM/WB 及上游。
+    // 现在只有 RAM 的 b_ready 接进来；日后 APB/AXI 桥在这里驱动。
     output wire        mem_ready,
 
     // ---- 外设：写选通 / 读回（外设寄存器本体在 rtl/periph/ 里）----
@@ -76,7 +64,7 @@ module mem_bus (
     // addr_map.vh 的视频区小节。
     output wire        vid_we,        // 写使能（子窗口由 vid_vsel 决定）
     output wire [1:0]  vid_vsel,      // 0=nametable 1=pattern 2=palette 3=寄存器
-    output wire [13:0] vid_waddr,     // 区域相对【字】地址（写口用）
+    output wire [13:0] vid_waddr,     // 区域相对字地址（写口用）
     output wire [3:0]  vid_be,        // = mem_byte_en，字节使能直通
     output wire [31:0] vid_wdata,
     output reg  [1:0]  vid_vsel_d,    // 与读数据同拍（= rsel_d 那一族）
@@ -90,33 +78,31 @@ module mem_bus (
     // 定时器中断（mip.MTIP，bit7）。电平信号，直连 core.irq_timer。
     output wire        irq_timer,
 
-    // ---- [TASK-C 探针] 假 AGU 观测口（AGU_PROBE=0 时上层给 0）----
+    // ---- 假 AGU 观测口（AGU_PROBE=0 时上层给 0）----
     input  wire [31:0] agu_probe_in
 );
 
-    // ---- A.1 假 tag 路径开关（只为综合量时序；逻辑见文件末尾 mem_rdata 之前）----
+    // ---- 假 tag 路径开关（只为综合量时序；逻辑见文件末尾 mem_rdata 之前）----
     // 0 = 逐位不变（访存读数据 = ram_rdata）。1 = 插入"假 tag 比较 + way mux"。
-    // 同 DUAL_ISSUE：PDS 命令行传不了 -D 宏，所以靠 parameter 默认值切换，
-    // 综合量时序时临时把 cpu_top.v 里的默认值改成 1，量完改回 0。
+    // PDS 命令行传不了 -D 宏，靠参数默认值切换：量时序时临时把 cpu_top.v 里的
+    // 默认值改成 1，量完改回 0。
     parameter CACHE_TAG_PROBE = 0;
 
-    // ---- D-Cache 开关（高阶任务①）----
-    // 0 = 【默认】不例化 cache_d，访存通路逐位不变（跑分口径）。
-    // 1 = 例化 16KB/2 路组相联 D-Cache（见 rtl/bus/cache_d.v）。
-    // 同 DUAL_ISSUE / CACHE_TAG_PROBE：PDS 命令行传不了 -D，靠参数默认值切换，
-    // 由 cpu_top.v 透传。
-    // [!] 打开时 cpu_top.v 的默认值也要一起改（仿真侧 tb_* 直接传参数）。
+    // ---- D-Cache 开关 ----
+    // 0 = 默认不例化 cache_d，访存通路逐位不变。
+    // 1 = 例化 2 路组相联 D-Cache（见 rtl/bus/cache_d.v）。
+    // [!] 打开时 cpu_top.v 的默认值要一起改（仿真侧 tb_* 直接传参数）。
     parameter DCACHE_EN = 0;
 
-    // ---- I-Cache 开关（高阶任务①）----
-    // 0 = 【默认】不例化 cache_i，取指通路逐位不变。
-    // 1 = 例化 16KB/2 路组相联 I-Cache（见 rtl/bus/cache_i.v）。
+    // ---- I-Cache 开关 ----
+    // 0 = 默认不例化 cache_i，取指通路逐位不变。
+    // 1 = 例化 2 路组相联 I-Cache（见 rtl/bus/cache_i.v）。
     parameter ICACHE_EN = 0;
 
-    // ---- [TASK-C 探针] 假 AGU 观测口（默认关；见 core.v 的 AGU_PROBE）----
+    // ---- 假 AGU 观测开关（默认关；见 core.v 的 AGU_PROBE）----
     parameter AGU_PROBE = 0;
 
-    // ---- [任务 C] load 地址提前（透传给 unified_mem：决定是否例化第三份阵列）----
+    // ---- load 地址提前（透传给 unified_mem：决定是否例化第三份阵列）----
     // [!] 必须与 core.v / cpu_top.v 的 EARLY_LD 取值一致，否则读口读的是空阵列。
     parameter EARLY_LD = 0;
 
@@ -131,22 +117,15 @@ module mem_bus (
     end
 
     // ------------------------------------------------------------------
-    // CLINT：mtime 就复用上面的 cyc（不另起一个计数器，避免两处漂移）；
-    //        mtimecmp 可写。
+    // CLINT：mtime 复用上面的 cyc（不另起计数器，避免两处漂移）；mtimecmp 可写。
     //
-    // [重点] MTIP 必须是【纯电平比较器】，绝不做锁存或脉冲：
-    //   软件写新的 mtimecmp → 下一拍比较自然翻低 → MTIP 自动落下。
-    //   这正是"中断返回后能继续正常工作"的前提：`mret` 恢复 mstatus.MIE 后，
-    //   若 MTIP 还是高的，会立刻再次 trap，PC 被钉死在 mtvec。
-    //   做成"置位保持到软件清除"就会踩这个死循环。
-    //
-    // [重点] mtimecmp 复位值必须是【全 1】，不能是 0：
-    //   复位为 0 会让 `mtime >= mtimecmp` 恒真 → 上电起 MTIP 就一直是 1。
-    //   虽然默认 mie.MTIE=0 与 mstatus.MIE=0 能挡住，但那是免费的第二道防线，
-    //   只要有一处 tie 写错就会从上电起反复 trap。
-    //
-    // 比较器单独打一拍（mtip_r）：把 32 位比较从 pc_r 的临界路径上切下来。
-    // 电平语义下多这 1 拍无害（mtimecmp 是极低频写的，mtime 单调递增）。
+    // [!] MTIP 必须是纯电平比较器，绝不做锁存/脉冲：软件写新 mtimecmp 后下一拍
+    //     自动落下，这是 mret 之后能继续正常工作的前提 —— 做成"置位保持到软件
+    //     清除"会陷入 trap 死循环，PC 钉死在 mtvec。
+    // [!] mtimecmp 复位值必须全 1：复位为 0 会让 mtime >= mtimecmp 恒真、上电即
+    //     MTIP=1。mie.MTIE=0 只是第二道防线，不能依赖。
+    // 比较器单独打一拍（mtip_r）：把 32 位比较从临界路径上切下来；电平语义下
+    // 多这 1 拍无害（mtimecmp 极低频写、mtime 单调递增）。
     // ------------------------------------------------------------------
     reg [31:0] mtimecmp;
     reg        mtip_r;
@@ -176,8 +155,8 @@ module mem_bus (
     // 高半区（addr[31]=1）一分为二，分界线在 addr[16]：
     //   addr[17:16] == 2'b00 → 外设区 0x8000_0000~0x8000_FFFF
     //   addr[17:16] != 2'b00 → 视频区 0x8001_0000~0x8003_FFFF
-    // [!] 原来 periph_hit 就是 mem_addr[31]，视频区一落进来就会命中 GPIO
-    //     （periph_off=0）—— 写显存会顺带点 LED。所以必须把高半区切开。
+    // [!] 若只看 mem_addr[31]，写显存会顺带命中 GPIO 点亮 LED，高半区必须用
+    //     addr[17:16] 切开。
     wire periph_hit = mem_addr[31] && (mem_addr[17:16] == 2'b00);
     wire video_hit  = mem_addr[31] && (mem_addr[17:16] != 2'b00);
 
@@ -222,7 +201,7 @@ module mem_bus (
     wire        ram_ready;      // RAM 的就绪（恒 1；仿真里可被 +MEMWAIT 拉低）
 
     // [!] A1 口的读数据先落到内部线 a1_bram，再由下面的 I-Cache（或直通）驱动
-    //     imem_rd。A2 口【不经过 I-Cache】，直连 imem_rd2（理由见 cache_i.v 文件头）。
+    //     imem_rd。A2 口不经过 I-Cache，直连 imem_rd2（理由见 cache_i.v 文件头）。
     wire [31:0] a1_bram;
 
     unified_mem #(.EARLY_LD(EARLY_LD)) u_mem (
@@ -231,7 +210,7 @@ module mem_bus (
         .a_rd_data(a1_bram),
         .a_clk    (clk),
         .a_rst    (~resetn),
-        // C 口：任务 C 的提前 load 读（只读，EARLY_LD=0 时阵列不例化、恒 0）
+        // C 口：提前 load 读（只读，EARLY_LD=0 时阵列不例化、恒 0）
         .ld_addr  (ld_addr),
         .ld_rd_data(ld_rdata),
         // A2 口：取指 2（只读，双发射第二读口；与 A1 同域）
@@ -251,17 +230,13 @@ module mem_bus (
     );
 
     // ==================================================================
-    // [D-Cache] 高阶任务① 的 L1 数据 Cache（默认关）
+    // D-Cache（默认关）：夹在 core 访存口与 unified_mem B 口之间，只缓存读
     // ------------------------------------------------------------------
-    // 位置：夹在 core 的访存口与 unified_mem 的 B 口之间，**只缓存读**；
-    //   写仍由上面 u_mem 的 .b_wr_en 组合打进 BRAM（写通、零寄存器），
-    //   所以 st_ld / fence.i（自改码）语义与不开 Cache 时【完全一致】。
-    // 缺失停一拍：d_stall_w → mem_ready 拉低 → core 走既有的 freeze 通路
-    //   （A.0 收尾的那套 mem_ready/mem_ready_int 就是为这个准备的）。
-    // [!] 本模块的唯一消费者是【load】的结果：ram_rdata_eff 只在 rsel_d==0
-    //     那一支里被选，而 store 的 WB 级不读 mem_rdata，所以 store 命中
-    //     时数据阵列的"同址读写"不会污染任何东西（见 cache_d.v 的注释）。
-    // [!] 必须先于下面的 mem_ready 声明（iverilog 14 要求先声明后使用 —— 约定 1）。
+    // 写仍组合打进 BRAM（写通、零寄存器），st_ld / fence.i 语义与不开 Cache 一致；
+    // 缺失停 1 拍走既有 freeze 通路。
+    // [!] 唯一消费者是 load（store 的 WB 级不读 mem_rdata），store 命中的同址
+    //     读写不会污染结果（见 cache_d.v）。
+    // [!] 必须先于下面的 mem_ready 声明（iverilog 14 要求先声明后使用）。
     // ==================================================================
     wire        d_stall_w;
     wire [31:0] d_rdata_w;
@@ -293,7 +268,7 @@ module mem_bus (
     endgenerate
 
     // ------------------------------------------------------------------
-    // Cache 命中/缺失计数器（答辩证据；默认关时恒 0）
+    // Cache 命中/缺失计数器（只读；默认关时恒 0）
     // ------------------------------------------------------------------
     reg [31:0] dcache_hits;
     reg [31:0] dcache_misses;
@@ -309,7 +284,7 @@ module mem_bus (
     end
 
     // ==================================================================
-    // [I-Cache] 高阶任务① 的 L1 指令 Cache（默认关）
+    // I-Cache（默认关）
     // ------------------------------------------------------------------
     // 只缓存 A1（imem_addr）；A2（imem_addr2）仍直连 BRAM —— 它恒 1 拍就绪、
     // 与 A1 天然同拍，缓存它只会多花 16KB BRAM 与两套 tag（见 cache_i.v）。
@@ -343,7 +318,7 @@ module mem_bus (
     assign imem_rd = (ICACHE_EN != 0) ? i_rdata_w : a1_bram;
 
     // ------------------------------------------------------------------
-    // I-Cache 命中/缺失计数器（答辩证据；默认关时恒 0）
+    // I-Cache 命中/缺失计数器（只读；默认关时恒 0）
     // ------------------------------------------------------------------
     reg [31:0] icache_hits;
     reg [31:0] icache_misses;
@@ -358,22 +333,13 @@ module mem_bus (
         end
     end
 
-    // [!] 现在只有 RAM 参与就绪。命中 RAM 时听 RAM 的 b_ready；其余地址
-    //     （兼容区 / 外设区 / 视频区）都是 1 拍必回，直接给 1 —— 视频显存的
-    //     A 口也是同步 BRAM，地址进、次拍数据出，与统一存储器同拍。
-    //     日后加 APB/AXI 桥时，把桥的 ready 也并进来（相与）。
-    // [A.0 修复] 只在【真的有一次 RAM 访存在途】时才跟随 ram_ready。
-    //   原来写成 `ram_hit ? ram_ready : 1'b1` —— 只要 MEM 级指令的 mem_addr 落在
-    //   RAM 段就听 ram_ready，哪怕那条指令根本不是 load/store（非访存指令的
-    //   alu_result 也常落在 0x0~0xEFFF）⇒ 空闲期 mem_ready 也会被自由跑的
-    //   ram_ready 拉低，违反 bus_upgrade_plan §3.1 契约第 5 条
-    //   （"空闲期 mem_ready 必须为 1，不允许在没有访存在途时拉低"）。
-    //   MEMWAIT=0 时 ram_ready≡1 ⇒ 本行与原来【逐位相同】。
-    // [D-Cache] 但 D-Cache 缺失时还要再压一拍（缺失只有 1 拍：见 cache_d.v 时序）——
-    //   缺的那一拍里后端 BRAM 的 ram_rdata 正好就是本条 load 的字，所以数据仍然对齐。
-    // [I-Cache] 取指缺失也必须压 mem_ready（取指口没有就绪信号，理由见 cache_i.v）。
-    //   [!] 它是【无条件】相与的：哪怕本拍是外设访问，取指缺失也要把整条流水线冻住
-    //       —— 代价是外设选通会多高着几拍，所以下面三个选通必须做 one-shot 门控。
+    // [!] 只在真的有 RAM 访存在途时才跟随 ram_ready：非访存指令的 alu_result 也常
+    //     落在 RAM 段，若按地址命中就跟随，空闲期 mem_ready 会被自由跑的 ram_ready
+    //     拉低，违反"空闲期 mem_ready 必须为 1"的总线契约。MEMWAIT=0 时逐位相同。
+    // D-Cache 缺失再压 1 拍（缺失 1 拍期间后端 BRAM 读出的正是本条 load 的字）；
+    // I-Cache 缺失也压 mem_ready（取指口没有就绪信号，见 cache_i.v）。
+    // [!] I-Cache 停顿是无条件相与：外设访问也会被冻住几拍，所以下面的外设选通
+    //     必须做 one-shot 门控（bus_first）。
     wire mem_ready_core = (ram_hit && (mem_re || mem_we)) ? (ram_ready && !d_stall_w) : 1'b1;
     assign mem_ready = mem_ready_core && !i_stall_w;
 
@@ -384,7 +350,7 @@ module mem_bus (
     reg [31:0] legacy_rdata_d;
     reg [31:0] periph_rdata_d;
 
-    // [TASK-C 探针] 假 AGU 的只读回读（只为让综合器保留那条路径）
+    // 假 AGU 的只读回读（只为让综合器保留那条路径）
     reg [31:0] agu_probe_r;
     always @(posedge clk or negedge resetn) begin
         if (!resetn) agu_probe_r <= 32'd0;
@@ -423,22 +389,13 @@ module mem_bus (
     end
 
     // ==================================================================
-    // [A.1] 假 tag 路径（CACHE_TAG_PROBE）—— 只为【综合量时序】，默认关
+    // 假 tag 路径（CACHE_TAG_PROBE）—— 只为综合量时序，默认关
     // ------------------------------------------------------------------
-    // 目的：真做 I/D Cache 时，"set 索引 → 读两路 tag → 与地址 tag 比较 →
-    //   way 选择 → 数据 mux" 这一段会压到访存关键路径上，而当前余量只有
-    //   4.6%（+0.544 ns）。先插一条【结构等价】的假路径综合一次，量出它到底
-    //   吃掉多少余量，再决定要不要写完整 Cache（任务书 v7 §5.A.1）。
-    //
-    // [!] 为什么 tag 和数据都借【真实信号】而不是接常数：
-    //   一条"恒命中"的假逻辑是【冗余】的，综合器会整个消掉 → 时序报告纹丝
-    //   不动 → 得到假的"无影响"结论（这正是本步最大的坑）。这里把 tag/数据
-    //   都接到真实存储端口上（ram_rdata / imem_rd / imem_rd2 / vid_rdata 对
-    //   综合器都是未知内容），比较结果确实未知、mux 选择确实有效 ⇒ 逻辑
-    //   一定保留，量到的就是"真加 Cache 会多深"。
-    //   代价：PROBE=1 时访存读数据不再等于 ram_rdata（功能不正确、CoreMark
-    //   会错）—— 但本开关【只用于综合量时序】，默认关、不上板、不跑分。
-    //   PROBE=0 时三目被常量折叠成 ram_rdata 直通 ⇒ 逐位不变。
+    // 目的：量 Cache 路径（tag 读 → 比较 → way mux）压到访存关键路径上的深度。
+    // [!] tag/数据必须借真实信号（ram_rdata/imem_rd/imem_rd2/vid_rdata）而非常数
+    //     —— 恒命中的假逻辑是冗余的，会被综合器整个消掉，量出假的"无影响"结论。
+    //     PROBE=1 时功能不正确，只综合量时序用；PROBE=0 时三目常量折叠成
+    //     ram_rdata 直通，逐位不变。
     // ==================================================================
     wire [19:0] p_addr_tag = mem_addr[31:12];   // 地址 tag（20 位，同真实 Cache）
     wire [19:0] p_tag0     = ram_rdata[31:12];  // "way0 存的 tag"（借 BRAM 读数据）
@@ -452,8 +409,8 @@ module mem_bus (
     wire [31:0] p_way_data = p_hit0 ? p_d0 : p_d1;
     wire [31:0] p_rdata    = (p_hit0 | p_hit1) ? p_way_data : p_fill;
 
-    // [D-Cache] DCACHE_EN=1 时访存读数据改为走 cache_d（命中给阵列数据、
-    //   缺失那两拍直通后端 BRAM）；两个开关互斥使用，默认都为 0 ⇒ 逐位是 ram_rdata。
+    // DCACHE_EN=1 时读数据改走 cache_d（命中给阵列数据、缺失直通后端 BRAM）；
+    // 两个开关互斥使用，默认都为 0 ⇒ 逐位是 ram_rdata。
     wire [31:0] ram_rdata_eff = (CACHE_TAG_PROBE != 0) ? p_rdata   :
                                 (DCACHE_EN       != 0) ? d_rdata_w : ram_rdata;
 
@@ -464,22 +421,15 @@ module mem_bus (
     // ------------------------------------------------------------------
     // 外设写选通（组合，零拍；u8 写入按低字节取，与 sb/sh/sw 都兼容）
     // ------------------------------------------------------------------
-    // [!] 这三个选通是【电平敏感】的，外设不是在沿上"看一眼"：
-    //       uart_tx.v:  if (tx_start && !fifo_full) → 高 N 拍就入队 N 个字符
-    //       uart_rx.v:  if (ack && !empty) rptr++   → 高 N 拍就弹掉 N 个字节
-    //     **现在安全**，因为外设访问恒不等待（上面 mem_ready 对非 RAM 地址直接给 1），
-    //     而这些条件里本来就含 mem_we/mem_re，所以只高 1 拍。
-    //
-    //     [!!] 但**加 APB/AXI 桥并让外设等待之后就不安全了** —— 访问被停住时
-    //     选通会一直高着，于是"发一次字符"变成"发 N 次"、"读一次"变成"弹 N 个"，
-    //     而且是静默数据损坏。**那时必须把这三个选通与"本次访问的首次那一拍"
-    //     相与**（桥里锁存一个 one-shot，或者在 core 引出 mem_req）。
-    //     详见 doc/reports/2026-09-27_bus_upgrade_plan.md §3。
-    // [I-Cache] **上面那条警告现在成真了**：取指缺失会压 mem_ready，于是外设访问
-    //   可能被冻住若干拍。所以按 bus_upgrade_plan §3 说的做法补 one-shot 门控：
-    //   只在"本次访问的首次那一拍"放选通。
-    //   判据：`bus_stall_r` 是上一拍 mem_ready 的反相 —— 正常（不冻）时恒 0，
-    //   所以缓存关时本门控恒为 1，行为逐位不变。
+    // [!] 这三个选通是电平敏感的，不是"沿上看一眼"。现在安全是因为外设访问恒
+    //     不等待（mem_ready 对非 RAM 地址直接给 1），条件里又含 mem_we/mem_re，
+    //     所以只高 1 拍。
+    // [!] 若将来加 APB/AXI 桥并让外设等待，访问被停住时选通会一直高着 ——
+    //     "发一次字符"变"发 N 次"，静默数据损坏。必须与"本次访问的首次那一拍"
+    //     相与，完整复盘见 doc/reports/（bus_upgrade_plan §3）。
+    // I-Cache 缺失会压 mem_ready，外设访问可能被冻住，所以这里已按上述方案做
+    // one-shot 门控：bus_stall_r 是上一拍 mem_ready 的反相，缓存关时门控恒 1，
+    // 行为逐位不变。
     reg bus_stall_r;
     always @(posedge clk or negedge resetn) begin
         if (!resetn) bus_stall_r <= 1'b0;
@@ -495,8 +445,7 @@ module mem_bus (
 
     // ------------------------------------------------------------------
     // 结束标志：写 0xFFF8 低字节 = 1。
-    // 用 byte_en[0] + 低字节比较（而不是整字 ==1），这样 sb/sh/sw 都能触发；
-    // 对 CoreMark start.S 的 `sw a0=1, 0(0xFFF8)` 行为与旧版完全一致。
+    // 用 byte_en[0] + 低字节比较（而不是整字 ==1），这样 sb/sh/sw 都能触发。
     // ------------------------------------------------------------------
     always @(posedge clk or negedge resetn) begin
         if (!resetn) done <= 1'b0;
@@ -506,7 +455,7 @@ module mem_bus (
 
     // ------------------------------------------------------------------
     // CLINT：mtimecmp 写口
-    // 只接受【整字写】（sw），sb/sh 静默忽略 —— 规范里 mtimecmp 也是按字访问的。
+    // 只接受整字写（sw），sb/sh 静默忽略 —— 规范里 mtimecmp 也是按字访问的。
     // 复位值全 1 而不是 0，理由见上面 mtip_r 附近的注释。
     // ------------------------------------------------------------------
     always @(posedge clk or negedge resetn) begin

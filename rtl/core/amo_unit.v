@@ -4,12 +4,12 @@
 // ----------------------------------------------------------------------------
 // 为什么单独摘成一个模块，而不是塞进 alu 或直接写进 core.v：
 //
-//   1) AMO 是**读-改-写**，天然要占【两拍】MEM（先读回旧值，再写回新值）。
-//   2) 但它【不能】像 multiplier / divider 那样走 mc_stall：mc_stall 会把
+//   1) AMO 是读-改-写，天然要占两拍MEM（先读回旧值，再写回新值）。
+//   2) 但它不能像 multiplier / divider 那样走 mc_stall：mc_stall 会把
 //      EX/MEM 清成气泡，而 AMO 恰恰就是那条正在跑状态机的指令 —— 清掉它等于
 //      把读-改-写拦腰截断（这正是"接进流水线就坏"的历史真因）。
-//      所以 AMO 改为【占住 MEM 级】：amo_stall 仍报出"忙"，但 core.v 用
-//      mem_ready 那套【保持】语义把它冻在 EX/MEM 里，直到 mem_release
+//      所以 AMO 改为占住 MEM 级：amo_stall 仍报出"忙"，但 core.v 用
+//      mem_ready 那套保持语义把它冻在 EX/MEM 里，直到 mem_release
 //      （ST_WRITE 拍）才放开。前端取指/译码时序因此仍然一行都不用改。
 //   3) AMO 的关键路径是「读回值 → 一级 ALU 二选一 → 写回」，很短，
 //      不会像单拍组合乘法那样吃掉 56% 的时序余量。
@@ -17,10 +17,10 @@
 // ---- 时序契约（严格对齐 core.v 的 MEM 级）----
 //   core.v 的访存契约：第 T 拍(MEM) 给出 mem_addr，第 T+1 拍(WB)
 //   mem_rdata 才是 mem_addr(T) 对应地址的读数据。
-//   注意 mem_rdata 是【寄存器】输出：它在 T+1 那个沿才被写入内存逻辑，
+//   注意 mem_rdata 是寄存器输出：它在 T+1 那个沿才被写入内存逻辑，
 //   所以它从 T+2 整拍开始才稳定有效。逐拍实测（trace 验证）如下：
 //     T  : ST_READ  re=1 给出 addr
-//     T+1: ST_HOLD  re=0  —— mem_rdata 仍是【上一条】的值
+//     T+1: ST_HOLD  re=0  —— mem_rdata 仍是上一条的值
 //     T+2: ST_WRITE  re=0  —— mem_rdata 此时才有效，锁存它
 //     T+3: ST_DONE  we=1 用锁存值写回
 //   [踩过的坑] 初版只有两拍（READ→WRITE），在 WRITE 拍直接采 mem_rdata，
@@ -28,7 +28,7 @@
 //
 // ---- LR/SC 预约 ----
 //   LR 建立预约；SC 成功则写并返回 1，失败返回 0 且不写。
-//   任何 store/AMO 写【别的地址】都会让预约失效（规格要求）。
+//   任何 store/AMO 写别的地址都会让预约失效（规格要求）。
 //   本设计单核顺序执行，SC 失败的条件只有"地址不匹配"或"期间有别的store"。
 //   [!] 语义仍必须完整 —— 否则在真多核机器上跑出来的程序会错。
 // ============================================================================
@@ -118,7 +118,7 @@ module amo_unit (
                 end
 
                 ST_READ: begin
-                    // 这一拍 mem_rdata【还无效】（它在下一个沿才被写入）
+                    // 这一拍 mem_rdata还无效（它在下一个沿才被写入）
                     st <= ST_HOLD;
                 end
 
@@ -148,10 +148,10 @@ module amo_unit (
     end
 
     assign amo_stall   = (st != ST_IDLE);
-    // 状态机的【最后一拍】（写回拍）。core.v 用它在"这一拍末"放开被占住的 EX/MEM：
+    // 状态机的最后一拍（写回拍）。core.v 用它在"这一拍末"放开被占住的 EX/MEM：
     //   同一拍里 amo_mem_we 已经把新值写进内存，而 "EX/MEM -> MEM/WB" 的沿也在
     //   这一拍，于是这条 AMO 恰好被 MEM/WB 捕获一次（mem_wb_is_amo=1），
-    //   接着走【原有的】WB 写回通路 —— 不需要寄存器堆第三写口，也不需要自持写回。
+    //   接着走原有的WB 写回通路 —— 不需要寄存器堆第三写口，也不需要自持写回。
     assign mem_release = (st == ST_WRITE);
     assign illegal   = (funct3 == 2'b11);      // RV32 不支持 64 位 AMO
 
@@ -168,7 +168,7 @@ module amo_unit (
     assign amo_byte_en  = amo_mem_we ? 4'b1111 : 4'b0000;
 
     // ---- 新值 = f(旧值, rs2)----
-    // [重点] 用【锁存的】amo_rdata_r，不是当前的 mem_rdata —— 后者在 WRITE 拍
+    // [!] 用锁存的amo_rdata_r，不是当前的 mem_rdata —— 后者在 WRITE 拍
     //   已经是下一条访存的数据了。
     reg [31:0] fused;
     always @(*) begin
@@ -189,7 +189,7 @@ module amo_unit (
     assign amo_wdata = is_sc ? amo_rs2_r : fused;
 
     // ---- 写回给 rd 的值：AMO/LR 回旧值，SC 回成功标志 ----
-    // [重点] 写回值必须在【整条指令结束】那拍有效 —— core.v 的 WB 级看到的是
+    // [!] 写回值必须在整条指令结束那拍有效 —— core.v 的 WB 级看到的是
     //   MEM/WB 寄存下来的 wb_data，所以取当前锁存值即可（结束拍=ST_WRITE 末）。
     assign wb_data = is_sc ? {31'd0, sc_success} : amo_rdata_r;
 

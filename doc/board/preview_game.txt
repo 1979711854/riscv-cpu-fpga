@@ -1,0 +1,32 @@
++----------------------------------------+
+ 0 |oooooooooooooooooooooooooooooo..........|
+ 1 |oooooooooooooooooooooooooooooo..$$$$$$..|
+ 2 |oooooooooooooooooooooooooooooo..........|
+ 3 |oooooooooooooooooooooooooooooo..TURN....|
+ 4 |oooooooooooooooooooooooooooooo.*.WHITE..|
+ 5 |oooooooooooooooooooooooooooooo..........|
+ 6 |oooooooooooooooooooooooooooooo..LEVEL...|
+ 7 |oooooooooooooooooooooooooooooo...HARD...|
+ 8 |oooooooooooooooooooooooooooooo..........|
+ 9 |oooooooooooooooooooooooooooooo..DEPTH...|
+10 |oooooooooooooooooooooooooooooo...6.PLY..|
+11 |oooooooooooooooooooooooooooooo..........|
+12 |oooooooooooooooooooooooooooooo..NODES...|
+13 |oooooooooooooooooooooooooooooo...12.8K..|
+14 |oooooooooooooooooooooooooooooo..........|
+15 |oooooooooooooooooooooooooooooo..TIME....|
+16 |oooooooooooooooooooooooooooooo...569MS..|
+17 |oooooooooooooooooooooooooooooo..........|
+18 |oooooooooooooooooooooooooooooo..........|
+19 |oooooooooooooooooooooooooooooo..........|
+20 |oooooooooooooooooooooooooooooo..........|
+21 |oooooooooooooooooooooooooooooo..%%%%%%%%|
+22 |oooooooooooooooooooooooooooooo..........|
+23 |oooooooooooooooooooooooooooooo..........|
+24 |oooooooooooooooooooooooooooooo..........|
+25 |ooooooooooooooooooooooooooooooUP/DN.MOVE|
+26 |ooooooooooooooooooooooooooooooHOLD.PLACE|
+27 |oooooooooooooooooooooooooooooo..........|
+28 |oooooooooooooooooooooooooooooo..........|
+29 |oooooooooooooooooooooooooooooo..........|
++----------------------------------------+

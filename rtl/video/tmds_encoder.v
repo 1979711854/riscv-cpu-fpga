@@ -1,22 +1,11 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: Myminieye
-// Engineer: Ori
-// 
-// Create Date: 2019-09-16 19:46
-// Design Name: 
-// Module Name: tmds_encoder
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: change from xilinx xapp495
-// Revision: v1.0
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+// ============================================================================
+// tmds_encoder —— TMDS 8bit→10bit 编码器（DVI 1.0，改自 Xilinx XAPP495）
+// ----------------------------------------------------------------------------
+// 两级流水：Stage1 按最小跳变准则 8→9 位（q_m）；Stage2 依 DC 平衡计数 cnt
+// 决定是否取反并补第 10 位；消隐期发控制字 CTRLTOKEN*。规则见 DVI 1.0 Spec
+// p.29 Fig.3-5。din 要求已寄存（与内部流水对齐）。
+// ============================================================================
 `define UD #1
 
 module tmds_encoder (

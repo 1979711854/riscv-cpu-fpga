@@ -1,22 +1,12 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: Myminieye
-// Engineer: Ori
-// 
-// Create Date: 2019-09-16 19:46
-// Design Name: 
-// Module Name: rgb2tmds
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// Revision: v1.0
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+// ============================================================================
+// rgb2tmds —— RGB888 + 同步 → 4 对 TMDS 差分（1 时钟通道 + 3 数据通道）
+// ----------------------------------------------------------------------------
+// 红/绿/蓝各经 tmds_encoder 编码后由 outputserdes 串化；时钟通道发 TMDS 规定
+// 的 10'b1111100000。c0/c1 控制字仅通道 0 使用（分别接 hs/vs），其余置 0。
+// [!] vid_pdata/de/hs/vs 必须已寄存（tmds_encoder 的 din 亦按已寄存设计），
+//     未寄存的组合输入会破坏编码器内部流水对齐。
+// ============================================================================
 `define UD #1
 module rgb2tmds (
     output             tmds_clk_p,
@@ -62,7 +52,7 @@ module rgb2tmds (
             tmds_encoder dataencoder(
                 .pix_clk     (  pixelclk       ), // pixel clock input                            
                 .dout        (  pdataoutraw[i] ), // data outputs   [9:0]            
-                .rstn        (  rstn           ), // async. reset input (active high)              
+                .rstn        (  rstn           ), // async. reset input (active low)
                 .din         (  pdataout[i]    ), // data inputs: expect registered [7:0]               
                 .c0          (  pc0[i]         ), // c0 input                                      
                 .c1          (  pc1[i]         ), // c1 input                                      

@@ -1,22 +1,14 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: Myminieye
-// Engineer: Ori
-// 
-// Create Date: 2019-09-16 19:46
-// Design Name: 
-// Module Name: outputserdes
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// Revision: v1.0
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+// ============================================================================
+// outputserdes —— 10bit 并行 → 1bit 串行输出（DDR10TO1）+ 差分输出缓冲
+// ----------------------------------------------------------------------------
+// 用 Pango GTP_OSERDES_E2 把 10bit TMDS 并行码在 serialclk（5×pixelclk）双沿
+// 移出，经 GTP_OUTBUFDS 差分对输出。10bit 超出单级 8bit 数据口，由 Master/
+// Slave 两级经 OCASCADE 级联拼出：Slave 出高 2bit（DI 高位补零），Master 出
+// 低 8bit 并驱动差分引脚。
+// [!] 仅可在 PDS 综合，GTP_* 原语无 iverilog 模型，本模块不可功能仿真 ——
+//     可仿真的视频逻辑全部放在 video_core.v（见其文件头）。
+// ============================================================================
 `define UD #1
 module outputserdes#(
     parameter                  KPARALLELWIDTH = 10
@@ -34,16 +26,7 @@ module outputserdes#(
     wire                       sDataOut;
     wire                       ocascade1;
     wire                       ocascade2;
-    
-//    OBUFDS #(
-//        .IOSTANDARD (  "TMDS_33"   )
-//    ) OutputBuffer(
-//        .O          (  sdataout_p  ),           
-//        .OB         (  sdataout_n  ),           
-//        .I          (  sDataOut    )            
-//    );
-   
-   
+
     GTP_OUTBUFDS #(
         .IOSTANDARD("TMDS") 
     ) OutputBuffer (

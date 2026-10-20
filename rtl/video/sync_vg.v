@@ -1,42 +1,28 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: Myminieye
-// Engineer: Ori
-// 
-// Create Date:    2021-08-06 15:16 
-// Design Name:  
-// Module Name:    sync_vg
-// QQ Group   :    
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
+// ============================================================================
+// sync_vg —— VGA ?????????????????????????????
+// ----------------------------------------------------------------------------
+// H_*/V_* ? VESA DMT ???????? 720p????????
+// ????? clk ?????????????/????????????????
+// ??????x_act/y_act ??????????0 ???? de_out ???
+// ???????
+//
 //    VS     ______                                       ______
-//HS  __    |      |_______________¡­¡­____________________|      |
+// HS  __    |      |_______________##____________________|      |
 //   |       h_sync  h_bp       h_act                h_fp
 //   |__                    _______________________
-//DE    |   _______________|                       |_____________
-//      |
-//      .
-//      |
-//    __|
-//   |  
-//   |__ 
-//      |
-// Revision: v1.0
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+// DE    |   _______________|                       |_____________
+//
+// de_re ? de_out ????????? 2 ??????? 1 ???? —— ???
+// ?????????????????????
+// ============================================================================
 `define UD #1
 
 module sync_vg # (
     parameter               X_BITS=12,
     parameter               Y_BITS=12,
- 
-  //MODE_720p £»
+
+    // ????? 720p ???????
     parameter V_TOTAL = 12'd750,
     parameter V_FP = 12'd5,
     parameter V_BP = 12'd20,
@@ -139,7 +125,7 @@ module sync_vg # (
             x_act <= `UD 'd0;
         else 
         begin
-        /* X coords ¨C for a backend pattern generator */
+        /* X coords ? for a backend pattern generator */
             if(h_count > (H_SYNC + H_BP - 1'b1))
                 x_act <= `UD (h_count - (H_SYNC + H_BP));
             else
@@ -153,7 +139,7 @@ module sync_vg # (
             y_act <= `UD 'd0;
         else 
         begin
-            /* Y coords ¨C for a backend pattern generator */
+            /* Y coords ? for a backend pattern generator */
             if(v_count > (V_SYNC + V_BP - 1'b1))
                 y_act <= `UD (v_count - (V_SYNC + V_BP));
             else
